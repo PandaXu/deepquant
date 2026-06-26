@@ -298,6 +298,24 @@ def index():
     return HTMLResponse(html_path.read_text(encoding="utf-8"))
 
 
+@app.get("/wasm")
+def wasm_index():
+    html_path = Path(__file__).parent / "wasm-dist" / "index.html"
+    return HTMLResponse(html_path.read_text(encoding="utf-8"))
+
+
+# Serve WASM files with correct MIME types
+@app.get("/wasm-dist/{filename}")
+async def wasm_static(filename: str):
+    from fastapi.responses import FileResponse
+    file_path = Path(__file__).parent / "wasm-dist" / filename
+    if not file_path.exists():
+        return {"error": "not found"}
+    media_type = "application/wasm" if filename.endswith(".wasm") else \
+                 "application/javascript" if filename.endswith(".js") else None
+    return FileResponse(file_path, media_type=media_type)
+
+
 # ---------------------------------------------------------------------------
 # Startup
 # ---------------------------------------------------------------------------
