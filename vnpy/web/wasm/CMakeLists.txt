@@ -1,6 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
 project(VeighNaWasm VERSION 4.4.0 LANGUAGES CXX)
-
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
@@ -13,18 +12,18 @@ set(QT_HOST_PATH "/opt/homebrew/Cellar/qtbase/6.11.1")
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets Core Gui)
 
-add_executable(veighna_wasm main_wasm.cpp)
-target_link_libraries(veighna_wasm PRIVATE
-    Qt6::Widgets Qt6::Gui Qt6::Core
-    # Link the WASM platform plugin statically
-    Qt6::QWasmIntegrationPlugin
+qt_add_executable(veighna_wasm main_wasm.cpp)
+target_include_directories(veighna_wasm PRIVATE
+    ${Qt6Widgets_INCLUDE_DIRS}
+    ${Qt6Gui_INCLUDE_DIRS}
+    ${Qt6Core_INCLUDE_DIRS}
 )
-
+# MAIN_MODULE dynamic linking: symbols resolved at runtime from Qt .so files
 target_link_options(veighna_wasm PRIVATE
+    -sERROR_ON_UNDEFINED_SYMBOLS=0
     -sALLOW_MEMORY_GROWTH=1
     -sTOTAL_MEMORY=256MB
 )
-
 set_target_properties(veighna_wasm PROPERTIES
     OUTPUT_NAME veighna
     SUFFIX ".html"
