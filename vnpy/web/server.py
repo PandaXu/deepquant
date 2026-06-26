@@ -304,6 +304,12 @@ def wasm_index():
     return HTMLResponse(html_path.read_text(encoding="utf-8"))
 
 
+@app.get("/qt")
+def qt_wasm():
+    html_path = Path(__file__).parent / "wasm-dist" / "qt.html"
+    return HTMLResponse(html_path.read_text(encoding="utf-8"))
+
+
 # Serve WASM files with correct MIME types
 @app.get("/wasm-dist/{filename}")
 async def wasm_static(filename: str):
