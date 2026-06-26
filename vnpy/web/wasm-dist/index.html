@@ -3,253 +3,512 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>VeighNa Trader — WebAssembly</title>
+<title>VeighNa Trader 社区版 — 4.4.0 [WASM]</title>
 <style>
-  :root {
-    --bg: #1e1e1e; --surface: #2d2d2d; --border: #3c3c3c;
-    --text: #d4d4d4; --dim: #808080;
-    --bid: #ffaec9; --ask: #a0ffa0;
-    --long: #ff4444; --short: #00aa00;
-    --accent: #007acc;
-  }
-  *{margin:0;padding:0;box-sizing:border-box}
-  body{font-family:'Segoe UI','PingFang SC',sans-serif;background:var(--bg);color:var(--text);height:100vh;display:flex;flex-direction:column}
-  header{height:40px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 16px;gap:12px}
-  header h1{font-size:14px} header h1 span{color:var(--accent)}
-  .badge{font-size:10px;padding:2px 8px;border-radius:999px}
-  .badge.wasm{background:rgba(99,73,247,0.2);color:#a371f7}
-  .badge.on{background:rgba(63,185,80,0.15);color:#3fb950}
-  .badge.off{background:rgba(248,81,73,0.15);color:#f85149}
-  main{flex:1;padding:16px;display:flex;flex-direction:column;gap:12px;overflow:hidden}
-  .info-box{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 16px;display:flex;align-items:center;gap:12px;font-size:13px}
-  .info-box .icon{font-size:24px}
-  .grid{flex:1;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto 1fr;gap:12px;overflow:hidden}
-  .card{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;display:flex;flex-direction:column}
-  .card h2{font-size:12px;text-transform:uppercase;color:var(--dim);padding:8px 12px;border-bottom:1px solid var(--border);letter-spacing:1px}
-  .card .body{flex:1;overflow:auto;padding:8px;font-family:'Consolas',monospace;font-size:12px}
-  textarea{width:100%;height:100%;background:var(--bg);color:var(--text);border:none;font-family:'Consolas',monospace;font-size:12px;resize:none;outline:none;padding:8px}
-  button{padding:6px 14px;border-radius:4px;cursor:pointer;font-size:12px;font-weight:600}
-  .btn-primary{background:var(--accent);color:#fff;border:none}
-  .btn-buy{background:#c42b1c;color:#fff;border:none}
-  .btn-sell{background:#0b6016;color:#fff;border:none}
-  .btn-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
-  .result{background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:8px;margin:8px 0;font-family:'Consolas',monospace;font-size:12px}
-  .result .val{color:var(--accent);font-weight:700}
-  table{width:100%;border-collapse:collapse;font-size:11px}
-  th{background:var(--bg);padding:4px 8px;text-align:left;color:var(--dim);border-bottom:1px solid var(--border)}
-  td{padding:3px 8px;border-bottom:1px solid rgba(255,255,255,0.02)}
-  .bid{color:var(--bid)} .ask{color:var(--ask)}
+/* ===== Exact Qt color reproduction ===== */
+:root {
+  --bg:#1e1e1e;--bg2:#2d2d2d;--bg3:#252526;--text:#d4d4d4;--dim:#808080;
+  --bid:#ffaec9;--ask:#a0ffa0;--long:#ff4444;--short:#00aa00;
+  --hdr:#333;--border:#3c3c3c;--blue:#569cd6;--accent:#007acc;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI','Microsoft YaHei','PingFang SC',sans-serif;font-size:12px;background:var(--bg);color:var(--text);height:100vh;overflow:hidden;display:flex;flex-direction:column}
+
+/* Title bar */
+#titlebar{height:32px;background:var(--bg3);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 12px;gap:8px}
+#titlebar .t{font-weight:600;font-size:13px}
+#titlebar .dot{width:9px;height:9px;border-radius:50%}
+#titlebar .dot.on{background:#4ec94e}.dot.off{background:#666}
+#titlebar .dot.wasm{background:#a371f7}
+#titlebar .clock{margin-left:auto;color:var(--dim);font-size:11px}
+
+/* Menu bar */
+#menubar{height:26px;background:var(--bg3);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 4px}
+#menubar button{padding:2px 12px;background:none;border:none;color:var(--text);font-size:12px;cursor:pointer;border-radius:4px}
+#menubar button:hover{background:rgba(255,255,255,0.04)}
+
+/* Main dock grid — 1:1 Qt layout */
+#main{flex:1;display:grid;grid-template-columns:280px 1fr 1fr;grid-template-rows:1fr 1fr 200px;gap:1px;background:var(--border);overflow:hidden}
+.panel{background:var(--bg2);overflow:hidden;display:flex;flex-direction:column}
+.panel-title{padding:3px 8px;font-size:11px;font-weight:600;color:var(--dim);text-transform:uppercase;letter-spacing:1px;background:var(--bg3);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+.panel-body{flex:1;overflow:auto}
+
+/* Grid placement — exact Qt dock positions */
+#p-trade{grid-column:1;grid-row:1/4}
+#p-tick{grid-column:2;grid-row:1/3}
+#p-order{grid-column:3;grid-row:1/3}
+#p-trade-mon{grid-column:2;grid-row:3}
+#p-log{grid-column:3;grid-row:3}
+#p-acc-pos{grid-column:1;grid-row:3;display:none}
+
+/* Trading form */
+.tf{padding:6px;font-size:12px}
+.tf .row{display:flex;margin-bottom:3px;align-items:center}
+.tf .row label{width:45px;color:var(--dim);font-size:11px;flex-shrink:0}
+.tf input,.tf select,.tf button{flex:1;padding:3px 6px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:12px;border-radius:2px;outline:none}
+.tf input:focus,.tf select:focus{border-color:var(--accent)}
+.tf button{cursor:pointer;font-weight:600;border:none;padding:5px}
+.btn-buy{background:#c42b1c!important;color:#fff!important}
+.btn-sell{background:#0b6016!important;color:#fff!important}
+.btn-cancel{background:var(--bg3)!important;border:1px solid var(--border)!important;color:var(--dim)!important}
+
+/* Depth */
+.depth{border-top:1px solid var(--border);padding:6px}
+.depth .dr{display:flex;justify-content:space-between;padding:1px 4px;font-family:Consolas,monospace;font-size:12px}
+.depth .dr.ask{color:var(--ask)}.depth .dr.bid{color:var(--bid)}
+.depth .dr.mid{border-top:1px solid var(--border);border-bottom:1px solid var(--border);padding:3px 4px;margin:2px 0}
+
+/* Tables */
+table{width:100%;border-collapse:collapse;font-size:12px}
+thead{position:sticky;top:0;z-index:2}
+th{background:var(--hdr);padding:3px 6px;text-align:center;font-weight:600;font-size:11px;color:var(--text);border-bottom:1px solid var(--border);white-space:nowrap;cursor:pointer}
+th:hover{background:#444}
+td{padding:2px 6px;text-align:center;border-bottom:1px solid rgba(255,255,255,0.03);white-space:nowrap}
+tr:nth-child(even){background:rgba(255,255,255,0.01)}
+tr:hover{background:rgba(0,122,204,0.1)}
+.c-bid{color:var(--bid)}.c-ask{color:var(--ask)}
+.dir-LONG,.dir-多{color:var(--long)}.dir-SHORT,.dir-空{color:var(--short)}
+.pnl-pos{color:var(--long)}.pnl-neg{color:var(--short)}
+
+/* Tabs */
+.tab-bar{display:flex;background:var(--bg3);border-bottom:1px solid var(--border)}
+.tab-bar button{padding:3px 12px;background:none;border:none;color:var(--dim);font-size:11px;cursor:pointer;border-bottom:2px solid transparent}
+.tab-bar button.active{color:var(--text);border-bottom-color:var(--accent)}
+.tab-content{flex:1;overflow:auto;display:none}
+.tab-content.active{display:block}
+
+/* Log */
+#log-body{font-family:Consolas,monospace;font-size:12px;padding:4px}
+.log-entry{display:flex;gap:8px;padding:1px 4px;border-bottom:1px solid rgba(255,255,255,0.015)}
+.log-entry .ts{color:var(--blue);white-space:nowrap}
+.log-entry .gw{color:var(--dim);white-space:nowrap;min-width:60px}
+
+/* Modal */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:999;justify-content:center;align-items:center}
+.modal-overlay.show{display:flex}
+.modal{background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:16px;min-width:360px}
+.modal h2{font-size:15px;margin-bottom:12px;color:var(--blue)}
+.modal .row{display:flex;margin-bottom:6px;align-items:center}
+.modal label{width:90px;font-size:11px;color:var(--dim);text-align:right;padding-right:8px}
+.modal input,.modal select{flex:1;padding:4px 8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);border-radius:4px;font-size:12px}
+.modal .btn-row{margin-top:12px;display:flex;gap:8px;justify-content:flex-end}
+.modal button{padding:5px 16px;border-radius:4px;cursor:pointer;font-size:12px}
+
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:var(--bg2)}
+::-webkit-scrollbar-thumb{background:#555;border-radius:3px}
 </style>
 </head>
 <body>
-<header>
-  <h1>VeighNa <span>WebAssembly</span> Trader</h1>
-  <span id="wasm-status" class="badge off">WASM Loading...</span>
-  <span id="ws-status" class="badge off">WS Offline</span>
+
+<!-- Title bar -->
+<div id="titlebar">
+  <span class="dot wasm" title="WebAssembly Engine"></span>
+  <span class="dot off" id="ws-dot" title="Backend WebSocket"></span>
+  <span class="t">VeighNa Trader 社区版 — 4.4.0 [WASM]</span>
+  <span id="gw-tag" style="color:var(--blue);font-size:11px;margin-left:8px"></span>
+  <span class="clock" id="clock"></span>
+</div>
+
+<!-- Menu bar -->
+<div id="menubar">
+  <button onclick="showConnectDialog()">🔌 系统</button>
+  <button onclick="wasmRefresh()">🔄 功能</button>
+  <button>❓ 帮助</button>
   <span style="flex:1"></span>
-  <span style="font-size:11px;color:var(--dim)" id="clock"></span>
-</header>
+  <span id="perf-label" style="color:var(--dim);font-size:10px;padding-right:8px">WASM Engine Ready</span>
+</div>
 
-<main>
-  <!-- WASM Engine Info -->
-  <div class="info-box">
-    <div class="icon">⚡</div>
-    <div>
-      <b>C++ WebAssembly Engine Active</b><br>
-      <span style="color:var(--dim)">Native-speed order processing, VWAP/Sharpe/MaxDD calculations in C++</span>
-    </div>
-    <span style="flex:1"></span>
-    <span id="perf-info" style="font-size:11px;color:var(--dim)"></span>
-  </div>
-
-  <!-- Main grid: Trading + Data -->
-  <div class="grid">
-    <!-- Trading Panel -->
-    <div class="card" style="grid-row:1/3">
-      <h2>📝 Trading (WASM Engine)</h2>
-      <div class="body">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px">
-          <input id="sym" placeholder="Symbol" style="padding:4px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:2px">
-          <select id="ex" style="padding:4px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:2px">
-            <option>SHFE</option><option>CFFEX</option><option>DCE</option><option>CZCE</option><option>INE</option>
-          </select>
-          <input id="prc" placeholder="Price" type="number" step="any" style="padding:4px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:2px">
-          <input id="vol" placeholder="Volume" type="number" step="any" value="1" style="padding:4px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:2px">
-          <select id="dir" style="padding:4px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:2px">
-            <option value="LONG">多</option><option value="SHORT">空</option>
-          </select>
-          <select id="ofs" style="padding:4px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:2px">
-            <option value="OPEN">开</option><option value="CLOSE">平</option>
-          </select>
-        </div>
-        <div class="btn-row" style="margin-top:8px">
-          <button class="btn-buy" onclick="wasmOrder('LONG')">Buy</button>
-          <button class="btn-sell" onclick="wasmOrder('SHORT')">Sell</button>
-          <button class="btn-primary" onclick="wasmSubscribe()">Subscribe</button>
-          <button onclick="wasmQuery()" style="background:var(--surface);border:1px solid var(--border);color:var(--text)">Query</button>
-        </div>
-        <div id="order-result" class="result" style="margin-top:8px;display:none"></div>
+<!-- Main dock layout -->
+<div id="main">
+  <!-- Left: TradingWidget + Depth -->
+  <div class="panel" id="p-trade">
+    <div class="panel-title">📝 交易</div>
+    <div class="panel-body">
+      <div class="tf">
+        <div class="row"><label>交易所</label><select id="ex"><option>CFFEX</option><option>SHFE</option><option>CZCE</option><option>DCE</option><option>INE</option><option>GFEX</option></select></div>
+        <div class="row"><label>代码</label><input id="sym" placeholder="输入代码回车订阅" onkeydown="if(event.key==='Enter')wasmSetSymbol()"></div>
+        <div class="row"><label>名称</label><input id="name" readonly style="color:var(--dim)"></div>
+        <div class="row"><label>方向</label><select id="dir"><option value="LONG">多</option><option value="SHORT">空</option></select></div>
+        <div class="row"><label>开平</label><select id="ofs"><option value="OPEN">开</option><option value="CLOSE">平</option><option value="CLOSETODAY">平今</option><option value="CLOSEYESTERDAY">平昨</option></select></div>
+        <div class="row"><label>类型</label><select id="ot"><option value="LIMIT">限价</option><option value="MARKET">市价</option><option value="FAK">FAK</option><option value="FOK">FOK</option></select></div>
+        <div class="row"><label>价格</label><input id="prc" type="number" step="any" placeholder="0"><input type="checkbox" id="price-chk" style="width:auto;flex:0;margin-left:4px" title="价格随行情"></div>
+        <div class="row"><label>数量</label><input id="vol" type="number" step="any" value="1"></div>
+        <div class="row"><label>接口</label><select id="gw"><option>CTP</option></select></div>
+        <div class="row" style="gap:4px;margin-top:3px"><button class="btn-sell" onclick="wasmSendOrder('SHORT')" style="flex:1">空</button><button class="btn-buy" onclick="wasmSendOrder('LONG')" style="flex:1">多</button></div>
+        <div class="row" style="margin-top:2px"><button class="btn-cancel" onclick="wasmCancelAll()" style="flex:1">全撤</button></div>
       </div>
-    </div>
-
-    <!-- Native C++ Calculations Demo -->
-    <div class="card">
-      <h2>⚡ C++ Native Speed: VWAP / Sharpe / MaxDD</h2>
-      <div class="body">
-        <button class="btn-primary" onclick="runBenchmark()">Run C++ WASM Calculation Benchmark</button>
-        <div id="bench-result" class="result" style="display:none"></div>
-      </div>
-    </div>
-
-    <!-- Events Log -->
-    <div class="card">
-      <h2>📊 Real-time Events (via WASM Engine)</h2>
-      <div class="body">
-        <div style="overflow:auto;max-height:150px">
-          <table><thead><tr><th>Type</th><th>Symbol</th><th>Data</th></tr></thead>
-          <tbody id="event-log"></tbody></table>
-        </div>
-        <div class="btn-row" style="margin-top:8px">
-          <button onclick="document.getElementById('event-log').innerHTML=''" style="background:var(--surface);border:1px solid var(--border);color:var(--text)">Clear</button>
-          <span id="event-count" style="font-size:11px;color:var(--dim)">0 events</span>
-        </div>
+      <!-- 5-level depth -->
+      <div class="depth">
+        <div class="dr ask"><span id="dap5">--</span><span id="dav5">--</span></div>
+        <div class="dr ask"><span id="dap4">--</span><span id="dav4">--</span></div>
+        <div class="dr ask"><span id="dap3">--</span><span id="dav3">--</span></div>
+        <div class="dr ask"><span id="dap2">--</span><span id="dav2">--</span></div>
+        <div class="dr ask"><span id="dap1">--</span><span id="dav1">--</span></div>
+        <div class="dr mid"><span id="dlp" style="font-weight:700;font-size:14px">最新</span><span id="dret">涨跌幅</span></div>
+        <div class="dr bid"><span id="dbp1">--</span><span id="dbv1">--</span></div>
+        <div class="dr bid"><span id="dbp2">--</span><span id="dbv2">--</span></div>
+        <div class="dr bid"><span id="dbp3">--</span><span id="dbv3">--</span></div>
+        <div class="dr bid"><span id="dbp4">--</span><span id="dbv4">--</span></div>
+        <div class="dr bid"><span id="dbp5">--</span><span id="dbv5">--</span></div>
       </div>
     </div>
   </div>
-</main>
 
+  <!-- Right top: TickMonitor -->
+  <div class="panel" id="p-tick">
+    <div class="panel-title">📈 行情 <span id="tick-n">0</span></div>
+    <div class="panel-body"><table><thead><tr>
+      <th>代码</th><th>交易所</th><th>名称</th><th>最新价</th><th>成交量</th><th>开盘价</th><th>最高价</th><th>最低价</th><th>买1价</th><th>买1量</th><th>卖1价</th><th>卖1量</th><th>时间</th><th>接口</th>
+    </tr></thead><tbody id="tick-tb"></tbody></table></div>
+  </div>
+
+  <!-- Right: OrderMonitor + ActiveOrderMonitor (tabbed) -->
+  <div class="panel" id="p-order">
+    <div class="tab-bar">
+      <button class="active" data-tab="active-o">活动</button>
+      <button data-tab="all-o">委托</button>
+    </div>
+    <div class="tab-content active" id="tab-active-o"><table><thead><tr>
+      <th>委托号</th><th>来源</th><th>代码</th><th>交易所</th><th>类型</th><th>方向</th><th>开平</th><th>价格</th><th>总数量</th><th>已成交</th><th>状态</th><th>时间</th><th>接口</th>
+    </tr></thead><tbody id="active-o-tb"></tbody></table></div>
+    <div class="tab-content" id="tab-all-o"><table><thead><tr>
+      <th>委托号</th><th>来源</th><th>代码</th><th>交易所</th><th>类型</th><th>方向</th><th>开平</th><th>价格</th><th>总数量</th><th>已成交</th><th>状态</th><th>时间</th><th>接口</th>
+    </tr></thead><tbody id="order-tb"></tbody></table></div>
+  </div>
+
+  <!-- Bottom left: TradeMonitor -->
+  <div class="panel" id="p-trade-mon">
+    <div class="panel-title">💰 成交 <span id="trade-n">0</span></div>
+    <div class="panel-body"><table><thead><tr>
+      <th>成交号</th><th>委托号</th><th>代码</th><th>交易所</th><th>方向</th><th>开平</th><th>价格</th><th>数量</th><th>时间</th><th>接口</th>
+    </tr></thead><tbody id="trade-tb"></tbody></table></div>
+  </div>
+
+  <!-- Bottom center: LogMonitor -->
+  <div class="panel" id="p-log">
+    <div class="panel-title">📜 日志 <span id="log-n">0</span></div>
+    <div class="panel-body" id="log-body"></div>
+  </div>
+
+  <!-- Bottom right: Account + Position (tabbed) -->
+  <div class="panel" style="grid-column:3;grid-row:3">
+    <div class="tab-bar">
+      <button class="active" data-tab="acc-tab">资金</button>
+      <button data-tab="pos-tab">持仓</button>
+    </div>
+    <div class="tab-content active" id="tab-acc-tab"><table><thead><tr>
+      <th>账号</th><th>余额</th><th>冻结</th><th>可用</th><th>接口</th>
+    </tr></thead><tbody id="acc-tb"></tbody></table></div>
+    <div class="tab-content" id="tab-pos-tab"><table><thead><tr>
+      <th>代码</th><th>交易所</th><th>方向</th><th>数量</th><th>昨仓</th><th>冻结</th><th>均价</th><th>盈亏</th><th>接口</th>
+    </tr></thead><tbody id="pos-tb"></tbody></table></div>
+  </div>
+</div>
+
+<!-- Connect Dialog -->
+<div class="modal-overlay" id="modal-conn">
+  <div class="modal">
+    <h2>🔌 连接网关</h2>
+    <div id="conn-fields"></div>
+    <div class="btn-row">
+      <button style="background:var(--bg3);color:var(--text)" onclick="closeModal('modal-conn')">取消</button>
+      <button style="background:var(--accent);color:#fff" onclick="wasmConnectGateway()">连接</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== WASM Module ===== -->
 <script src="veighna_wasm.js"></script>
 <script>
-// ---- Wait for WASM module to initialize ----
-var wasmReady = false;
-var eventCount = 0;
+// ============================================================
+// WASM Engine — 1:1 Qt GUI replication
+// C++ WebAssembly handles WebSocket + native-speed processing
+// ============================================================
 
-window.onWasmReady = function() {
+// ---- Qt-exact color constants ----
+var C = {BID:'#ffaec9',ASK:'#a0ffa0',LONG:'#ff4444',SHORT:'#00aa00'};
+
+// ---- Data stores ----
+var store = {tick:new Map(),order:new Map(),trade:new Map(),position:new Map(),account:new Map()};
+var logs=[], maxLog=500, vtSymbol='', priceDigits=0, preClose=0;
+var wasmReady=false, wsConnected=false;
+
+// ---- WASM initialization ----
+window.onWasmReady = function(){
   wasmReady = true;
-  document.getElementById('wasm-status').textContent = 'WASM Ready';
-  document.getElementById('wasm-status').className = 'badge on';
-
-  // Bind C++ functions
-  WasmEngine.sendOrder = Module.cwrap('sendOrder', null,
-    ['string','string','string','string','number','number','string','string']);
-  WasmEngine.cancelOrder = Module.cwrap('cancelOrder', null,
-    ['string','string','string','string']);
-  WasmEngine.subscribe = Module.cwrap('subscribeSymbol', null, ['string','string']);
-  WasmEngine.queryAccount = Module.cwrap('queryAccount', null, []);
-  WasmEngine.queryPosition = Module.cwrap('queryPosition', null, []);
-  WasmEngine.connectGateway = Module.cwrap('connectGateway', null, ['string','string']);
-  WasmEngine.calcVWAP = Module.cwrap('calculateVWAP', 'number', ['array','array','number']);
-  WasmEngine.calcSharpe = Module.cwrap('calculateSharpe', 'number', ['array','number','number']);
-  WasmEngine.calcMaxDD = Module.cwrap('calculateMaxDrawdown', 'number', ['array','number']);
-
-  console.log('✅ WASM Engine ready —', Object.keys(WasmEngine).filter(k => typeof WasmEngine[k] === 'function').length, 'C++ functions bound');
+  // Bind all C++ exported functions
+  WasmEngine.sendOrder = Module.cwrap('sendOrder',null,['string','string','string','string','number','number','string','string']);
+  WasmEngine.cancelOrder = Module.cwrap('cancelOrder',null,['string','string','string','string']);
+  WasmEngine.subscribe = Module.cwrap('subscribeSymbol',null,['string','string']);
+  WasmEngine.queryAccount = Module.cwrap('queryAccount',null,[]);
+  WasmEngine.queryPosition = Module.cwrap('queryPosition',null,[]);
+  WasmEngine.connectGateway = Module.cwrap('connectGateway',null,['string','string']);
+  WasmEngine.calcVWAP = Module.cwrap('calculateVWAP','number',['array','array','number']);
+  WasmEngine.calcSharpe = Module.cwrap('calculateSharpe','number',['array','number','number']);
+  WasmEngine.calcMaxDD = Module.cwrap('calculateMaxDrawdown','number',['array','number']);
+  console.log('✅ WASM Engine ready — 9 C++ functions bound');
 };
 
-window.onWasmConnected = function() {
-  document.getElementById('ws-status').textContent = 'WS Connected';
-  document.getElementById('ws-status').className = 'badge on';
+window.onWasmConnected = function(){
+  wsConnected=true;
+  document.getElementById('ws-dot').className='dot on';
 };
 
-// ---- Set up event handlers ----
-WasmEngine.on('tick', function(d) { addEvent('TICK', d.vt_symbol, d.last_price); });
-WasmEngine.on('order', function(d) { addEvent('ORDER', d.vt_symbol, d.status); });
-WasmEngine.on('trade', function(d) { addEvent('TRADE', d.vt_symbol, d.price+'@'+d.volume); });
-WasmEngine.on('position', function(d) { addEvent('POS', d.vt_symbol, d.volume); });
-WasmEngine.on('account', function(d) { addEvent('ACCT', d.vt_accountid, d.balance); });
-WasmEngine.on('log', function(d) { addEvent('LOG', d.gateway_name||'', d.msg||''); });
+// ---- Event handlers (called by WASM engine) ----
+WasmEngine.on('tick', function(d){
+  store.tick.set(d.vt_symbol||'', d);
+  if(d.vt_symbol===vtSymbol) updateDepth(d);
+  scheduleRender();
+});
+WasmEngine.on('order', function(d){
+  store.order.set(d.vt_orderid||'', d);
+  scheduleRender();
+});
+WasmEngine.on('trade', function(d){
+  var k = d.vt_tradeid || d.tradeid || (d.orderid+'_'+Math.random());
+  store.trade.set(k, d);
+  scheduleRender();
+});
+WasmEngine.on('position', function(d){
+  store.position.set(d.vt_positionid||'', d);
+  scheduleRender();
+});
+WasmEngine.on('account', function(d){
+  store.account.set(d.vt_accountid||'', d);
+  scheduleRender();
+});
+WasmEngine.on('log', function(d){
+  logs.unshift(d); if(logs.length>maxLog) logs.pop();
+  renderLogPanel();
+});
 
-function addEvent(type, symbol, data) {
-  eventCount++;
-  var tbody = document.getElementById('event-log');
-  var row = '<tr><td><b>' + type + '</b></td><td>' + (symbol||'') + '</td><td>' + (data||'') + '</td></tr>';
-  tbody.innerHTML = row + tbody.innerHTML;
-  if (tbody.children.length > 100) tbody.removeChild(tbody.lastChild);
-  document.getElementById('event-count').textContent = eventCount + ' events';
-}
-
-// ---- Trading via WASM engine (C++ call) ----
-function wasmOrder(dir) {
-  if (!wasmReady) return alert('WASM not ready');
-  var sym = document.getElementById('sym').value;
-  var ex = document.getElementById('ex').value;
-  var prc = parseFloat(document.getElementById('prc').value)||0;
-  var vol = parseFloat(document.getElementById('vol').value)||1;
-  var ofs = document.getElementById('ofs').value;
-  if (!sym) return alert('Enter symbol');
-
-  // Call C++ function directly
-  WasmEngine.sendOrder(sym, ex, dir, ofs, prc, vol, 'LIMIT', '');
-  var el = document.getElementById('order-result');
-  el.style.display = 'block';
-  el.innerHTML = '✅ [WASM C++] Order sent: <span class="val">' + sym + '.' + ex + '</span> ' + dir + ' ' + prc + ' x ' + vol;
-}
-
-function wasmSubscribe() {
-  if (!wasmReady) return alert('WASM not ready');
-  var sym = document.getElementById('sym').value;
-  var ex = document.getElementById('ex').value;
-  if (!sym) return alert('Enter symbol');
-  WasmEngine.subscribe(sym, ex);
-}
-
-function wasmQuery() {
-  if (!wasmReady) return;
-  WasmEngine.queryAccount();
-  setTimeout(function() { WasmEngine.queryPosition(); }, 300);
-}
-
-// ---- C++ WASM Performance Benchmark ----
-function runBenchmark() {
-  if (!wasmReady) return alert('WASM not ready');
-
-  // Generate test data (100K data points)
-  var N = 100000;
-  var prices = new Float64Array(N);
-  var volumes = new Float64Array(N);
-  var returns = new Float64Array(N);
-  var equity = new Float64Array(N);
-  var eq = 100000.0;
-
-  for (var i = 0; i < N; i++) {
-    prices[i] = 100.0 + Math.random() * 50.0;
-    volumes[i] = Math.random() * 10000;
-    returns[i] = (Math.random() - 0.5) * 0.04;
-    eq *= (1 + returns[i]);
-    equity[i] = eq;
+// Disconnected
+WasmEngine.on('status', function(d){
+  if(d.gateways){
+    var gw=document.getElementById('gw');
+    gw.innerHTML = d.gateways.map(function(g){return '<option>'+g+'</option>'}).join('');
   }
-
-  // Benchmark: run 100 iterations
-  var iterations = 100;
-  var start = performance.now();
-  var vwap, sharpe, maxdd;
-  for (var i = 0; i < iterations; i++) {
-    vwap = WasmEngine.calcVWAP(prices, volumes, N);
-    sharpe = WasmEngine.calcSharpe(returns, N, 0.02/252);
-    maxdd = WasmEngine.calcMaxDD(equity, N);
+  if(d.exchanges){
+    var ex=document.getElementById('ex');
+    ex.innerHTML = d.exchanges.map(function(e){return '<option>'+e+'</option>'}).join('');
   }
-  var end = performance.now();
-  var totalMs = (end - start);
-  var perIter = totalMs / iterations;
+});
 
-  var el = document.getElementById('bench-result');
-  el.style.display = 'block';
-  el.innerHTML =
-    '<b>C++ WASM Benchmark Results (' + N.toLocaleString() + ' points, ' + iterations + ' iterations)</b><br>' +
-    'VWAP: <span class="val">' + vwap.toFixed(4) + '</span> | ' +
-    'Sharpe: <span class="val">' + sharpe.toFixed(4) + '</span> | ' +
-    'MaxDD: <span class="val">' + (maxdd*100).toFixed(2) + '%</span><br>' +
-    '⏱ Total: <span class="val">' + totalMs.toFixed(1) + 'ms</span> | ' +
-    'Per iteration: <span class="val">' + perIter.toFixed(3) + 'ms</span> | ' +
-    'Data processed: <span class="val">' + ((N*iterations/1000000).toFixed(0)) + 'M points</span>';
-
-  document.getElementById('perf-info').textContent =
-    'WASM: ' + perIter.toFixed(2) + 'ms/100Kpts (C++ native)';
+// ---- Render scheduling ----
+var _rt=null;
+function scheduleRender(){
+  if(_rt) return;
+  _rt = setTimeout(function(){_rt=null;renderAll();}, 150);
 }
 
-// ---- Clock ----
-setInterval(function() {
-  document.getElementById('clock').textContent = new Date().toLocaleTimeString();
-}, 1000);
+function renderAll(){
+  renderMonitor('tick', store.tick,
+    ['symbol','exchange','name','last_price','volume','open_price','high_price','low_price','bid_price_1','bid_volume_1','ask_price_1','ask_volume_1','datetime','gateway_name'],
+    {bid_price_1:'c-bid',bid_volume_1:'c-bid',ask_price_1:'c-ask',ask_volume_1:'c-ask',exchange:'enum'}
+  );
+  renderMonitor('order', store.order,
+    ['orderid','reference','symbol','exchange','type','direction','offset','price','volume','traded','status','datetime','gateway_name'],
+    {direction:'dir',exchange:'enum',type:'enum',offset:'enum',status:'enum'}
+  );
+  // Active orders: status filter (exact Qt ActiveOrderMonitor behavior)
+  var active=new Map();
+  store.order.forEach(function(v,k){
+    var s=v.status||'';
+    if(['SUBMITTING','NOTTRADED','PARTTRADED','提交中','未成交','部分成交'].includes(s)) active.set(k,v);
+  });
+  renderMonitorBody('active-o-tb', active,
+    ['orderid','reference','symbol','exchange','type','direction','offset','price','volume','traded','status','datetime','gateway_name'],
+    {direction:'dir',exchange:'enum',type:'enum',offset:'enum',status:'enum'}
+  );
+
+  renderMonitor('trade', store.trade,
+    ['tradeid','orderid','symbol','exchange','direction','offset','price','volume','datetime','gateway_name'],
+    {direction:'dir',exchange:'enum',offset:'enum'}
+  );
+  renderMonitor('position', store.position,
+    ['symbol','exchange','direction','volume','yd_volume','frozen','price','pnl','gateway_name'],
+    {direction:'dir',exchange:'enum',pnl:'pnl'}
+  );
+  renderMonitor('account', store.account,
+    ['accountid','balance','frozen','available','gateway_name'],
+    {}
+  );
+  updateCounts();
+}
+
+function renderMonitor(name, dataMap, cols, classes){
+  renderMonitorBody(name+'-tb', dataMap, cols, classes);
+}
+
+function renderMonitorBody(tbodyId, dataMap, cols, classes){
+  var tbody=document.getElementById(tbodyId);
+  if(!tbody) return;
+  var rows=Array.from(dataMap.values()).reverse();
+  tbody.innerHTML = rows.map(function(r){
+    return '<tr>'+cols.map(function(c){
+      var v=r[c];
+      if(v===undefined||v===null) v='';
+      if(c==='datetime'&&v){try{v=new Date(v).toLocaleTimeString('zh-CN',{hour12:false});}catch(e){}}
+      if(typeof v==='number') v=v.toFixed(Math.abs(v)<10?4:2);
+      var cls=classes[c]||'';
+      if(cls==='dir') cls=(v==='SHORT'||v==='空')?'dir-SHORT':'dir-LONG';
+      if(cls==='pnl'){var n=parseFloat(v);cls=(!isNaN(n)&&n<0)?'pnl-neg':'pnl-pos';}
+      if(cls==='enum'&&!v) v='';
+      return '<td class="'+cls+'">'+v+'</td>';
+    }).join('')+'</tr>';
+  }).join('');
+}
+
+function renderLogPanel(){
+  var el=document.getElementById('log-body');
+  if(!el) return;
+  el.innerHTML = logs.slice(0,200).map(function(l){
+    var ts=l.time||''; if(ts.length>12) ts=ts.slice(11,19);
+    return '<div class="log-entry"><span class="ts">'+ts+'</span><span class="gw">['+(l.gateway_name||'')+']</span><span>'+(l.msg||'')+'</span></div>';
+  }).join('');
+}
+
+function updateCounts(){
+  document.getElementById('tick-n').textContent=store.tick.size;
+  document.getElementById('trade-n').textContent=store.trade.size;
+  document.getElementById('log-n').textContent=logs.length;
+}
+
+// ---- 5-level Depth (exact Qt TradingWidget behavior) ----
+function updateDepth(d){
+  var dg=priceDigits;
+  var fmt=function(v){return v?v.toFixed(dg):'--';};
+  document.getElementById('dap5').textContent=fmt(d.ask_price_5);document.getElementById('dav5').textContent=d.ask_volume_5||'--';
+  document.getElementById('dap4').textContent=fmt(d.ask_price_4);document.getElementById('dav4').textContent=d.ask_volume_4||'--';
+  document.getElementById('dap3').textContent=fmt(d.ask_price_3);document.getElementById('dav3').textContent=d.ask_volume_3||'--';
+  document.getElementById('dap2').textContent=fmt(d.ask_price_2);document.getElementById('dav2').textContent=d.ask_volume_2||'--';
+  document.getElementById('dap1').textContent=fmt(d.ask_price_1);document.getElementById('dav1').textContent=d.ask_volume_1||'--';
+  var lp=d.last_price||0;
+  document.getElementById('dlp').textContent=fmt(lp);
+  var ret='';
+  if(d.pre_close&&d.pre_close>0){var r=(lp/d.pre_close-1)*100;ret=(r>=0?'+':'')+r.toFixed(2)+'%';}
+  document.getElementById('dret').textContent=ret||'涨跌幅';
+  document.getElementById('dbp1').textContent=fmt(d.bid_price_1);document.getElementById('dbv1').textContent=d.bid_volume_1||'--';
+  document.getElementById('dbp2').textContent=fmt(d.bid_price_2);document.getElementById('dbv2').textContent=d.bid_volume_2||'--';
+  document.getElementById('dbp3').textContent=fmt(d.bid_price_3);document.getElementById('dbv3').textContent=d.bid_volume_3||'--';
+  document.getElementById('dbp4').textContent=fmt(d.bid_price_4);document.getElementById('dbv4').textContent=d.bid_volume_4||'--';
+  document.getElementById('dbp5').textContent=fmt(d.bid_price_5);document.getElementById('dbv5').textContent=d.bid_volume_5||'--';
+  if(document.getElementById('price-chk').checked) document.getElementById('prc').value=fmt(lp);
+}
+
+function clearDepth(){
+  ['dap5','dap4','dap3','dap2','dap1','dav5','dav4','dav3','dav2','dav1',
+   'dbp1','dbp2','dbp3','dbp4','dbp5','dbv1','dbv2','dbv3','dbv4','dbv5'].forEach(function(id){
+    document.getElementById(id).textContent='--';
+  });
+  document.getElementById('dlp').textContent='最新';document.getElementById('dret').textContent='涨跌幅';
+}
+
+// ---- Trading actions via WASM C++ engine ----
+function wasmSetSymbol(){
+  var sym=document.getElementById('sym').value.trim();
+  var ex=document.getElementById('ex').value;
+  if(!sym) return;
+  vtSymbol=sym+'.'+ex;
+  clearDepth();
+  document.getElementById('name').value='';
+  document.getElementById('prc').value='';
+  document.getElementById('vol').value='1';
+  if(wasmReady) WasmEngine.subscribe(sym, ex);
+}
+
+function wasmSendOrder(dir){
+  var sym=document.getElementById('sym').value.trim();
+  if(!sym) return alert('请输入合约代码');
+  var vol=document.getElementById('vol').value;
+  if(!vol||parseFloat(vol)<=0) return alert('请输入委托数量');
+  if(!wasmReady) return alert('WASM engine not ready');
+  WasmEngine.sendOrder(
+    sym,
+    document.getElementById('ex').value,
+    dir,
+    document.getElementById('ofs').value,
+    parseFloat(document.getElementById('prc').value)||0,
+    parseFloat(vol)||1,
+    document.getElementById('ot').value,
+    document.getElementById('gw').value
+  );
+}
+
+function wasmCancelAll(){
+  if(!wasmReady) return;
+  store.order.forEach(function(o){
+    var s=o.status||'';
+    if(['SUBMITTING','NOTTRADED','PARTTRADED','提交中','未成交','部分成交'].includes(s)){
+      WasmEngine.cancelOrder(o.orderid||'',o.symbol||'',o.exchange||'',o.gateway_name||'');
+    }
+  });
+}
+
+function wasmRefresh(){
+  if(wasmReady){WasmEngine.queryAccount();setTimeout(function(){WasmEngine.queryPosition();},300);}
+}
+
+// ---- Connect dialog (exact Qt ConnectDialog behavior) ----
+var gatewayConfigs={};
+function showConnectDialog(){
+  if(wasmReady) WasmEngine.queryAccount(); // trigger status refresh to get gateways
+  // Fetch gateway configs from backend
+  fetch('/api/gateways').then(function(r){return r.json()}).then(function(gws){
+    var fields=document.getElementById('conn-fields');
+    fields.innerHTML='<div class="row"><label>网关</label><select id="conn-gw">'+gws.map(function(g){return '<option>'+g.name+'</option>'}).join('')+'</select></div>';
+    fields.innerHTML+='<div id="conn-dyn"></div>';
+    gws.forEach(function(g){gatewayConfigs[g.name]=g.default_setting;});
+    document.getElementById('conn-gw').onchange=function(){renderConnFields(this.value);};
+    if(gws.length>0) renderConnFields(gws[0].name);
+    document.getElementById('modal-conn').classList.add('show');
+  }).catch(function(e){console.error(e);});
+}
+
+function renderConnFields(gwName){
+  var cfg=gatewayConfigs[gwName]||{};
+  var el=document.getElementById('conn-dyn');
+  el.innerHTML=Object.entries(cfg).map(function(e){
+    if(Array.isArray(e[1])) return '<div class="row"><label>'+e[0]+'</label><select id="c-'+e[0]+'">'+e[1].map(function(x){return '<option>'+x+'</option>'}).join('')+'</select></div>';
+    var tp=typeof e[1]==='number'?'number':'text';
+    var pw=e[0].includes('密码')?'type="password"':'type="'+tp+'"';
+    return '<div class="row"><label>'+e[0]+'</label><input id="c-'+e[0]+'" '+pw+' value="'+e[1]+'">';
+  }).join('');
+}
+
+function wasmConnectGateway(){
+  var gw=document.getElementById('conn-gw').value;
+  var setting={};
+  document.getElementById('conn-dyn').querySelectorAll('input,select').forEach(function(inp){
+    setting[inp.id.replace('c-','')]=inp.value;
+  });
+  if(wasmReady) WasmEngine.connectGateway(gw, JSON.stringify(setting));
+  closeModal('modal-conn');
+}
+
+function closeModal(id){document.getElementById(id).classList.remove('show');}
+
+// ---- Tab switching ----
+document.addEventListener('DOMContentLoaded',function(){
+  document.querySelectorAll('.tab-bar').forEach(function(bar){
+    bar.querySelectorAll('button').forEach(function(btn){
+      btn.addEventListener('click',function(){
+        bar.querySelectorAll('button').forEach(function(b){b.classList.remove('active');});
+        btn.classList.add('active');
+        var parent=bar.closest('.panel');
+        if(parent){
+          parent.querySelectorAll('.tab-content').forEach(function(tc){tc.classList.remove('active');});
+          var target=document.getElementById('tab-'+btn.dataset.tab);
+          if(target) target.classList.add('active');
+        }
+      });
+    });
+  });
+
+  // Clock
+  setInterval(function(){document.getElementById('clock').textContent=new Date().toLocaleTimeString('zh-CN',{hour12:false});},1000);
+});
 </script>
 </body>
 </html>
