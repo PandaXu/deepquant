@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from vnpy.event import EventEngine, Event
@@ -32,6 +32,12 @@ from vnpy.trader.utility import TRADER_DIR
 
 # Fix macOS font
 SETTINGS["font.family"] = "PingFang SC"
+
+# Ensure correct MIME types for WebAssembly
+import mimetypes
+mimetypes.add_type("application/wasm", ".wasm")
+mimetypes.add_type("application/wasm", ".so")
+mimetypes.add_type("text/javascript", ".js")
 
 # Load available modules
 try:
@@ -69,6 +75,19 @@ except ImportError:
 # Web app
 # ---------------------------------------------------------------------------
 app = FastAPI(title="VeighNa Web Trader", version="4.4.0")
+
+# Mount static files with correct MIME types
+wasm_dist = Path(__file__).parent / "wasm-dist"
+if wasm_dist.exists():
+    app.mount("/wasm-dist", StaticFiles(directory=str(wasm_dist), html=True), name="wasm_dist")
+
+# Also serve plugins and libs at root level for Qt6 WASM dynamic loading
+plugins_dist = wasm_dist / "plugins"
+libs_dist = wasm_dist
+if plugins_dist.exists():
+    app.mount("/plugins", StaticFiles(directory=str(plugins_dist)), name="qt_plugins")
+# Mount individual .so files at root level too (Qt6 loads them as dynamic libs)
+# We'll route them through wasm-dist
 
 # Global state
 event_engine: EventEngine | None = None
@@ -316,9 +335,46 @@ def pyodide_wasm():
     return HTMLResponse(html_path.read_text(encoding="utf-8"))
 
 
-@app.get("/qt6")
+@app.get("/qt6", include_in_schema=False)
 def qt6_wasm():
-    return HTMLResponse((Path(__file__).parent / "wasm-dist" / "veighna.html").read_text(encoding="utf-8"))
+    return HTMLResponse("""<!doctype html>
+<html><head><meta charset=utf-8><title>VeighNa Qt6</title>
+<style>html,body{padding:0;margin:0;overflow:hidden;height:100vh;background:#1e1e1e}
+#screen{width:100%;height:100%}
+#status{position:fixed;top:10px;left:10px;color:#0f0;font-family:monospace;font-size:12px;z-index:99;background:rgba(0,0,0,0.8);padding:8px}</style></head><body>
+<div id="status">Loading...</div>
+<div id="screen"></div>
+<script src="/wasm-dist/hello_qt.js"></script>
+<script>
+var st = document.getElementById('status');
+var Module = {
+    locateFile: function(path) { return '/wasm-dist/' + path; },
+    canvas: (function() {
+        var c = document.createElement('canvas');
+        c.id = 'qt-canvas';
+        c.width = window.innerWidth * window.devicePixelRatio;
+        c.height = window.innerHeight * window.devicePixelRatio;
+        c.style.cssText = 'display:block;width:100vw;height:100vh;';
+        document.getElementById('screen').appendChild(c);
+        return c;
+    })(),
+    setStatus: function(t) { st.textContent = t; },
+    preRun: [function() {
+        // Set canvas size before Qt initializes
+        var c = Module.canvas;
+        _emscripten_set_canvas_element_size('#qt-canvas', c.width, c.height);
+    }],
+    print: function(t) { console.log('[Qt]',t); },
+    printErr: function(t) { console.error('[Qt]',t); }
+};
+window.hello_qt_entry(Module).then(function() {
+    st.textContent = 'App started!';
+}).catch(function(e) {
+    st.textContent = 'Error: ' + (e.message || e);
+    console.error(e);
+});
+</script>
+</body></html>""")
 
 
 # Serve WASM files with correct MIME types
@@ -328,8 +384,14 @@ async def wasm_static(filename: str):
     file_path = Path(__file__).parent / "wasm-dist" / filename
     if not file_path.exists():
         return {"error": "not found"}
-    media_type = "application/wasm" if filename.endswith(".wasm") else \
-                 "application/javascript" if filename.endswith(".js") else None
+    if filename.endswith(".wasm"):
+        media_type = "application/wasm"
+    elif filename.endswith(".js"):
+        media_type = "text/javascript"
+    elif filename.endswith(".so"):
+        media_type = "application/wasm"
+    else:
+        media_type = None
     return FileResponse(file_path, media_type=media_type)
 
 
