@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VeighNa (vnpy) 架构分析</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-secondary: #8b949e;
+    --accent: #58a6ff;
+    --accent2: #7ee787;
+    --accent3: #f0883e;
+    --accent4: #d2a8ff;
+    --accent5: #ff7b72;
+    --accent6: #a5d6ff;
+    --gradient1: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    --gradient2: linear-gradient(135deg, #0d1117 0%, #1a2332 100%);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+  }
+
+  /* ── Navigation ── */
+  nav {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    background: rgba(22, 27, 34, 0.95);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    gap: 0;
+    padding: 0 24px;
+    overflow-x: auto;
+  }
+  nav a {
+    color: var(--text-secondary);
+    text-decoration: none;
+    padding: 14px 20px;
+    font-size: 14px;
+    font-weight: 500;
+    white-space: nowrap;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+  }
+  nav a:hover, nav a.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* ── Hero ── */
+  .hero {
+    margin-top: 53px;
+    padding: 80px 24px 60px;
+    text-align: center;
+    background: var(--gradient1);
+    border-bottom: 1px solid var(--border);
+  }
+  .hero h1 {
+    font-size: 52px;
+    font-weight: 800;
+    letter-spacing: -1px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 12px;
+  }
+  .hero .version {
+    font-size: 18px;
+    color: var(--accent4);
+    font-weight: 600;
+  }
+  .hero .subtitle {
+    font-size: 16px;
+    color: var(--text-secondary);
+    margin-top: 8px;
+    max-width: 600px;
+    margin-inline: auto;
+  }
+
+  /* ── Stats ── */
+  .stats {
+    display: flex;
+    justify-content: center;
+    gap: 40px;
+    margin-top: 40px;
+    flex-wrap: wrap;
+  }
+  .stat {
+    text-align: center;
+    padding: 20px 32px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    min-width: 130px;
+  }
+  .stat .num {
+    font-size: 36px;
+    font-weight: 800;
+    color: var(--accent);
+  }
+  .stat .label {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+  }
+
+  /* ── Sections ── */
+  section {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 60px 24px;
+  }
+  section h2 {
+    font-size: 28px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  section h2 .icon {
+    font-size: 32px;
+  }
+  section .desc {
+    color: var(--text-secondary);
+    margin-bottom: 32px;
+    font-size: 15px;
+  }
+  hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 0;
+  }
+
+  /* ── Mermaid containers ── */
+  .mermaid-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px 16px;
+    overflow-x: auto;
+    margin-bottom: 28px;
+  }
+
+  /* ── Module Grid ── */
+  .modules {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 20px;
+  }
+  .module-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    transition: border-color 0.2s, transform 0.15s;
+  }
+  .module-card:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+  }
+  .module-card h3 {
+    font-size: 18px;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .module-card .badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    background: rgba(88,166,255,0.15);
+    color: var(--accent);
+  }
+  .module-card .path {
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-family: monospace;
+    margin-bottom: 12px;
+  }
+  .module-card ul {
+    list-style: none;
+    font-size: 14px;
+  }
+  .module-card ul li {
+    padding: 4px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+  }
+  .module-card ul li:before {
+    content: "→ ";
+    color: var(--accent2);
+  }
+  .module-card.framework { border-left: 3px solid var(--accent); }
+  .module-card.trader { border-left: 3px solid var(--accent3); }
+  .module-card.alpha { border-left: 3px solid var(--accent2); }
+  .module-card.rpc { border-left: 3px solid var(--accent4); }
+  .module-card.chart { border-left: 3px solid var(--accent5); }
+  .module-card.ui { border-left: 3px solid var(--accent6); }
+
+  /* ── Class hierarchy table ── */
+  .class-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+  .class-table th, .class-table td {
+    padding: 12px 16px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  .class-table th {
+    background: var(--surface);
+    color: var(--accent);
+    font-weight: 600;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .class-table tr:hover td { background: rgba(88,166,255,0.04); }
+  .class-table .class-name { font-family: 'SF Mono', 'Fira Code', monospace; font-weight: 600; color: var(--accent4); }
+  .class-table .abstract { color: var(--accent5); font-size: 12px; }
+  .class-table .concrete { color: var(--accent2); font-size: 12px; }
+
+  /* ── Data flow steps ── */
+  .flow-steps {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: center;
+    align-items: center;
+  }
+  .flow-step {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 24px;
+    text-align: center;
+    min-width: 100px;
+  }
+  .flow-step .name { font-weight: 700; font-size: 15px; }
+  .flow-step .detail { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
+  .flow-arrow { font-size: 24px; color: var(--accent); }
+
+  /* ── Footer ── */
+  footer {
+    text-align: center;
+    padding: 40px 24px;
+    border-top: 1px solid var(--border);
+    color: var(--text-secondary);
+    font-size: 13px;
+  }
+
+  @media (max-width: 768px) {
+    .hero h1 { font-size: 32px; }
+    .stats { gap: 12px; }
+    .stat { padding: 12px 20px; min-width: 90px; }
+    .stat .num { font-size: 24px; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <a href="#overview" class="active">总览</a>
+  <a href="#architecture">系统架构</a>
+  <a href="#modules">模块详解</a>
+  <a href="#classes">类层次结构</a>
+  <a href="#dataflow">数据流</a>
+  <a href="#deps">依赖关系</a>
+  <a href="#alpha">Alpha 研究</a>
+</nav>
+
+<!-- ═══════════════════════════════════════════ HERO ═══════════════════════════════════════════ -->
+<header class="hero" id="overview">
+  <h1>VeighNa</h1>
+  <div class="version">v4.4.0 &mdash; 量化交易框架</div>
+  <p class="subtitle">事件驱动架构的量化交易平台，集成行情接入、订单管理、Alpha 因子研究、策略回测与 RPC 分布式服务</p>
+  <div class="stats">
+    <div class="stat"><div class="num">7</div><div class="label">核心模块</div></div>
+    <div class="stat"><div class="num">60+</div><div class="label">Python 文件</div></div>
+    <div class="stat"><div class="num">38</div><div class="label">交易所支持</div></div>
+    <div class="stat"><div class="num">3</div><div class="label">ML 模型</div></div>
+    <div class="stat"><div class="num">50+</div><div class="label">技术指标</div></div>
+  </div>
+</header>
+
+<!-- ═══════════════════════════════════════════ SYSTEM ARCHITECTURE ═══════════════════════════════════════════ -->
+<hr>
+<section id="architecture">
+  <h2><span class="icon">🏗️</span> 系统架构总览</h2>
+  <p class="desc">VeighNa 采用分层事件驱动架构。底层事件引擎驱动整个系统，Gateway 层负责对接各交易所/券商，MainEngine 协调所有功能引擎，App 层提供可插拔的业务模块。</p>
+  <div class="mermaid-wrap">
+    <div class="mermaid">
+graph TD
+    subgraph 外部系统["🌐 外部系统"]
+        EXCH[交易所 / 券商 API]
+        DB[(数据库)]
+        DF[数据服务]
+    end
+
+    subgraph 核心层["⚙️ 核心引擎层"]
+        EE[EventEngine<br/>事件引擎]
+        ME[MainEngine<br/>主引擎]
+        OMS[OmsEngine<br/>订单管理系统]
+        LOG[LogEngine<br/>日志引擎]
+        EM[EmailEngine<br/>邮件引擎]
+        WX[WechatEngine<br/>微信引擎]
+    end
+
+    subgraph 接入层["🔌 接入层"]
+        GW[BaseGateway<br/>交易网关]
+        DFEED[BaseDatafeed<br/>数据源]
+        DBASE[BaseDatabase<br/>数据库]
+    end
+
+    subgraph 应用层["📦 应用层 (可插拔)"]
+        APPS[BaseApp<br/>功能应用]
+    end
+
+    subgraph 研究层["🔬 Alpha 研究层"]
+        LAB[AlphaLab<br/>研究实验室]
+        DS[AlphaDataset<br/>数据集]
+        MODEL[AlphaModel<br/>ML 模型]
+        STRAT[AlphaStrategy<br/>策略模板]
+        BE[BacktestingEngine<br/>回测引擎]
+    end
+
+    subgraph 服务层["🌍 服务层"]
+        RPC_S[RpcServer<br/>RPC 服务端]
+        RPC_C[RpcClient<br/>RPC 客户端]
+        UI[Qt 图形界面]
+        CHART[Chart 图表]
+    end
+
+    EE -->|注册/分发事件| ME
+    ME -->|添加/管理| GW
+    ME -->|添加/管理| APPS
+    ME -->|内置引擎| OMS
+    ME -->|内置引擎| LOG
+    ME -->|内置引擎| EM
+    ME -->|内置引擎| WX
+    GW -->|推送事件| EE
+    DFEED -->|提供数据| ME
+    DBASE -->|持久化| ME
+    APPS -->|扩展| OMS
+    LAB --> DS
+    DS --> MODEL
+    MODEL --> STRAT
+    STRAT --> BE
+    RPC_S -.->|跨进程调用| RPC_C
+    UI --> ME
+    CHART --> GW
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════ MODULES ═══════════════════════════════════════════ -->
+<hr>
+<section id="modules">
+  <h2><span class="icon">📁</span> 模块详解</h2>
+  <p class="desc">7 大功能模块，各司其职</p>
+  <div class="modules">
+
+    <!-- event -->
+    <div class="module-card framework">
+      <h3>⚡ Event <span class="badge">事件引擎</span></h3>
+      <div class="path">vnpy/event/</div>
+      <ul>
+        <li><b>EventEngine</b> — 事件驱动核心，双线程运行（事件分发 + 定时器）</li>
+        <li><b>Event</b> — 事件对象 (type + data)</li>
+        <li>支持按类型注册 handler + 通用 handler</li>
+        <li>每秒产生 eTimer 定时事件</li>
+        <li>线程安全的 Queue 机制</li>
+      </ul>
+    </div>
+
+    <!-- trader -->
+    <div class="module-card trader">
+      <h3>💹 Trader <span class="badge">交易核心</span></h3>
+      <div class="path">vnpy/trader/</div>
+      <ul>
+        <li><b>MainEngine</b> — 平台主引擎，管理 gateways/engines/apps</li>
+        <li><b>OmsEngine</b> — 订单管理，缓存 tick/order/trade/position 等数据</li>
+        <li><b>BaseGateway</b> — 交易接口抽象，连接交易所</li>
+        <li><b>BaseDatafeed</b> — 数据服务抽象</li>
+        <li><b>BaseDatabase</b> — 数据库抽象（默认 SQLite）</li>
+        <li><b>OffsetConverter</b> — 期货平仓转换（平今/平昨/锁仓）</li>
+        <li><b>BarGenerator</b> — K 线合成（Tick→1分钟→N分钟→小时→日线）</li>
+        <li><b>ArrayManager</b> — 技术指标计算（50+ TA-Lib 指标）</li>
+        <li><b>OptimizationSetting</b> — 参数优化（穷举/遗传算法）</li>
+        <li>10 种 Request/Data 数据对象</li>
+        <li>38 个交易所枚举（CFFEX, NYSE, NASDAQ...）</li>
+      </ul>
+    </div>
+
+    <!-- alpha -->
+    <div class="module-card alpha">
+      <h3>🔬 Alpha <span class="badge">研究平台</span></h3>
+      <div class="path">vnpy/alpha/</div>
+      <ul>
+        <li><b>AlphaLab</b> — 研究实验室，数据存储（Parquet/Shelve/Pickle）</li>
+        <li><b>AlphaDataset</b> — 数据集模板（特征表达式 + 预处理器）</li>
+        <li><b>AlphaModel</b> — ML 模型基类（fit/predict）</li>
+        <li><b>AlphaStrategy</b> — 策略模板（on_bars + 目标仓位执行）</li>
+        <li><b>BacktestingEngine</b> — 多品种回测引擎</li>
+        <li>内建 Alpha101 / Alpha158 因子集</li>
+        <li>截面/时序/技术分析/数学函数</li>
+        <li>LightGBM / MLP / Lasso 模型实现</li>
+      </ul>
+    </div>
+
+    <!-- rpc -->
+    <div class="module-card rpc">
+      <h3>🌐 RPC <span class="badge">分布式</span></h3>
+      <div class="path">vnpy/rpc/</div>
+      <ul>
+        <li><b>RpcServer</b> — ZeroMQ REP + PUB 模式服务端</li>
+        <li><b>RpcClient</b> — ZeroMQ REQ + SUB 模式客户端</li>
+        <li>支持远程函数注册与调用</li>
+        <li>心跳检测机制（10s 间隔 / 30s 容错）</li>
+        <li>发布-订阅模式数据推送</li>
+      </ul>
+    </div>
+
+    <!-- chart -->
+    <div class="module-card chart">
+      <h3>📊 Chart <span class="badge">可视化</span></h3>
+      <div class="path">vnpy/chart/</div>
+      <ul>
+        <li><b>ChartWidget</b> — K 线图组件</li>
+        <li><b>ChartItem</b> — 图表元素（K线/成交量/指标）</li>
+        <li><b>ChartAxis</b> — 坐标轴系统</li>
+        <li><b>ChartManager</b> — 图表管理器</li>
+      </ul>
+    </div>
+
+    <!-- ui -->
+    <div class="module-card ui">
+      <h3>🖥️ UI <span class="badge">桌面界面</span></h3>
+      <div class="path">vnpy/trader/ui/</div>
+      <ul>
+        <li><b>MainWindow</b> — Qt 主窗口</li>
+        <li><b>QtWidgets</b> — 交易组件（下单/持仓/日志面板）</li>
+        <li>PySide6/PyQt5 兼容层</li>
+        <li>菜单式 App 管理</li>
+      </ul>
+    </div>
+
+    <!-- examples -->
+    <div class="module-card framework">
+      <h3>📝 Examples <span class="badge">示例</span></h3>
+      <div class="path">examples/</div>
+      <ul>
+        <li>veighna_trader — 完整交易平台启动</li>
+        <li>client_server — RPC 服务/客户端示例</li>
+        <li>data_recorder — 行情录制</li>
+        <li>candle_chart — K 线图表</li>
+        <li>no_ui — 无界面运行</li>
+        <li>simple_rpc — 简单 RPC 测试</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════ CLASS HIERARCHY ═══════════════════════════════════════════ -->
+<hr>
+<section id="classes">
+  <h2><span class="icon">🧬</span> 类层次结构</h2>
+  <p class="desc">核心类的继承与职责关系</p>
+  <div class="mermaid-wrap">
+    <div class="mermaid">
+classDiagram
+    direction TB
+
+    %% ── Event Engine ──
+    class EventEngine {
+        +start()
+        +stop()
+        +put(event)
+        +register(type, handler)
+        +register_general(handler)
+    }
+    class Event {
+        +type: str
+        +data: Any
+    }
+
+    %% ── Core Data ──
+    class BaseData {
+        +gateway_name: str
+    }
+    class TickData {
+        +vt_symbol: str
+        +last_price: float
+        +bid/ask prices
+    }
+    class BarData {
+        +vt_symbol: str
+        +OHLCV
+        +interval
+    }
+    class OrderData {
+        +vt_orderid: str
+        +direction/offset/status
+        +is_active()
+    }
+    class TradeData {
+        +vt_tradeid: str
+        +volume/price
+    }
+    class PositionData {
+        +vt_positionid: str
+        +volume/direction
+    }
+    class AccountData {
+        +vt_accountid: str
+        +balance/frozen
+    }
+    class ContractData {
+        +pricetick/size/product
+    }
+
+    %% ── Engines ──
+    class BaseEngine {
+        &lt;&lt;abstract&gt;&gt;
+        +main_engine
+        +event_engine
+        +close()
+    }
+    class MainEngine {
+        +gateways/engines/apps
+        +add_engine()
+        +add_gateway()
+        +connect/subscribe
+        +send_order/cancel_order
+    }
+    class LogEngine {
+        +process_log_event()
+    }
+    class OmsEngine {
+        +ticks/orders/trades
+        +get_tick/order/trade()
+        +register_event()
+    }
+    class EmailEngine {
+        +send_email()
+        +run() thread
+    }
+    class WechatEngine {
+        +send_wechat()
+        +bind/unbind()
+    }
+
+    %% ── Gateways ──
+    class BaseGateway {
+        &lt;&lt;abstract&gt;&gt;
+        +connect(setting)
+        +subscribe(req)
+        +send_order(req)$ str
+        +cancel_order(req)
+        +on_tick/trade/order()
+    }
+
+    class BaseApp {
+        &lt;&lt;abstract&gt;&gt;
+        +app_name
+        +engine_class
+        +widget_name
+    }
+
+    class BaseDatafeed {
+        +query_bar_history()
+        +query_tick_history()
+    }
+
+    class BaseDatabase {
+        &lt;&lt;abstract&gt;&gt;
+        +save/load/delete bar/tick data
+    }
+
+    %% ── Alpha ──
+    class AlphaLab {
+        +save/load_bar_data()
+        +save/load_dataset()
+        +save/load_model()
+    }
+    class AlphaDataset {
+        +add_feature()
+        +set_label()
+        +prepare_data()
+        +fetch_learn/infer/raw()
+    }
+    class AlphaModel {
+        &lt;&lt;abstract&gt;&gt;
+        +fit(dataset)
+        +predict(dataset, segment)
+    }
+    class AlphaStrategy {
+        &lt;&lt;abstract&gt;&gt;
+        +on_init()
+        +on_bars(bars)
+        +buy/sell/short/cover()
+        +execute_trading()
+    }
+    class BacktestingEngine {
+        +run_backtesting()
+        +send_order()
+        +get_signal()
+    }
+
+    %% ── RPC ──
+    class RpcServer {
+        +register(func)
+        +publish(topic, data)
+        +start/stop()
+    }
+    class RpcClient {
+        +subscribe_topic()
+        +callback(topic, data)
+    }
+
+    %% ── Utilities ──
+    class BarGenerator {
+        +update_tick()
+        +update_bar()
+        +generate()
+    }
+    class ArrayManager {
+        +sma/ema/macd/rsi()
+        +boll/keltner/donchian()
+    }
+    class OffsetConverter {
+        +convert_order_request()
+    }
+
+    %% ── Inheritance ──
+    BaseData <|-- TickData
+    BaseData <|-- BarData
+    BaseData <|-- OrderData
+    BaseData <|-- TradeData
+    BaseData <|-- PositionData
+    BaseData <|-- AccountData
+    BaseData <|-- ContractData
+
+    BaseEngine <|-- LogEngine
+    BaseEngine <|-- OmsEngine
+    BaseEngine <|-- EmailEngine
+    BaseEngine <|-- WechatEngine
+
+    EventEngine --> MainEngine : drives
+    MainEngine --> BaseEngine : manages
+    MainEngine --> BaseGateway : manages
+    MainEngine --> BaseApp : manages
+    BaseGateway --> EventEngine : pushes events to
+    OmsEngine --> EventEngine : listens to
+
+    AlphaLab --> AlphaDataset
+    AlphaLab --> AlphaModel
+    AlphaDataset --> AlphaModel : feeds
+    AlphaModel --> AlphaStrategy
+    AlphaStrategy --> BacktestingEngine : runs on
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════ DATA FLOW ═══════════════════════════════════════════ -->
+<hr>
+<section id="dataflow">
+  <h2><span class="icon">🔄</span> 核心数据流</h2>
+  <p class="desc">从交易所行情到策略交易执行的完整链路</p>
+  <div class="mermaid-wrap">
+    <div class="mermaid">
+flowchart LR
+    subgraph A["1️⃣ 行情接入"]
+        EX["🏦 交易所"] -->|TCP/WebSocket| GW["BaseGateway"]
+        GW -->|"on_tick(on_event)"| EVT["eTick.{symbol}"]
+        GW -->|"on_order"| EVO["eOrder.{orderid}"]
+        GW -->|"on_trade"| EVTR["eTrade.{symbol}"]
+    end
+
+    subgraph B["2️⃣ 事件分发"]
+        EVT -->|put| Q["EventEngine._queue"]
+        EVO -->|put| Q
+        EVTR -->|put| Q
+        Q -->|_process| H["注册的 Handlers"]
+    end
+
+    subgraph C["3️⃣ 订单管理"]
+        H -->|process_tick_event| TICK["OmsEngine.ticks{dict}"]
+        H -->|process_order_event| ORDER["OmsEngine.orders{dict}"]
+        H -->|process_trade_event| TRADE["OmsEngine.trades{dict}"]
+    end
+
+    subgraph D["4️⃣ 数据转换"]
+        TICK -->|update_tick| BG["BarGenerator"]
+        BG -->|"on_bar(1min)"| BG2["→N分钟→小时→日线"]
+        BG2 --> AM["ArrayManager<br/>技术指标计算"]
+        AM -->|"sma/ema/rsi/macd..."| SIG["交易信号"]
+    end
+
+    subgraph E["5️⃣ 策略执行"]
+        SIG --> STRAT["AlphaStrategy.on_bars()"]
+        STRAT -->|set_target| DIFF["计算仓位差异"]
+        DIFF -->|send_order| REQ["OrderRequest"]
+        REQ -->|send_order| GW
+    end
+
+    subgraph F["6️⃣ 持久化"]
+        TICK -->|保存| DB["BaseDatabase"]
+        ORDER -->|保存| DB
+        TRADE -->|保存| DB
+        BG2 -->|K线数据| DB
+    end
+
+    style A fill:#1a2332,stroke:#58a6ff
+    style B fill:#1a2332,stroke:#7ee787
+    style C fill:#1a2332,stroke:#f0883e
+    style D fill:#1a2332,stroke:#d2a8ff
+    style E fill:#1a2332,stroke:#ff7b72
+    style F fill:#1a2332,stroke:#a5d6ff
+    </div>
+  </div>
+
+  <div class="flow-steps">
+    <div class="flow-step"><div class="name">Gateway</div><div class="detail">接收行情<br/>推送事件</div></div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step"><div class="name">EventEngine</div><div class="detail">事件入队<br/>分发处理</div></div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step"><div class="name">OmsEngine</div><div class="detail">缓存数据<br/>状态管理</div></div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step"><div class="name">BarGenerator</div><div class="detail">K线合成<br/>周期转换</div></div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step"><div class="name">Strategy</div><div class="detail">信号计算<br/>仓位决策</div></div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step"><div class="name">Gateway</div><div class="detail">发送订单<br/>返回成交</div></div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════ DEPENDENCIES ═══════════════════════════════════════════ -->
+<hr>
+<section id="deps">
+  <h2><span class="icon">🔗</span> 模块依赖关系</h2>
+  <p class="desc">模块间导入依赖图（箭头从使用者指向被依赖者）</p>
+  <div class="mermaid-wrap">
+    <div class="mermaid">
+graph TB
+    subgraph 基础层["基础层"]
+        event["vnpy.event<br/>(EventEngine)"]
+        constant["vnpy.trader.constant<br/>(枚举定义)"]
+        locale["vnpy.trader.locale<br/>(国际化)"]
+    end
+
+    subgraph 核心数据层["核心数据层"]
+        object["vnpy.trader.object<br/>(数据对象)"]
+        event_def["vnpy.trader.event<br/>(事件类型)"]
+        setting["vnpy.trader.setting<br/>(全局配置)"]
+        utility["vnpy.trader.utility<br/>(工具函数)"]
+        logger["vnpy.trader.logger<br/>(日志，loguru)"]
+    end
+
+    subgraph 引擎层["引擎层"]
+        engine["vnpy.trader.engine<br/>(MainEngine/OmsEngine)"]
+        gateway["vnpy.trader.gateway<br/>(BaseGateway)"]
+        converter["vnpy.trader.converter<br/>(OffsetConverter)"]
+        app["vnpy.trader.app<br/>(BaseApp)"]
+        datafeed["vnpy.trader.datafeed<br/>(数据服务)"]
+        database["vnpy.trader.database<br/>(数据库)"]
+        optimize["vnpy.trader.optimize<br/>(参数优化，DEAP)"]
+    end
+
+    subgraph 服务层["服务层"]
+        rpc["vnpy.rpc<br/>(ZMQ RPC)"]
+        chart["vnpy.chart<br/>(K线图表)"]
+        ui["vnpy.trader.ui<br/>(Qt 界面)"]
+    end
+
+    subgraph 研究层["研究层"]
+        alpha_lab["vnpy.alpha.lab<br/>(研究实验室)"]
+        alpha_dataset["vnpy.alpha.dataset<br/>(数据集模板)"]
+        alpha_model["vnpy.alpha.model<br/>(ML模型)"]
+        alpha_strategy["vnpy.alpha.strategy<br/>(策略&amp;回测)"]
+    end
+
+    event -->|无依赖| event
+    constant -->|无依赖| constant
+    object --> constant
+    event_def --> event
+    setting --> utility
+    utility --> object
+    utility --> constant
+    logger --> setting
+    logger --> utility
+    engine --> event
+    engine --> event_def
+    engine --> object
+    engine --> gateway
+    engine --> app
+    engine --> converter
+    engine --> setting
+    engine --> utility
+    engine --> logger
+    gateway --> event
+    gateway --> event_def
+    gateway --> object
+    datafeed --> object
+    datafeed --> setting
+    database --> object
+    database --> constant
+    database --> setting
+    database --> utility
+    converter --> object
+    converter --> constant
+    optimize -->|DEAP| optimize
+    rpc -->|ZMQ| rpc
+    ui --> engine
+    ui --> object
+    alpha_lab --> object
+    alpha_lab --> constant
+    alpha_lab --> utility
+    alpha_dataset -->|Polars, Alphalens| alpha_dataset
+    alpha_model --> alpha_dataset
+    alpha_strategy --> object
+    alpha_strategy --> constant
+    engine -.->|使用| datafeed
+    engine -.->|使用| database
+    engine -.->|使用| optimize
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════ ALPHA ═══════════════════════════════════════════ -->
+<hr>
+<section id="alpha">
+  <h2><span class="icon">🔬</span> Alpha 研究平台详解</h2>
+  <p class="desc">从数据到策略的完整研究流水线</p>
+  <div class="mermaid-wrap">
+    <div class="mermaid">
+flowchart TB
+    subgraph 数据准备["📥 数据准备"]
+        BAR["BarData 行情数据"] --> LAB["AlphaLab"]
+        LAB -->|"save_bar_data()"| PARQUET[("Parquet 文件<br/>daily/ + minute/")]
+        LAB -->|"save_component_data()"| SHELVE[("Shelve DB<br/>指数成分股")]
+        LAB -->|"load_bar_df()"| PDF["Polars DataFrame<br/>+ 价格归一化<br/>+ 停牌处理"]
+    end
+
+    subgraph 因子工程["🧪 因子工程"]
+        PDF --> DS["AlphaDataset"]
+        DS -->|"add_feature()"| FEAT["特征表达式<br/>截面/时序/技术分析/数学"]
+        DS -->|"set_label()"| LABEL["标签表达式<br/>(未来收益率)"]
+        DS -->|"prepare_data()"| PARALLEL["多进程并行计算"]
+        DS -->|"add_processor()"| PROC["预处理器链<br/>去NaN/标准化/中性化"]
+    end
+
+    subgraph 模型训练["🤖 模型训练"]
+        DS -->|"fetch_learn(SEGMENT)"| TRAIN["训练数据"]
+        DS -->|"fetch_valid(SEGMENT)"| VALID["验证数据"]
+        TRAIN --> FIT["model.fit(dataset)"]
+        VALID --> PRED["model.predict(dataset, segment)"]
+        FIT --> LGB["LightGBM"]
+        FIT --> MLP["MLP 神经网络"]
+        FIT --> LASSO["Lasso 回归"]
+    end
+
+    subgraph 策略回测["📊 策略回测"]
+        PRED --> SIGNAL["预测信号 → DataFrame"]
+        SIGNAL --> BE["BacktestingEngine"]
+        BE -->|"daily 回测循环"| STRAT["AlphaStrategy.on_bars()"]
+        STRAT -->|"set_target()"| TGT["目标仓位"]
+        TGT -->|"execute_trading()"| ORDERS["订单生成<br/>buy/sell/short/cover"]
+        ORDERS --> SIM["模拟成交<br/>滑点+手续费"]
+        SIM --> STATS["回测统计<br/>收益率/夏普/回撤"]
+    end
+
+    subgraph 因子评估["📈 因子评估"]
+        DS -->|"show_feature_performance()"| ALPHALENS["Alphalens 分析<br/>IC/分层收益/换手率"]
+        SIGNAL -->|"show_signal_performance()"| ALPHALENS
+    end
+
+    style 数据准备 fill:#1a2e1a,stroke:#7ee787
+    style 因子工程 fill:#1a1a2e,stroke:#58a6ff
+    style 模型训练 fill:#2e1a1a,stroke:#ff7b72
+    style 策略回测 fill:#1a2e2e,stroke:#a5d6ff
+    style 因子评估 fill:#2e1a2e,stroke:#d2a8ff
+    </div>
+  </div>
+
+  <h3 style="margin-top:36px;margin-bottom:16px">内建因子集</h3>
+  <table class="class-table">
+    <thead>
+      <tr><th>数据集</th><th>因子数量</th><th>说明</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="class-name">Alpha101</td><td>101</td><td>WorldQuant 经典 101 个 Alpha 因子</td></tr>
+      <tr><td class="class-name">Alpha158</td><td>158</td><td>扩展因子集，包含更多价量特征</td></tr>
+    </tbody>
+  </table>
+
+  <h3 style="margin-top:36px;margin-bottom:16px">数据集函数分类</h3>
+  <table class="class-table">
+    <thead>
+      <tr><th>类别</th><th>文件</th><th>函数类型</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><b>截面函数</b></td><td class="class-name">cs_function.py</td><td>rank, scale, demean, zscore, quantile...</td></tr>
+      <tr><td><b>时序函数</b></td><td class="class-name">ts_function.py</td><td>delay, delta, ts_sum, ts_mean, ts_std, ts_rank, ts_corr...</td></tr>
+      <tr><td><b>技术分析</b></td><td class="class-name">ta_function.py</td><td>sma, ema, macd, rsi, boll, keltner, donchian...</td></tr>
+      <tr><td><b>数学函数</b></td><td class="class-name">math_function.py</td><td>abs, log, sign, rank, max, min, +, -, *, /...</td></tr>
+      <tr><td><b>数据处理器</b></td><td class="class-name">processor.py</td><td>drop_na, fill_na, cs_norm, cs_rank, ts_norm, robust_zscore...</td></tr>
+    </tbody>
+  </table>
+
+  <h3 style="margin-top:36px;margin-bottom:16px">内置 ML 模型</h3>
+  <table class="class-table">
+    <thead>
+      <tr><th>模型</th><th>文件</th><th>库</th><th>特点</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="class-name">LgbModel</td><td class="class-name">lgb_model.py</td><td>LightGBM</td><td>梯度提升树，高效处理表格数据</td></tr>
+      <tr><td class="class-name">MlpModel</td><td class="class-name">mlp_model.py</td><td>PyTorch</td><td>多层感知机神经网络</td></tr>
+      <tr><td class="class-name">LassoModel</td><td class="class-name">lasso_model.py</td><td>scikit-learn</td><td>L1 正则化线性回归，自动特征选择</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ═══════════════════════════════════════════ FOOTER ═══════════════════════════════════════════ -->
+<footer>
+  <p>Generated from VeighNa v4.4.0 source code analysis · 2026-06-23</p>
+  <p style="margin-top:4px;font-size:12px">
+    核心依赖: loguru · polars · numpy · pandas · talib · zmq · deap · alphalens · lightgbm · pytorch · scikit-learn · PyQt5/PySide6
+  </p>
+</footer>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'dark',
+    themeVariables: {
+      primaryColor: '#1a2332',
+      primaryTextColor: '#e6edf3',
+      primaryBorderColor: '#30363d',
+      lineColor: '#58a6ff',
+      secondaryColor: '#161b22',
+      tertiaryColor: '#0d1117',
+    },
+    flowchart: {
+      useMaxWidth: true,
+      htmlLabels: true,
+      curve: 'basis',
+    },
+    classDiagram: {
+      useMaxWidth: true,
+    }
+  });
+
+  // Scrollspy
+  const sections = document.querySelectorAll('section[id]');
+  const navLinks = document.querySelectorAll('nav a');
+  window.addEventListener('scroll', () => {
+    let current = '';
+    sections.forEach(s => {
+      if (window.scrollY >= s.offsetTop - 80) current = s.getAttribute('id');
+    });
+    navLinks.forEach(a => {
+      a.classList.toggle('active', a.getAttribute('href') === '#' + current);
+    });
+  });
+</script>
+
+</body>
+</html>

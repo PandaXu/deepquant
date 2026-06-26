@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>vnpy_ctp 代码逻辑分析</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --border: #30363d;
+    --text: #e6edf3; --text2: #8b949e;
+    --blue: #58a6ff; --green: #7ee787; --orange: #f0883e;
+    --purple: #d2a8ff; --red: #ff7b72;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.7;
+  }
+  nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
+    background: rgba(22,27,34,0.95); backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    display: flex; padding: 0 24px; overflow-x: auto;
+  }
+  nav a {
+    color: var(--text2); text-decoration: none; padding: 14px 20px;
+    font-size: 14px; font-weight: 500; white-space: nowrap;
+    border-bottom: 2px solid transparent; transition: all 0.2s;
+  }
+  nav a:hover, nav a.active { color: var(--blue); border-bottom-color: var(--blue); }
+
+  .hero {
+    margin-top: 53px; padding: 64px 24px 48px; text-align: center;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    border-bottom: 1px solid var(--border);
+  }
+  .hero h1 { font-size: 42px; font-weight: 800; letter-spacing: -1px; }
+  .hero h1 span { background: linear-gradient(135deg, var(--blue), var(--green)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .hero .sub { color: var(--text2); margin-top: 8px; font-size: 15px; }
+
+  .stats { display: flex; justify-content: center; gap: 36px; margin-top: 32px; flex-wrap: wrap; }
+  .stat { text-align: center; padding: 16px 28px; background: rgba(255,255,255,0.04); border: 1px solid var(--border); border-radius: 12px; min-width: 100px; }
+  .stat .num { font-size: 32px; font-weight: 800; color: var(--blue); }
+  .stat .label { font-size: 12px; color: var(--text2); margin-top: 4px; }
+
+  section { max-width: 1200px; margin: 0 auto; padding: 56px 24px; }
+  section h2 { font-size: 26px; font-weight: 700; margin-bottom: 8px; }
+  section .desc { color: var(--text2); margin-bottom: 28px; font-size: 15px; }
+  hr { border: none; border-top: 1px solid var(--border); }
+
+  .mermaid-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 28px 16px; overflow-x: auto; margin-bottom: 24px; }
+
+  .layers { display: flex; flex-direction: column; gap: 16px; }
+  .layer {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px;
+  }
+  .layer h3 { font-size: 17px; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .layer ul { list-style: none; font-size: 14px; }
+  .layer ul li { padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.03); }
+  .layer ul li:before { content: "▸ "; color: var(--green); }
+  .l1 { border-left: 3px solid var(--purple); }
+  .l2 { border-left: 3px solid var(--blue); }
+  .l3 { border-left: 3px solid var(--green); }
+  .l4 { border-left: 3px solid var(--orange); }
+
+  .callout {
+    background: rgba(88,166,255,0.08); border: 1px solid rgba(88,166,255,0.2);
+    border-radius: 10px; padding: 16px 20px; margin: 16px 0; font-size: 14px;
+  }
+  .callout.warn { background: rgba(255,123,114,0.08); border-color: rgba(255,123,114,0.25); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); }
+  th { background: var(--surface); color: var(--blue); font-weight: 600; font-size: 12px; text-transform: uppercase; }
+  tr:hover td { background: rgba(88,166,255,0.04); }
+
+  code { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 13px; background: rgba(255,255,255,0.06); padding: 2px 6px; border-radius: 4px; }
+  pre {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px; overflow-x: auto; font-size: 13px; line-height: 1.5;
+  }
+
+  footer { text-align: center; padding: 36px 24px; border-top: 1px solid var(--border); color: var(--text2); font-size: 13px; }
+
+  @media (max-width: 768px) {
+    .hero h1 { font-size: 28px; }
+    .stats { gap: 10px; }
+    .stat { padding: 10px 16px; min-width: 80px; }
+    .stat .num { font-size: 22px; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <a href="#overview">总览</a>
+  <a href="#arch">整体架构</a>
+  <a href="#cpp-layer">C++ 层</a>
+  <a href="#cpp-mapping">C++ ↔ Python 映射</a>
+  <a href="#python-gateway">Python Gateway</a>
+  <a href="#flow">核心流程</a>
+  <a href="#mapping">常量映射表</a>
+  <a href="#build">编译系统</a>
+</nav>
+
+<!-- ═══════════════ HERO ═══════════════ -->
+<header class="hero" id="overview">
+  <h1><span>vnpy_ctp</span> 代码逻辑分析</h1>
+  <p class="sub">CTP 期货交易接口 — 基于 pybind11 的 C++/Python 混合架构</p>
+  <div class="stats">
+    <div class="stat"><div class="num">3</div><div class="label">代码层</div></div>
+    <div class="stat"><div class="num">4</div><div class="label">核心类</div></div>
+    <div class="stat"><div class="num">11</div><div class="label">映射表</div></div>
+    <div class="stat"><div class="num">~1300</div><div class="label">CTP 常量</div></div>
+    <div class="stat"><div class="num">3</div><div class="label">平台原生库</div></div>
+  </div>
+</header>
+
+<!-- ═══════════════ 整体架构 ═══════════════ -->
+<hr>
+<section id="arch">
+  <h2>🏗️ 整体架构</h2>
+  <p class="desc">vnpy_ctp 采用三层结构：C++ SDK 原生库 → pybind11 绑定层 → Python Gateway 业务层</p>
+
+  <div class="mermaid-wrap">
+    <div class="mermaid">
+graph TB
+    subgraph Python层["🐍 Python 业务层"]
+        CG[CtpGateway<br/>BaseGateway 子类]
+        CMA[CtpMdApi<br/>行情接口]
+        CTA[CtpTdApi<br/>交易接口]
+        MAP["11 个映射字典<br/>CTP↔VeighNa 双向转换"]
+    end
+
+    subgraph Cpp绑定层["🔗 C++ pybind11 绑定层"]
+        MDAPI[MdApi 基类<br/>~200 个回调 + ~30 个主动函数]
+        TDAPI[TdApi 基类<br/>~300 个回调 + ~80 个主动函数]
+        TYPES["类型转换引擎<br/>dict ↔ C struct<br/>GBK 编码处理"]
+    end
+
+    subgraph 原生层["📦 CTP 原生 SDK"]
+        FRAMEWORK_MD["thostmduserapi_se.framework<br/>行情 API · universal binary"]
+        FRAMEWORK_TD["thosttraderapi_se.framework<br/>交易 API · universal binary"]
+    end
+
+    subgraph VeighNa["🖥️ VeighNa 平台"]
+        BG[BaseGateway 抽象]
+        EE[EventEngine]
+    end
+
+    CG -->|继承| BG
+    CG -->|持有| CMA
+    CG -->|持有| CTA
+    CMA -->|继承| MDAPI
+    CTA -->|继承| TDAPI
+    MDAPI -->|链接| FRAMEWORK_MD
+    TDAPI -->|链接| FRAMEWORK_TD
+    CG -->|推送事件| EE
+    </div>
+  </div>
+
+  <div class="layers">
+    <div class="layer l1">
+      <h3>📦 第 1 层：CTP 原生 SDK</h3>
+      <ul>
+        <li><b>平台：</b>Windows (<code>.dll</code>) / Linux (<code>.so</code>) / macOS (<code>.framework</code> unified binary x86_64+arm64)</li>
+        <li><b>行情 API：</b><code>thostmduserapi_se</code> — 创建连接、订阅行情、接收行情推送</li>
+        <li><b>交易 API：</b><code>thosttraderapi_se</code> — 登录认证、下单撤单、查询资金持仓、接收成交推送</li>
+        <li><b>通信协议：</b>TCP 长连接，CTP 自定义二进制协议</li>
+        <li>SDK 版本差异：macOS SDK 是较旧版本，缺少 <code>ReqQryUserSession</code>、<code>ReqOffsetSetting</code> 等新 API</li>
+      </ul>
+    </div>
+
+    <div class="layer l2">
+      <h3>🔗 第 2 层：C++ pybind11 绑定（<code>vnpy_ctp/api/vnctp/</code>）</h3>
+      <ul>
+        <li><b>vnctpmd.cpp/h — MdApi：</b>行情接口绑定，管理 TCP 连接、订阅/退订、接收行情推送</li>
+        <li><b>vnctptd.cpp/h — TdApi：</b>交易接口绑定，管理登录认证、下单/撤单、查询、接收成交/委托推送</li>
+        <li><b>vnctp.h：</b>公共工具 — <code>getString/getInt/getChar/getDouble</code> 等函数从 Python dict 提取字段并填充 C struct</li>
+        <li><b>Task 队列模型：</b>所有 CTP 回调在独立线程中触发，通过 Task 队列将数据安全传递到 Python 线程</li>
+        <li>每个 CTP API 函数/回调都被封装为 pybind11 方法，输入输出统一使用 <code>py::dict</code></li>
+      </ul>
+    </div>
+
+    <div class="layer l3">
+      <h3>🐍 第 3 层：Python Gateway（<code>ctp_gateway.py</code>）</h3>
+      <ul>
+        <li><b>CtpGateway：</b>继承 <code>BaseGateway</code>，持有 <code>CtpMdApi</code> + <code>CtpTdApi</code> 实例，实现 <code>connect/subscribe/send_order/cancel_order/close</code></li>
+        <li><b>CtpMdApi：</b>继承 C++ <code>MdApi</code>，重写 <code>onRtnDepthMarketData</code> 等回调，将 CTP 行情 dict 转换为 VeighNa <code>TickData</code> 并通过 <code>gateway.on_tick()</code> 推送</li>
+        <li><b>CtpTdApi：</b>继承 C++ <code>TdApi</code>，重写 <code>onRtnOrder/onRtnTrade/onRspQryInvestorPosition</code> 等回调，转换并推送 <code>OrderData/TradeData/PositionData/AccountData/ContractData</code></li>
+        <li><b>常量映射表：</b>11 个字典实现 CTP 字符常量 ↔ VeighNa Enum 双向转换</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ C++ 层详解 ═══════════════ -->
+<hr>
+<section id="cpp-layer">
+  <h2>⚙️ C++ 绑定层详解</h2>
+  <p class="desc">核心设计思想：用 pybind11 将 CTP C++ SDK 封装为 Python 可调用的类，所有数据交换统一使用 py::dict</p>
+
+  <h3 style="margin-top:24px">2.1 Task 队列线程模型</h3>
+  <div class="mermaid-wrap">
+    <div class="mermaid">
+sequenceDiagram
+    participant CTP as CTP 服务器
+    participant SDK as C++ SDK<br/>(独立线程)
+    participant Task as Task 队列
+    participant GIL as Python GIL<br/>主线程
+    participant Py as Python 回调
+
+    CTP->>SDK: 行情/成交数据推送
+    SDK->>Task: new Task(data)<br/>加入队列
+    Note over Task: 线程安全队列
+    Task-->>GIL: py::gil_scoped_acquire
+    GIL->>Task: 取出 Task
+    Task->>Py: processTask(task)
+    Py->>Py: onRtnDepthMarketData(dict)
+    Py->>Py: gateway.on_tick(TickData)
+    </div>
+  </div>
+  <div class="callout">
+    <b>关键设计：</b>CTP SDK 回调在独立网络线程触发，不能直接调用 Python（无 GIL）。通过 <b>Task 队列</b> + <b>py::gil_scoped_acquire</b> 将数据安全传递到 Python 主线程。MdApi 和 TdApi 各有独立的 Task 队列和处理循环。
+  </div>
+
+  <h3 style="margin-top:32px">2.2 MdApi 主动函数（行情请求）</h3>
+  <table>
+    <tr><th>方法</th><th>对应 CTP 函数</th><th>说明</th></tr>
+    <tr><td><code>createFtdcMdApi(path, production)</code></td><td><code>CreateFtdcMdApi</code></td><td>创建行情 API 实例</td></tr>
+    <tr><td><code>registerFront(addr)</code></td><td><code>RegisterFront</code></td><td>注册行情服务器地址</td></tr>
+    <tr><td><code>init()</code></td><td><code>Init</code></td><td>初始化并建立连接</td></tr>
+    <tr><td><code>reqUserLogin(req, reqid)</code></td><td><code>ReqUserLogin</code></td><td>登录行情服务器</td></tr>
+    <tr><td><code>subscribeMarketData(symbol)</code></td><td><code>SubscribeMarketData</code></td><td>订阅单个合约行情</td></tr>
+    <tr><td><code>exit()</code></td><td><code>Release</code></td><td>释放资源</td></tr>
+  </table>
+
+  <h3 style="margin-top:24px">2.3 MdApi 回调函数（行情推送）— C++ 触发 → Python 重写</h3>
+  <table>
+    <tr><th>回调</th><th>触发时机</th></tr>
+    <tr><td><code>onFrontConnected()</code></td><td>TCP 连接建立成功</td></tr>
+    <tr><td><code>onFrontDisconnected(reason)</code></td><td>TCP 连接断开</td></tr>
+    <tr><td><code>onRspUserLogin(data, error)</code></td><td>登录请求返回</td></tr>
+    <tr><td><code>onRtnDepthMarketData(data)</code></td><td>⭐ 行情 Tick 数据实时推送（最核心）</td></tr>
+    <tr><td><code>onRspSubMarketData(data, error)</code></td><td>订阅请求返回</td></tr>
+    <tr><td><code>onRspError(error)</code></td><td>接口报错</td></tr>
+  </table>
+
+  <h3 style="margin-top:32px">2.4 TdApi 主动函数（交易请求）</h3>
+  <table>
+    <tr><th>方法</th><th>说明</th></tr>
+    <tr><td><code>createFtdcTraderApi(path, production)</code></td><td>创建交易 API 实例</td></tr>
+    <tr><td><code>subscribePrivateTopic / subscribePublicTopic</code></td><td>订阅私有/公共流（接收成交/委托推送）</td></tr>
+    <tr><td><code>registerFront / init</code></td><td>注册地址并初始化</td></tr>
+    <tr><td><code>reqAuthenticate(req, reqid)</code></td><td>⭐ 产品授权认证（实盘必需，需 AppID + AuthCode）</td></tr>
+    <tr><td><code>reqUserLogin(req, reqid)</code></td><td>⭐ 交易登录</td></tr>
+    <tr><td><code>reqSettlementInfoConfirm(req, reqid)</code></td><td>确认结算单（首次登录必需）</td></tr>
+    <tr><td><code>reqOrderInsert(req, reqid)</code></td><td>⭐ 委托下单</td></tr>
+    <tr><td><code>reqOrderAction(req, reqid)</code></td><td>⭐ 委托撤单</td></tr>
+    <tr><td><code>reqQryInstrument(req, reqid)</code></td><td>查询合约信息</td></tr>
+    <tr><td><code>reqQryTradingAccount(req, reqid)</code></td><td>查询资金账户</td></tr>
+    <tr><td><code>reqQryInvestorPosition(req, reqid)</code></td><td>查询持仓</td></tr>
+  </table>
+
+  <h3 style="margin-top:24px">2.5 TdApi 回调函数 — C++ 触发 → Python 重写</h3>
+  <table>
+    <tr><th>回调</th><th>触发时机</th></tr>
+    <tr><td><code>onFrontConnected / onFrontDisconnected</code></td><td>连接状态变化</td></tr>
+    <tr><td><code>onRspAuthenticate(data, error)</code></td><td>授权验证返回</td></tr>
+    <tr><td><code>onRspUserLogin(data, error)</code></td><td>登录返回（获取 FrontID + SessionID）</td></tr>
+    <tr><td><code>onRspOrderInsert(data, error)</code></td><td>下单被拒回报</td></tr>
+    <tr><td><code>onRtnOrder(data)</code></td><td>⭐ 委托状态实时推送（提交/部分成交/全部成交/撤单）</td></tr>
+    <tr><td><code>onRtnTrade(data)</code></td><td>⭐ 成交数据实时推送</td></tr>
+    <tr><td><code>onRspQryInstrument(data, error, last)</code></td><td>合约查询回报（分多次返回，last 标记结束）</td></tr>
+    <tr><td><code>onRspQryTradingAccount(data, error, last)</code></td><td>资金查询回报</td></tr>
+    <tr><td><code>onRspQryInvestorPosition(data, error, last)</code></td><td>持仓查询回报（分品种多次返回）</td></tr>
+    <tr><td><code>onRspSettlementInfoConfirm</code></td><td>结算确认回报</td></tr>
+  </table>
+</section>
+
+<!-- ═══════════════ C++ ↔ Python 映射 ═══════════════ -->
+<hr>
+<section id="cpp-mapping">
+  <h2>🔄 C++ ↔ Python 数据映射机制</h2>
+  <p class="desc">数据在两个语言之间如何安全、高效地传递</p>
+
+  <div class="mermaid-wrap">
+    <div class="mermaid">
+flowchart LR
+    subgraph Cpp["C++ 端"]
+        CS["CThostFtdcDepthMarketDataField<br/>(120+ 字段的结构体)"]
+        CF["getString/getInt/getChar/getDouble<br/>字段提取工具函数"]
+        CD["py::dict<br/>(Python 字典)"]
+    end
+
+    subgraph Bridge["pybind11 桥接"]
+        PYB["py::class_&lt;MdApi&gt;<br/>.def('onRtnDepthMarketData', ...)"]
+    end
+
+    subgraph Py["Python 端"]
+        PD["回调接收 py::dict"]
+        MAP["常量映射字典<br/>STATUS_CTP2VT / DIRECTION_CTP2VT ..."]
+        OBJ["构造 VeighNa 数据对象<br/>TickData / OrderData / TradeData"]
+    end
+
+    CS -->|"逐个字段提取"| CF
+    CF -->|"组装"| CD
+    CD -->|"pybind11 自动转换"| PD
+    PD -->|"查找映射"| MAP
+    MAP -->|"构造"| OBJ
+    </div>
+  </div>
+
+  <h3 style="margin-top:28px">vnctp.h 公共工具</h3>
+  <pre>// 从 Python dict 安全提取字段并填充 C struct 的辅助函数
+void getString(const py::dict &amp;req, const char *key, char *field, int size);
+void getInt(const py::dict &amp;req, const char *key, int *field);
+void getChar(const py::dict &amp;req, const char *key, char *field);
+void getDouble(const py::dict &amp;req, const char *key, double *field);
+
+// 创建 C struct 时调用 memset 清零，避免脏数据
+// 零值字段自动跳过，不写入返回 dict（节省带宽）</pre>
+
+  <div class="callout">
+    <b>设计要点：</b>
+    ① 双向都用 <code>py::dict</code> 作为通用数据载体，避免为每个 CTP 结构体写独立 pybind11 绑定<br>
+    ② 零值字段跳过：CTP 结构体字段极多（某些超过 120 个），但实际使用很少，返回 dict 中只包含非零字段以减少序列化开销<br>
+    ③ GBK 编码：CTP 使用 GBK 编码中文字段，绑定层自动在 GBK ↔ UTF-8 间转换
+  </div>
+</section>
+
+<!-- ═══════════════ Python Gateway 详解 ═══════════════ -->
+<hr>
+<section id="python-gateway">
+  <h2>🐍 Python Gateway 层详解</h2>
+  <p class="desc"><code>ctp_gateway.py</code> 是整个模块的核心业务逻辑（905 行）</p>
+
+  <h3>3.1 CtpGateway — 连接与生命周期</h3>
+  <div class="mermaid-wrap">
+    <div class="mermaid">
+stateDiagram-v2
+    [*] --> CtpGateway构造: __init__
+    CtpGateway构造 --> 已就绪: 创建 CtpMdApi + CtpTdApi
+    已就绪 --> 连接中: connect(setting)
+    连接中 --> Md连接: md_api.connect()<br/>createFtdcMdApi → registerFront → init
+    连接中 --> Td连接: td_api.connect()<br/>createFtdcTraderApi → registerFront → init
+    Md连接 --> Md登录: onFrontConnected → login
+    Td连接 --> Td认证: onFrontConnected → authenticate
+    Td认证 --> Td登录: onRspAuthenticate → login
+    Md登录 --> 行情就绪: onRspUserLogin 成功
+    Td登录 --> 结算确认: onRspUserLogin → reqSettlementInfoConfirm
+    结算确认 --> 查询合约: onRspSettlementInfoConfirm → reqQryInstrument
+    查询合约 --> 完全就绪: onRspQryInstrument(last=true)
+    完全就绪 --> 轮询中: EVENT_TIMER 定时查询资金+持仓
+    轮询中 --> 已关闭: close()
+    </div>
+  </div>
+
+  <h3 style="margin-top:28px">3.2 CtpMdApi — 行情处理</h3>
+  <div class="callout">
+    <b>核心回调：onRtnDepthMarketData(data: dict)</b><br><br>
+    <b>处理流程：</b><br>
+    ① 过滤无时间戳的异常数据 → ② 从 <code>symbol_contract_map</code> 获取合约信息（未就绪则丢弃）<br>
+    ③ 处理大商所(DCE)特殊逻辑：忽略 ActionDay，用本地日期<br>
+    ④ 拼接时间戳 → ⑤ 构造 <code>TickData</code>（含 5 档盘口）→ ⑥ <code>gateway.on_tick(tick)</code> 推入事件引擎
+  </div>
+
+  <h3 style="margin-top:20px">3.3 CtpTdApi — 交易处理</h3>
+  <div class="callout">
+    <b>委托下单 send_order(req: OrderRequest) → str (vt_orderid)</b><br><br>
+    <b>处理流程：</b><br>
+    ① 校验开平方向/委托类型是否支持 → ② <code>order_ref</code> 自增作为本地委托编号<br>
+    ③ 查映射表将 VeighNa 常量转为 CTP 字符常量<br>
+    ④ 构造 CTP 下单请求 dict（含 18 个字段）→ ⑤ <code>reqOrderInsert(ctp_req, reqid)</code><br>
+    ⑥ 立即创建 <code>OrderData(SUBMITTING)</code> 通过 <code>on_order()</code> 推送（本地预确认）<br>
+    ⑦ <b>订单 ID 规则：</b><code>{FrontID}_{SessionID}_{OrderRef}</code>，全局唯一
+  </div>
+
+  <div class="callout">
+    <b>委托推送 onRtnOrder(data: dict)</b><br><br>
+    ① 合约信息未就绪 → 缓存到 <code>self.order_data</code> 列表，等合约就绪后重放<br>
+    ② 从 CTP 状态码映射 VeighNa Status → ③ 处理特殊拒单（提交被拒 → REJECTED）<br>
+    ④ 解析时间戳/委托类型 → ⑤ 构造 <code>OrderData</code> → ⑥ <code>gateway.on_order(order)</code>
+  </div>
+
+  <div class="callout">
+    <b>持仓查询 onRspQryInvestorPosition</b> — 最复杂的回调<br><br>
+    ① CTP 分品种多次回调，每个品种一个 <code>PositionData</code><br>
+    ② 上期所 SHFE/INE 特殊处理：直接用 YdPosition 作为昨仓<br>
+    ③ 其他交易所：昨仓 = 总持仓 - 今仓<br>
+    ④ 累加多笔查询结果（同一品种可能多次返回）<br>
+    ⑤ 加权平均计算持仓成本：<code>cost += PositionCost; price = cost / (volume * size)</code><br>
+    ⑥ <code>last=true</code> 时统一推送所有持仓并清空缓存
+  </div>
+</section>
+
+<!-- ═══════════════ 核心流程 ═══════════════ -->
+<hr>
+<section id="flow">
+  <h2>🔄 核心业务流程</h2>
+
+  <h3>4.1 完整连接与登录时序</h3>
+  <div class="mermaid-wrap">
+    <div class="mermaid">
+sequenceDiagram
+    participant User as 用户/GUI
+    participant GW as CtpGateway
+    participant MD as CtpMdApi
+    participant TD as CtpTdApi
+    participant CTP as CTP 服务器
+
+    User->>GW: connect(setting)
+    GW->>MD: connect(md_address, userid, pwd, brokerid)
+    GW->>TD: connect(td_address, userid, pwd, brokerid, auth_code, appid)
+    GW->>GW: init_query() 注册定时任务
+
+    MD->>MD: createFtdcMdApi(path)
+    MD->>MD: registerFront(md_addr)
+    MD->>MD: init() → TCP 连接 CTP
+
+    TD->>TD: createFtdcTraderApi(path)
+    TD->>TD: subscribePrivateTopic(0)
+    TD->>TD: subscribePublicTopic(0)
+    TD->>TD: registerFront(td_addr)
+    TD->>TD: init() → TCP 连接 CTP
+
+    CTP-->>MD: onFrontConnected()
+    MD->>MD: login() → reqUserLogin
+
+    CTP-->>TD: onFrontConnected()
+    TD->>TD: authenticate() → reqAuthenticate
+    CTP-->>TD: onRspAuthenticate(成功)
+    TD->>TD: login() → reqUserLogin
+
+    CTP-->>MD: onRspUserLogin(成功)
+    Note over MD: 行情就绪，重订阅已缓存的 symbol
+
+    CTP-->>TD: onRspUserLogin(成功)
+    TD->>TD: 保存 FrontID + SessionID
+    TD->>TD: reqSettlementInfoConfirm
+
+    CTP-->>TD: onRspSettlementInfoConfirm
+    TD->>TD: reqQryInstrument (轮询直到成功)
+
+    CTP-->>TD: onRspQryInstrument (多批次)
+    Note over TD: 逐条构造 ContractData<br/>存入 symbol_contract_map
+
+    CTP-->>TD: onRspQryInstrument(last=true)
+    Note over GW: 合约就绪，重放缓存的 order/trade
+    GW->>GW: EVENT_TIMER: 定时查询资金+持仓
+    </div>
+  </div>
+
+  <h3 style="margin-top:36px">4.2 下单 → 成交完整链路</h3>
+  <div class="mermaid-wrap">
+    <div class="mermaid">
+sequenceDiagram
+    participant ST as Strategy
+    participant GW as CtpGateway
+    participant TD as CtpTdApi
+    participant CTP as CTP 服务器
+
+    ST->>GW: send_order(OrderRequest)
+    GW->>TD: send_order(req)
+    TD->>TD: order_ref++, 构造 CTP 请求 dict
+    TD->>TD: reqOrderInsert(ctp_req, reqid)
+    TD-->>ST: 返回 vt_orderid (本地预确认)
+    Note over TD: on_order(SUBMITTING)
+
+    TD->>CTP: TCP 发送下单请求
+    CTP-->>TD: onRtnOrder (Accepted)
+    Note over TD: on_order(NOTTRADED)
+
+    CTP-->>TD: onRtnTrade (成交 1)
+    Note over TD: on_trade(TradeData)
+    CTP-->>TD: onRtnOrder (PartTraded)
+    Note over TD: on_order(PARTTRADED)
+
+    CTP-->>TD: onRtnTrade (成交 2)
+    Note over TD: on_trade(TradeData)
+    CTP-->>TD: onRtnOrder (AllTraded)
+    Note over TD: on_order(ALLTRADED)
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ 常量映射表 ═══════════════ -->
+<hr>
+<section id="mapping">
+  <h2>🗺️ 常量映射体系</h2>
+  <p class="desc">CTP 使用单字符编码表示状态/方向/类型，VeighNa 使用 Python Enum。11 个双向映射字典桥接两者。</p>
+
+  <table>
+    <tr><th>映射表</th><th>方向</th><th>示例</th></tr>
+    <tr>
+      <td><code>STATUS_CTP2VT</code></td>
+      <td>CTP → VeighNa</td>
+      <td><code>'0' → Status.ALLTRADED</code> &nbsp; <code>'3' → Status.NOTTRADED</code> &nbsp; <code>'5' → Status.CANCELLED</code></td>
+    </tr>
+    <tr>
+      <td><code>DIRECTION_VT2CTP</code></td>
+      <td>VeighNa → CTP</td>
+      <td><code>Direction.LONG → '0' (买)</code> &nbsp; <code>Direction.SHORT → '1' (卖)</code></td>
+    </tr>
+    <tr>
+      <td><code>DIRECTION_CTP2VT</code></td>
+      <td>CTP → VeighNa</td>
+      <td><code>'0' → LONG</code> &nbsp; <code>'1' → SHORT</code> &nbsp; <code>'2' → LONG</code> &nbsp; <code>'3' → SHORT</code></td>
+    </tr>
+    <tr>
+      <td><code>ORDERTYPE_VT2CTP</code></td>
+      <td>VeighNa → CTP</td>
+      <td><code>LIMIT → ('2', '3', '1')</code> 限价+当日有效+任意数量 &nbsp; <code>FAK → ('2', '1', '1')</code> 限价+立即成交+任意数量</td>
+    </tr>
+    <tr>
+      <td><code>ORDERTYPE_CTP2VT</code></td>
+      <td>CTP → VeighNa</td>
+      <td>三元组 (PriceType, TimeCondition, VolumeCondition) → OrderType</td>
+    </tr>
+    <tr>
+      <td><code>OFFSET_VT2CTP</code></td>
+      <td>VeighNa → CTP</td>
+      <td><code>OPEN → '0'</code> &nbsp; <code>CLOSE → '1'</code> &nbsp; <code>CLOSETODAY → '3'</code> &nbsp; <code>CLOSEYESTERDAY → '4'</code></td>
+    </tr>
+    <tr>
+      <td><code>OFFSET_CTP2VT</code></td>
+      <td>CTP → VeighNa</td>
+      <td>反向映射</td>
+    </tr>
+    <tr>
+      <td><code>EXCHANGE_CTP2VT</code></td>
+      <td>CTP → VeighNa</td>
+      <td><code>"CFFEX" → Exchange.CFFEX</code> &nbsp; <code>"SHFE" → Exchange.SHFE</code> ... (6 家期货交易所)</td>
+    </tr>
+    <tr>
+      <td><code>PRODUCT_CTP2VT</code></td>
+      <td>CTP → VeighNa</td>
+      <td><code>'1' → FUTURES</code> &nbsp; <code>'2' → OPTION</code> &nbsp; <code>'3' → SPREAD</code></td>
+    </tr>
+    <tr>
+      <td><code>OPTIONTYPE_CTP2VT</code></td>
+      <td>CTP → VeighNa</td>
+      <td><code>'1' → CALL</code> &nbsp; <code>'2' → PUT</code></td>
+    </tr>
+    <tr>
+      <td><code>symbol_contract_map</code></td>
+      <td>全局缓存</td>
+      <td><code>{"rb2510" → ContractData, "IF2506" → ContractData, ...}</code> 行情/交易回调必查</td>
+    </tr>
+  </table>
+
+  <div class="callout warn" style="margin-top:20px">
+    <b>⚠️ 特殊处理：</b><br>
+    ① <b>大商所 DCE</b>：行情推送中 <code>ActionDay</code> 字段为空或异常，需用本地日期替代<br>
+    ② <b>上期所 SHFE/INE</b>：今仓/昨仓分离，<code>OffsetConverter</code> 需处理平今/平昨逻辑<br>
+    ③ <b>郑商所 CZCE</b>：期权产品名称带 C/P 后缀，需截取处理<br>
+    ④ <b>浮点数极值</b>：CTP 用 <code>sys.float_info.max</code> 表示无效价格，<code>adjust_price()</code> 将其归零
+  </div>
+</section>
+
+<!-- ═══════════════ 编译系统 ═══════════════ -->
+<hr>
+<section id="build">
+  <h2>🔧 编译系统</h2>
+  <p class="desc">基于 Meson + pybind11 的跨平台 C++ 编译</p>
+
+  <div class="mermaid-wrap">
+    <div class="mermaid">
+flowchart TB
+    subgraph Input["📥 输入"]
+        HEADER_MAC["macOS 头文件<br/>include/mac/ctp/*.h"]
+        HEADER_LIN["Linux 头文件<br/>include/ctp/*.h"]
+        CPP_SRC["C++ 绑定源码<br/>vnctpmd/vnctptd/*.cpp/*.h"]
+        FRAMEWORK["macOS Framework<br/>thost*api_se.framework"]
+        SO_LIN["Linux .so<br/>libthost*api_se.so"]
+        DLL_WIN["Windows .dll"]
+    end
+
+    subgraph Build["⚙️ meson.build"]
+        CONF["platform 检测<br/>windows / darwin / linux"]
+        INC_MAC["macOS: include/mac"]
+        INC_LIN["Linux: include/ctp"]
+        LINK_MAC["macOS: -framework thostmduserapi_se"]
+        LINK_LIN["Linux: -lthostmduserapi_se"]
+    end
+
+    subgraph Output["📤 输出"]
+        SO_MD["vnctpmd.cpython-312-darwin.so"]
+        SO_TD["vnctptd.cpython-312-darwin.so"]
+        FW_INSTALL["安装 .framework 到 site-packages"]
+    end
+
+    HEADER_MAC --> INC_MAC
+    HEADER_LIN --> INC_LIN
+    CPP_SRC --> CONF
+    FRAMEWORK --> LINK_MAC
+    SO_LIN --> LINK_LIN
+    CONF --> SO_MD
+    CONF --> SO_TD
+    SO_MD --> FW_INSTALL
+    SO_TD --> FW_INSTALL
+    </div>
+  </div>
+
+  <div class="callout" style="margin-top:20px">
+    <b>Apple Silicon 编译要点（我们在本次编译中做的修改）：</b><br>
+    ① <b>头文件混合：</b>macOS CTP SDK 版本较旧，缺少 <code>CThostFtdcInvestorInfoCommRecField</code> 等新结构体 → 用 Linux <code>ThostFtdcUserApiStruct.h</code> 替换<br>
+    ② <b>保留 macOS API 头文件：</b><code>ThostFtdcTraderApi.h</code>/<code>ThostFtdcMdApi.h</code> 中函数签名不同（如 <code>ReqUserLogin</code> 4 参数 vs 2 参数），必须用 macOS 版本<br>
+    ③ <b>11 个 API 调用补丁：</b>macOS SDK 不支持的 9 个函数 + 2 个构造函数参数差异，用 <code>#ifndef __APPLE__</code> 条件编译<br>
+    ④ <b>Framework 链接：</b>改为 <code>-framework thostmduserapi_se</code> 而非 <code>-lthostmduserapi_se</code>
+  </div>
+</section>
+
+<footer>
+  <p>vnpy_ctp v6.7.11.4 代码逻辑分析 · 2026-06-26</p>
+  <p style="margin-top:4px;font-size:12px">
+    技术栈: C++17 · pybind11 · Meson · CTP SDK · VeighNa BaseGateway
+  </p>
+</footer>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'dark',
+    themeVariables: {
+      primaryColor: '#1a2332', primaryTextColor: '#e6edf3', primaryBorderColor: '#30363d',
+      lineColor: '#58a6ff', secondaryColor: '#161b22', tertiaryColor: '#0d1117',
+    },
+    flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis' },
+  });
+
+  const sections = document.querySelectorAll('section[id]');
+  const navLinks = document.querySelectorAll('nav a');
+  window.addEventListener('scroll', () => {
+    let current = '';
+    sections.forEach(s => { if (window.scrollY >= s.offsetTop - 80) current = s.getAttribute('id'); });
+    navLinks.forEach(a => { a.classList.toggle('active', a.getAttribute('href') === '#' + current); });
+  });
+</script>
+</body>
+</html>
