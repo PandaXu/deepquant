@@ -26,5 +26,4 @@ target_link_options(veighna_wasm PRIVATE
 )
 set_target_properties(veighna_wasm PROPERTIES
     OUTPUT_NAME veighna
-    SUFFIX ".html"
 )

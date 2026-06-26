@@ -344,12 +344,10 @@ def qt6_wasm():
 #status{position:fixed;top:10px;left:10px;color:#0f0;font-family:monospace;font-size:12px;z-index:99;background:rgba(0,0,0,0.8);padding:8px}</style></head><body>
 <div id="status">Loading...</div>
 <div id="screen"></div>
-<script src="/wasm-dist/qtloader.js"></script>
-<script src="/wasm-dist/hello_qt.js"></script>
+<script src="/wasm-dist/veighna.js"></script>
 <script>
 var st = document.getElementById('status');
 var s = document.getElementById('screen');
-st.textContent = 'Calling entry...';
 var Module = {
     locateFile: function(path) { return '/wasm-dist/' + path; },
     canvas: (function() { var c=document.createElement('canvas'); c.id='qt-canvas'; c.width=800; c.height=600; c.style.cssText='display:block;width:100vw;height:100vh;'; s.appendChild(c); return c; })(),
@@ -357,11 +355,9 @@ var Module = {
     onRuntimeInitialized: function() { st.textContent = 'Qt Init!'; },
     print: function(t) { console.log('[Qt]',t); },
     printErr: function(t) { console.error('[Qt]',t); },
-    preRun: [],
-    postRun: []
 };
-window.hello_qt_entry(Module).then(function() {
-    st.textContent = 'App started';
+window.veighna_wasm_entry(Module).then(function() {
+    st.textContent = 'VeighNa GUI Started!';
 }).catch(function(e) {
     st.textContent = 'Error: ' + (e.message || e);
 });
