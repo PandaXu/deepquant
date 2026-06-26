@@ -1,24 +1,18 @@
 #include <QApplication>
 #include <QMainWindow>
-#include <QLabel>
-#include <QVBoxLayout>
+#include <QPushButton>
 
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
 
-    QMainWindow win;
-    win.setWindowTitle("VeighNa Qt6 WASM");
-    win.resize(800, 600);
+    QMainWindow* win = new QMainWindow();
+    win->setWindowTitle("VeighNa Qt6");
 
-    QLabel* label = new QLabel(
-        "<h1 style='color:#58a6ff'>Hello Qt6 WASM!</h1>"
-        "<p style='color:#d4d4d4'>C++ Widgets running in WebAssembly</p>"
-    );
-    label->setAlignment(Qt::AlignCenter);
-    win.setCentralWidget(label);
-
-    win.setStyleSheet("background-color: #1e1e1e;");
-    win.show();
+    QPushButton* btn = new QPushButton("CLICK ME");
+    btn->setStyleSheet("QPushButton { background:#007acc; color:white; font-size:32px; padding:30px; border:none; border-radius:8px; }");
+    win->setCentralWidget(btn);
+    win->setStyleSheet("QMainWindow { background:#333; }");
+    win->show();
 
     return app.exec();
 }

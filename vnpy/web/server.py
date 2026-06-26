@@ -352,23 +352,18 @@ var Module = {
     canvas: (function() {
         var c = document.createElement('canvas');
         c.id = 'qt-canvas';
-        c.width = window.innerWidth * window.devicePixelRatio;
-        c.height = window.innerHeight * window.devicePixelRatio;
-        c.style.cssText = 'display:block;width:100vw;height:100vh;';
+        c.width = 800;
+        c.height = 600;
+        c.style.cssText = 'display:block;width:100vw;height:100vh;image-rendering:auto;';
         document.getElementById('screen').appendChild(c);
         return c;
     })(),
     setStatus: function(t) { st.textContent = t; },
-    preRun: [function() {
-        // Set canvas size before Qt initializes
-        var c = Module.canvas;
-        _emscripten_set_canvas_element_size('#qt-canvas', c.width, c.height);
-    }],
     print: function(t) { console.log('[Qt]',t); },
     printErr: function(t) { console.error('[Qt]',t); }
 };
 window.hello_qt_entry(Module).then(function() {
-    st.textContent = 'App started!';
+    st.textContent = 'Qt Started: canvas=' + Module.canvas.width + 'x' + Module.canvas.height;
 }).catch(function(e) {
     st.textContent = 'Error: ' + (e.message || e);
     console.error(e);
