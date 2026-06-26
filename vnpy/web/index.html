@@ -3,449 +3,707 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>VeighNa Web Trader</title>
+<title>VeighNa Trader 社区版 — Web</title>
 <style>
+/* ====== Colors: exact Qt mapping ====== */
 :root {
-  --bg: #0d1117; --surface: #161b22; --border: #30363d;
-  --text: #e6edf3; --text2: #8b949e;
-  --blue: #58a6ff; --green: #3fb950; --red: #f85149;
-  --orange: #d2991d; --purple: #a371f7;
-  --accent: #1f6feb;
+  --bg: #1e1e1e; --bg2: #2d2d2d; --bg3: #252526;
+  --text: #d4d4d4; --text-dim: #808080;
+  --bid: #ffaec9; --ask: #a0ffa0;
+  --long: #ff4444; --short: #00aa00;
+  --header-bg: #333; --border: #3c3c3c;
+  --blue: #569cd6; --gold: #d7ba7d;
+  --surface: #2d2d30; --hover: rgba(255,255,255,0.04);
+  --accent: #007acc;
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', sans-serif;
-  background: var(--bg); color: var(--text); height: 100vh; overflow: hidden;
+  font-family: 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif;
+  font-size: 12px;
+  background: var(--bg); color: var(--text);
+  height: 100vh; overflow: hidden; display: flex; flex-direction: column;
 }
 
-/* Header */
-header {
-  height: 48px; background: var(--surface); border-bottom: 1px solid var(--border);
-  display: flex; align-items: center; padding: 0 16px; gap: 12px;
+/* ====== Header / TitleBar ====== */
+#titlebar {
+  height: 32px; background: var(--bg3); border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; padding: 0 12px; gap: 8px;
+  -webkit-app-region: drag; user-select: none;
 }
-header h1 { font-size: 16px; font-weight: 700; }
-header h1 span { color: var(--blue); }
-header .status { font-size: 11px; padding: 2px 10px; border-radius: 999px; }
-header .status.online { background: rgba(63,185,80,0.15); color: var(--green); }
-header .status.offline { background: rgba(248,81,73,0.15); color: var(--red); }
-header .gateway { font-size: 11px; padding: 2px 10px; border-radius: 999px; background: rgba(88,166,255,0.12); color: var(--blue); }
+#titlebar .title { font-weight: 600; font-size: 13px; }
+#titlebar .ws-dot { width: 9px; height: 9px; border-radius: 50%; }
+#titlebar .ws-dot.on { background: #4ec94e; }
+#titlebar .ws-dot.off { background: #666; }
+#titlebar .clock { margin-left: auto; color: var(--text-dim); font-size: 11px; }
 
-/* Main layout */
-main { display: flex; height: calc(100vh - 48px); }
-
-/* Sidebar */
-aside {
-  width: 240px; background: var(--surface); border-right: 1px solid var(--border);
-  display: flex; flex-direction: column; overflow-y: auto;
+/* ====== Menu Bar ====== */
+#menubar {
+  height: 26px; background: var(--bg3); border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; padding: 0 4px; gap: 0;
 }
-aside .section { padding: 12px 16px; border-bottom: 1px solid var(--border); }
-aside .section h3 { font-size: 11px; text-transform: uppercase; color: var(--text2); margin-bottom: 8px; letter-spacing: 1px; }
-aside .gateway-item { font-size: 13px; padding: 6px 8px; cursor: pointer; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; }
-aside .gateway-item:hover { background: rgba(255,255,255,0.04); }
-aside .gateway-item .dot { width: 8px; height: 8px; border-radius: 50%; }
-aside .gateway-item .dot.on { background: var(--green); }
-aside .gateway-item .dot.off { background: var(--border); }
-
-/* Order form */
-.order-form { display: flex; flex-direction: column; gap: 8px; }
-.order-form input, .order-form select, .order-form button {
-  padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border);
-  background: var(--bg); color: var(--text); font-size: 13px;
+#menubar .menu-btn {
+  padding: 2px 12px; background: none; border: none; color: var(--text);
+  font-size: 12px; cursor: pointer; border-radius: 4px;
 }
-.order-form button {
-  cursor: pointer; font-weight: 600; border: none;
+#menubar .menu-btn:hover { background: var(--hover); }
+
+/* ====== Main Dock Layout ====== */
+#main {
+  flex: 1; display: grid;
+  grid-template-columns: 280px 1fr 1fr;
+  grid-template-rows: 1fr 1fr 220px;
+  gap: 1px; background: var(--border); overflow: hidden;
 }
-.order-form .btn-buy { background: var(--red); }
-.order-form .btn-sell { background: var(--green); color: #000; }
-.order-form .btn-cancel { background: var(--border); }
-.row { display: flex; gap: 6px; }
-.row > * { flex: 1; }
 
-/* Content area */
-.content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-
-/* Tabs */
-.tabs { display: flex; border-bottom: 1px solid var(--border); background: var(--surface); }
-.tabs button {
-  padding: 10px 20px; background: none; border: none; color: var(--text2);
-  font-size: 13px; cursor: pointer; border-bottom: 2px solid transparent;
+.dock-panel {
+  background: var(--bg2); overflow: hidden; display: flex; flex-direction: column;
 }
-.tabs button:hover { color: var(--text); }
-.tabs button.active { color: var(--blue); border-bottom-color: var(--blue); }
+.dock-panel .panel-title {
+  padding: 3px 8px; font-size: 11px; font-weight: 600; color: var(--text-dim);
+  text-transform: uppercase; letter-spacing: 1px;
+  background: var(--bg3); border-bottom: 1px solid var(--border);
+  display: flex; justify-content: space-between; align-items: center;
+}
+.dock-panel .panel-content { flex: 1; overflow: auto; }
 
-/* Panels */
-.panels { flex: 1; overflow-y: auto; padding: 12px; }
-.panel { display: none; }
-.panel.active { display: block; }
+/* Layout: exact Qt dock replication */
+#panel-trade { grid-column: 1; grid-row: 1 / 4; }       /* Left: TradingWidget */
+#panel-tick  { grid-column: 2; grid-row: 1 / 3; }       /* Right top: TickMarket */
+#panel-active{ grid-column: 3; grid-row: 1 / 3; }       /* Right: ActiveOrders + Orders tab */
+#panel-tick-tab  { grid-column: 2; grid-row: 1 / 3; }
+#panel-order-tab { grid-column: 3; grid-row: 1 / 3; }
+#panel-trade-mon { grid-column: 2; grid-row: 3; }       /* Bottom left: TradeMonitor */
+#panel-log   { grid-column: 3; grid-row: 3; }           /* Bottom center: Log */
+#panel-account{ grid-column: 1; grid-row: 1 / 3; display:none; }  /* (we put trading widget left, rest right/bottom) */
 
-/* Tables */
-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+/* === Trading Widget === */
+.trading-form { padding: 6px; font-size: 12px; }
+.trading-form .row { display: flex; margin-bottom: 3px; align-items: center; }
+.trading-form .row label { width: 45px; color: var(--text-dim); font-size: 11px; flex-shrink: 0; }
+.trading-form input, .trading-form select, .trading-form button {
+  flex: 1; padding: 3px 6px; border: 1px solid var(--border);
+  background: var(--bg3); color: var(--text); font-size: 12px;
+  border-radius: 2px; outline: none;
+}
+.trading-form input:focus, .trading-form select:focus { border-color: var(--accent); }
+.trading-form button {
+  cursor: pointer; font-weight: 600; border: none; padding: 5px;
+}
+.btn-buy { background: #c42b1c !important; color: #fff !important; }
+.btn-sell { background: #0b6016 !important; color: #fff !important; }
+.btn-cancel { background: var(--bg3) !important; border: 1px solid var(--border) !important; }
+.trading-form .price-check { width: auto; flex: 0; margin-left: 4px; }
+
+/* Market depth (5-level) */
+.depth-panel { padding: 6px; border-top: 1px solid var(--border); }
+.depth-row { display: flex; justify-content: space-between; padding: 1px 4px; font-family: 'Consolas', monospace; font-size: 12px; }
+.depth-row.bid { color: var(--bid); }
+.depth-row.ask { color: var(--ask); }
+.depth-row.mid { border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 3px 4px; margin: 2px 0; }
+
+/* === Tables (exact Qt column mapping) === */
+table { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: auto; }
+thead { position: sticky; top: 0; z-index: 2; }
 thead th {
-  position: sticky; top: 0; background: var(--surface); z-index: 1;
-  padding: 8px 10px; text-align: left; color: var(--text2); font-weight: 600;
-  font-size: 11px; text-transform: uppercase; border-bottom: 1px solid var(--border);
+  background: var(--header-bg); padding: 3px 6px; text-align: center;
+  font-weight: 600; font-size: 11px; color: var(--text); border-bottom: 1px solid var(--border);
+  white-space: nowrap; cursor: pointer; user-select: none;
 }
-tbody td { padding: 6px 10px; border-bottom: 1px solid rgba(255,255,255,0.03); font-variant-numeric: tabular-nums; }
-tbody tr:hover { background: rgba(88,166,255,0.04); }
-.bid { color: var(--red); }
-.ask { color: var(--green); }
-.long { color: var(--red); }
-.short { color: var(--green); }
-
-/* Log */
-#log-panel { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; }
-.log-entry { padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.02); }
-.log-entry .ts { color: var(--text2); margin-right: 8px; }
-
-/* Toast */
-.toast {
-  position: fixed; top: 60px; right: 20px; z-index: 9999;
-  padding: 10px 20px; border-radius: 8px; font-size: 13px;
-  animation: fadeIn 0.3s;
+thead th:hover { background: #444; }
+thead th .sort { font-size: 9px; margin-left: 2px; opacity: 0.5; }
+tbody td {
+  padding: 2px 6px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.03);
+  white-space: nowrap; font-variant-numeric: tabular-nums;
 }
-.toast.info { background: var(--accent); color: #fff; }
-.toast.error { background: var(--red); color: #fff; }
-@keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+tbody tr:nth-child(even) { background: rgba(255,255,255,0.01); }
+tbody tr:hover { background: rgba(0,122,204,0.1); }
+tbody tr.selected { background: rgba(0,122,204,0.2); }
+
+/* Color cells - exact Qt mapping */
+.c-bid { color: var(--bid) !important; }
+.c-ask { color: var(--ask) !important; }
+.c-long, .dir-LONG, .dir-多 { color: var(--long) !important; }
+.c-short, .dir-SHORT, .dir-空 { color: var(--short) !important; }
+.pnl-pos { color: var(--long) !important; }
+.pnl-neg { color: var(--short) !important; }
+
+/* === Log panel === */
+#log-content { font-family: 'Consolas', 'Courier New', monospace; font-size: 12px; padding: 4px; }
+.log-entry { padding: 1px 4px; border-bottom: 1px solid rgba(255,255,255,0.015); display: flex; gap: 8px; }
+.log-entry .ts { color: #569cd6; white-space: nowrap; }
+.log-entry .gw { color: var(--text-dim); white-space: nowrap; min-width: 60px; }
+
+/* === Tab bar === */
+.tab-bar { display: flex; background: var(--bg3); border-bottom: 1px solid var(--border); }
+.tab-bar button {
+  padding: 3px 12px; background: none; border: none; color: var(--text-dim);
+  font-size: 11px; cursor: pointer; border-bottom: 2px solid transparent;
+}
+.tab-bar button.active { color: var(--text); border-bottom-color: var(--accent); }
+.tab-content { flex: 1; overflow: auto; display: none; }
+.tab-content.active { display: block; }
+
+/* === Dialogs === */
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 999; justify-content: center; align-items: center; }
+.modal-overlay.show { display: flex; }
+.modal {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 6px;
+  padding: 16px; min-width: 360px; max-width: 500px;
+}
+.modal h2 { font-size: 15px; margin-bottom: 12px; color: var(--blue); }
+.modal .row { display: flex; margin-bottom: 6px; align-items: center; }
+.modal .row label { width: 90px; font-size: 11px; color: var(--text-dim); text-align: right; padding-right: 8px; }
+.modal input, .modal select { flex: 1; padding: 4px 8px; border: 1px solid var(--border); background: var(--bg3); color: var(--text); border-radius: 4px; font-size: 12px; }
+.modal .btn-row { margin-top: 12px; display: flex; gap: 8px; justify-content: flex-end; }
+.modal button { padding: 5px 16px; border-radius: 4px; cursor: pointer; font-size: 12px; }
 
 /* Scrollbar */
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: var(--bg); }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg2); }
+::-webkit-scrollbar-thumb { background: #555; border-radius: 3px; }
 </style>
 </head>
 <body>
 
-<header>
-  <h1>VeighNa <span>Web Trader</span></h1>
-  <span id="ws-status" class="status offline">● Disconnected</span>
-  <span id="gw-info" class="gateway"></span>
-  <span style="flex:1"></span>
-  <span style="font-size:11px;color:var(--text2)" id="clock">--</span>
-</header>
+<!-- Title Bar -->
+<div id="titlebar">
+  <span class="ws-dot off" id="ws-dot"></span>
+  <span class="title">VeighNa Trader 社区版 — 4.4.0</span>
+  <span id="gw-tag" style="color:var(--blue);font-size:11px;margin-left:8px"></span>
+  <span class="clock" id="clock"></span>
+</div>
 
-<main>
-  <!-- Sidebar -->
-  <aside>
-    <div class="section">
-      <h3>🔌 Gateways</h3>
-      <div id="gateway-list"></div>
-    </div>
+<!-- Menu Bar -->
+<div id="menubar">
+  <button class="menu-btn" onclick="show_connect_dialog()">🔌 系统</button>
+  <button class="menu-btn" onclick="refresh_status()">🔄 功能</button>
+  <button class="menu-btn" onclick="show_help()">❓ 帮助</button>
+</div>
 
-    <div class="section" id="connect-section" style="display:none">
-      <h3>⚡ Connect</h3>
-      <div class="order-form" id="connect-form"></div>
-    </div>
-
-    <div class="section">
-      <h3>📝 Trading</h3>
-      <div class="order-form">
-        <input type="text" id="ord-symbol" placeholder="Symbol (e.g. rb2510.SHFE)">
+<!-- Main Dock Layout -->
+<div id="main">
+  <!-- Left column: TradingWidget + 5-level depth -->
+  <div class="dock-panel" id="panel-trade">
+    <div class="panel-title">📝 交易</div>
+    <div class="panel-content">
+      <div class="trading-form">
+        <div class="row"><label>交易所</label><select id="tf-exchange"></select></div>
+        <div class="row"><label>代码</label><input id="tf-symbol" placeholder="输入合约代码回车订阅" onkeydown="if(event.key==='Enter')set_vt_symbol()"></div>
+        <div class="row"><label>名称</label><input id="tf-name" readonly style="color:var(--text-dim)"></div>
+        <div class="row"><label>方向</label><select id="tf-direction"><option value="LONG">多</option><option value="SHORT">空</option></select></div>
+        <div class="row"><label>开平</label><select id="tf-offset"><option value="OPEN">开</option><option value="CLOSE">平</option><option value="CLOSETODAY">平今</option><option value="CLOSEYESTERDAY">平昨</option></select></div>
+        <div class="row"><label>类型</label><select id="tf-ordertype"><option value="LIMIT">限价</option><option value="MARKET">市价</option><option value="FAK">FAK</option><option value="FOK">FOK</option></select></div>
         <div class="row">
-          <select id="ord-direction"><option value="LONG">Buy</option><option value="SHORT">Sell</option></select>
-          <select id="ord-offset"><option value="OPEN">Open</option><option value="CLOSE">Close</option><option value="CLOSETODAY">CloseToday</option></select>
+          <label>价格</label><input id="tf-price" type="number" step="any" placeholder="0">
+          <input type="checkbox" id="tf-price-check" class="price-check" title="设置价格随行情更新">
         </div>
-        <div class="row">
-          <input type="number" id="ord-price" placeholder="Price" step="any">
-          <input type="number" id="ord-volume" placeholder="Volume" step="any" value="1">
+        <div class="row"><label>数量</label><input id="tf-volume" type="number" step="any" value="1"></div>
+        <div class="row"><label>接口</label><select id="tf-gateway"></select></div>
+        <div class="row" style="gap:4px;margin-top:3px">
+          <button class="btn-sell" onclick="send_order('SHORT')" style="flex:1">空</button>
+          <button class="btn-buy"  onclick="send_order('LONG')"  style="flex:1">多</button>
         </div>
-        <select id="ord-gateway"></select>
-        <div class="row">
-          <button class="btn-buy" onclick="send_order()">Buy</button>
-          <button class="btn-sell" onclick="send_order()">Sell</button>
+        <div class="row" style="margin-top:2px">
+          <button class="btn-cancel" onclick="cancel_all()" style="flex:1;color:var(--text-dim)">全撤</button>
         </div>
       </div>
-    </div>
 
-    <div class="section">
-      <h3>📋 Quick Actions</h3>
-      <div class="order-form">
-        <button class="btn-cancel" onclick="query_all()" style="margin-bottom:6px">🔄 Query Account</button>
-        <button class="btn-cancel" onclick="ws_send({action:'query_position',payload:{}})">📊 Query Position</button>
-      </div>
-    </div>
-  </aside>
-
-  <!-- Content -->
-  <div class="content">
-    <div class="tabs">
-      <button class="active" data-tab="tick">📈 Market Data</button>
-      <button data-tab="order">📋 Orders</button>
-      <button data-tab="trade">💰 Trades</button>
-      <button data-tab="position">📊 Positions</button>
-      <button data-tab="account">🏦 Account</button>
-      <button data-tab="log">📜 Log</button>
-    </div>
-
-    <div class="panels">
-      <div class="panel active" id="panel-tick">
-        <table><thead><tr>
-          <th>Symbol</th><th>Exchange</th><th>Last</th><th>Bid1</th><th>Ask1</th><th>Volume</th><th>High</th><th>Low</th><th>Open</th><th>Time</th>
-        </tr></thead><tbody id="tick-body"></tbody></table>
-      </div>
-
-      <div class="panel" id="panel-order">
-        <table><thead><tr>
-          <th>OrderID</th><th>Symbol</th><th>Direction</th><th>Offset</th><th>Price</th><th>Volume</th><th>Traded</th><th>Status</th><th>Time</th>
-        </tr></thead><tbody id="order-body"></tbody></table>
-      </div>
-
-      <div class="panel" id="panel-trade">
-        <table><thead><tr>
-          <th>TradeID</th><th>OrderID</th><th>Symbol</th><th>Direction</th><th>Price</th><th>Volume</th><th>Time</th>
-        </tr></thead><tbody id="trade-body"></tbody></table>
-      </div>
-
-      <div class="panel" id="panel-position">
-        <table><thead><tr>
-          <th>Symbol</th><th>Direction</th><th>Volume</th><th>Price</th><th>PnL</th><th>Frozen</th><th>YD Volume</th>
-        </tr></thead><tbody id="pos-body"></tbody></table>
-      </div>
-
-      <div class="panel" id="panel-account">
-        <table><thead><tr>
-          <th>AccountID</th><th>Balance</th><th>Available</th><th>Frozen</th>
-        </tr></thead><tbody id="acc-body"></tbody></table>
-      </div>
-
-      <div class="panel" id="panel-log">
-        <div id="log-body"></div>
+      <!-- 5-level market depth -->
+      <div class="depth-panel" id="depth-panel">
+        <div class="depth-row ask" id="d-ask5"><span>--</span><span>--</span></div>
+        <div class="depth-row ask" id="d-ask4"><span>--</span><span>--</span></div>
+        <div class="depth-row ask" id="d-ask3"><span>--</span><span>--</span></div>
+        <div class="depth-row ask" id="d-ask2"><span>--</span><span>--</span></div>
+        <div class="depth-row ask" id="d-ask1"><span>--</span><span>--</span></div>
+        <div class="depth-row mid" id="d-mid"><span>最新</span><span>涨跌幅</span></div>
+        <div class="depth-row bid" id="d-bid1"><span>--</span><span>--</span></div>
+        <div class="depth-row bid" id="d-bid2"><span>--</span><span>--</span></div>
+        <div class="depth-row bid" id="d-bid3"><span>--</span><span>--</span></div>
+        <div class="depth-row bid" id="d-bid4"><span>--</span><span>--</span></div>
+        <div class="depth-row bid" id="d-bid5"><span>--</span><span>--</span></div>
       </div>
     </div>
   </div>
-</main>
+
+  <!-- Right top: TickMonitor -->
+  <div class="dock-panel" id="panel-tick-tab">
+    <div class="panel-title">📈 行情 <span style="font-size:10px" id="tick-count">0</span></div>
+    <div class="panel-content"><div style="overflow:auto;height:100%"><table>
+      <thead><tr id="hdr-tick"></tr></thead>
+      <tbody id="tick-body"></tbody>
+    </table></div></div>
+  </div>
+
+  <!-- Right top: OrderMonitor + ActiveOrderMonitor (tabbed) -->
+  <div class="dock-panel" id="panel-order-tab">
+    <div class="tab-bar" id="order-tabs">
+      <button class="active" data-tab="active-orders">活动</button>
+      <button data-tab="all-orders">委托</button>
+    </div>
+    <div class="tab-content active" id="tab-active-orders"><div style="overflow:auto;height:100%"><table>
+      <thead><tr id="hdr-active-order"></tr></thead>
+      <tbody id="active-order-body"></tbody>
+    </table></div></div>
+    <div class="tab-content" id="tab-all-orders"><div style="overflow:auto;height:100%"><table>
+      <thead><tr id="hdr-order"></tr></thead>
+      <tbody id="order-body"></tbody>
+    </table></div></div>
+  </div>
+
+  <!-- Bottom left: TradeMonitor -->
+  <div class="dock-panel" id="panel-trade-mon">
+    <div class="panel-title">💰 成交 <span style="font-size:10px" id="trade-count">0</span></div>
+    <div class="panel-content"><div style="overflow:auto;height:100%"><table>
+      <thead><tr id="hdr-trade"></tr></thead>
+      <tbody id="trade-body"></tbody>
+    </table></div></div>
+  </div>
+
+  <!-- Bottom center: LogMonitor -->
+  <div class="dock-panel" id="panel-log">
+    <div class="panel-title">📜 日志 <span style="font-size:10px" id="log-count">0</span></div>
+    <div class="panel-content" id="log-content"></div>
+  </div>
+
+  <!-- Bottom right: AccountMonitor + PositionMonitor (tabbed) -->
+  <div class="dock-panel" style="grid-column:1;grid-row:3" id="panel-bottom-left">
+    <div class="tab-bar" id="bottom-tabs">
+      <button class="active" data-tab="account-tab">资金</button>
+      <button data-tab="position-tab">持仓</button>
+    </div>
+    <div class="tab-content active" id="tab-account-tab"><div style="overflow:auto;height:100%"><table>
+      <thead><tr id="hdr-account"></tr></thead>
+      <tbody id="account-body"></tbody>
+    </table></div></div>
+    <div class="tab-content" id="tab-position-tab"><div style="overflow:auto;height:100%"><table>
+      <thead><tr id="hdr-position"></tr></thead>
+      <tbody id="position-body"></tbody>
+    </table></div></div>
+  </div>
+</div>
+
+<!-- Connect Dialog (modal) -->
+<div class="modal-overlay" id="modal-connect">
+  <div class="modal">
+    <h2>🔌 连接网关</h2>
+    <div id="connect-fields"></div>
+    <div class="btn-row">
+      <button style="background:var(--bg3);color:var(--text)" onclick="close_modal('modal-connect')">取消</button>
+      <button style="background:var(--accent);color:#fff" onclick="connect_gateway()">连接</button>
+    </div>
+  </div>
+</div>
 
 <script>
-// ==================== WebSocket ====================
-let ws = null;
-let ws_connected = false;
+// ============================================================
+// Strict Qt GUI replication — columns, colors, behaviors
+// ============================================================
+
+// ---- Column definitions (exact Qt headers) ----
+const COLORS = { BID: '#ffaec9', ASK: '#a0ffa0', LONG: '#ff4444', SHORT: '#00aa00' };
+
+const MONITORS = {
+  tick: {
+    headers: ['symbol','exchange','name','last_price','volume','open_price','high_price','low_price','bid_price_1','bid_volume_1','ask_price_1','ask_volume_1','datetime','gateway_name'],
+    labels: ['代码','交易所','名称','最新价','成交量','开盘价','最高价','最低价','买1价','买1量','卖1价','卖1量','时间','接口'],
+    data_key: 'vt_symbol',
+    cell_class: c => {
+      if (['bid_price_1','bid_volume_1'].includes(c)) return 'c-bid';
+      if (['ask_price_1','ask_volume_1'].includes(c)) return 'c-ask';
+      if (c === 'exchange') return 'enum';
+      return '';
+    }
+  },
+  order: {
+    headers: ['orderid','reference','symbol','exchange','type','direction','offset','price','volume','traded','status','datetime','gateway_name'],
+    labels: ['委托号','来源','代码','交易所','类型','方向','开平','价格','总数量','已成交','状态','时间','接口'],
+    data_key: 'vt_orderid',
+    cell_class: c => {
+      if (c === 'direction') return 'dir';
+      if (c === 'exchange' || c === 'type' || c === 'offset' || c === 'status') return 'enum';
+      return '';
+    }
+  },
+  trade: {
+    headers: ['tradeid','orderid','symbol','exchange','direction','offset','price','volume','datetime','gateway_name'],
+    labels: ['成交号','委托号','代码','交易所','方向','开平','价格','数量','时间','接口'],
+    data_key: '',
+    cell_class: c => {
+      if (c === 'direction') return 'dir';
+      if (c === 'exchange' || c === 'offset') return 'enum';
+      return '';
+    }
+  },
+  position: {
+    headers: ['symbol','exchange','direction','volume','yd_volume','frozen','price','pnl','gateway_name'],
+    labels: ['代码','交易所','方向','数量','昨仓','冻结','均价','盈亏','接口'],
+    data_key: 'vt_positionid',
+    cell_class: c => {
+      if (c === 'direction') return 'dir';
+      if (c === 'exchange') return 'enum';
+      if (c === 'pnl') return 'pnl';
+      return '';
+    }
+  },
+  account: {
+    headers: ['accountid','balance','frozen','available','gateway_name'],
+    labels: ['账号','余额','冻结','可用','接口'],
+    data_key: 'vt_accountid',
+    cell_class: c => ''
+  },
+  log: {
+    headers: ['time','msg','gateway_name'],
+    labels: ['时间','信息','接口'],
+    data_key: '',
+    cell_class: c => ''
+  }
+};
+
+// ---- Data stores ----
+const store = {
+  tick: new Map(), order: new Map(), trade: new Map(),
+  position: new Map(), account: new Map()
+};
+const log_entries = [];
+let MAX_LOG = 500;
+
+// ---- WebSocket ----
+let ws = null, ws_on = false;
+let vt_symbol = '', price_digits = 0, pre_close = 0;
+let connected_gateway = '';
 
 function ws_connect() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}/ws`);
-
   ws.onopen = () => {
-    ws_connected = true;
-    document.getElementById('ws-status').textContent = '● Connected';
-    document.getElementById('ws-status').className = 'status online';
-    toast('Connected to VeighNa engine', 'info');
+    ws_on = true;
+    document.getElementById('ws-dot').className = 'ws-dot on';
+    ws_send({action:'get_status',payload:{}});
   };
-
-  ws.onmessage = (evt) => {
-    const msg = JSON.parse(evt.data);
-    handle_message(msg);
-  };
-
-  ws.onclose = () => {
-    ws_connected = false;
-    document.getElementById('ws-status').textContent = '● Disconnected';
-    document.getElementById('ws-status').className = 'status offline';
-    setTimeout(ws_connect, 3000);
-  };
-
+  ws.onmessage = e => handle_msg(JSON.parse(e.data));
+  ws.onclose = () => { ws_on = false; document.getElementById('ws-dot').className = 'ws-dot off'; setTimeout(ws_connect, 2000); };
   ws.onerror = () => ws.close();
 }
+function ws_send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
 
-function ws_send(obj) {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify(obj));
-  }
-}
+// ---- Message handler ----
+function handle_msg(m) {
+  const t = m.type, d = m.data;
+  if (!d) return;
 
-// ==================== Message Handler ====================
-const events = {
-  tick: new Map(), order: new Map(), trade: new Map(),
-  position: new Map(), account: new Map()
-};
-const logs = [];
-let max_logs = 200;
-
-function handle_message(msg) {
-  const { type, data } = msg;
-
-  // Data events
-  if (type.startsWith('eTick.')) {
-    if (data) events.tick.set(data.vt_symbol, data);
-  } else if (type.startsWith('eOrder.')) {
-    if (data) events.order.set(data.vt_orderid, data);
-  } else if (type.startsWith('eTrade.')) {
-    if (data) events.trade.set(data.vt_tradeid, data);
-  } else if (type.startsWith('ePosition.')) {
-    if (data) events.position.set(data.vt_positionid, data);
-  } else if (type.startsWith('eAccount.')) {
-    if (data) events.account.set(data.vt_accountid, data);
-  } else if (type === 'eLog' && data) {
-    logs.unshift(data);
-    if (logs.length > max_logs) logs.pop();
-    render_log();
+  if (t.startsWith('eTick.')) {
+    store.tick.set(d.vt_symbol, d);
+    if (d.vt_symbol === vt_symbol) update_depth(d);
+  } else if (t.startsWith('eOrder.')) {
+    store.order.set(d.vt_orderid, d);
+  } else if (t.startsWith('eTrade.')) {
+    const key = d.vt_tradeid || `${d.orderid}_${d.tradeid}`;
+    store.trade.set(key, d);
+  } else if (t.startsWith('ePosition.')) {
+    store.position.set(d.vt_positionid, d);
+  } else if (t.startsWith('eAccount.')) {
+    store.account.set(d.vt_accountid, d);
+  } else if (t === 'eLog') {
+    log_entries.unshift(d);
+    if (log_entries.length > MAX_LOG) log_entries.pop();
+    render_log_panel();
   }
 
-  // Throttle re-renders
   schedule_render();
 }
 
-let render_timer = null;
+let _render_timer = null;
 function schedule_render() {
-  if (render_timer) return;
-  render_timer = setTimeout(() => {
-    render_all();
-    render_timer = null;
-  }, 200);
+  if (_render_timer) return;
+  _render_timer = setTimeout(() => { _render_timer = null; render_all(); }, 150);
 }
 
-// ==================== Renderers ====================
+// ---- Rendering ----
 function render_all() {
-  render_table('tick-body', Array.from(events.tick.values()), [
-    'vt_symbol', 'exchange', 'last_price', 'bid_price_1', 'ask_price_1',
-    'volume', 'high_price', 'low_price', 'open_price', 'datetime'
-  ]);
-  render_table('order-body', Array.from(events.order.values()).reverse(), [
-    'vt_orderid', 'vt_symbol', 'direction', 'offset', 'price', 'volume', 'traded', 'status', 'datetime'
-  ]);
-  render_table('trade-body', Array.from(events.trade.values()).reverse(), [
-    'vt_tradeid', 'vt_orderid', 'vt_symbol', 'direction', 'price', 'volume', 'datetime'
-  ]);
-  render_table('pos-body', Array.from(events.position.values()), [
-    'vt_symbol', 'direction', 'volume', 'price', 'pnl', 'frozen', 'yd_volume'
-  ]);
-  render_table('acc-body', Array.from(events.account.values()), [
-    'vt_accountid', 'balance', 'available', 'frozen'
-  ]);
-  render_log();
+  render_table('tick', store.tick);
+  render_table('order', store.order);
+  render_table('trade', store.trade);
+  render_table('position', store.position);
+  render_table('account', store.account);
+
+  // Active orders = subset of orders that are active
+  const active = new Map();
+  for (const [k, v] of store.order) {
+    if (['SUBMITTING','NOTTRADED','PARTTRADED'].includes(v.status) ||
+        ['提交中','未成交','部分成交'].includes(v.status)) {
+      active.set(k, v);
+    }
+  }
+  render_table_body('active-order-body', active, MONITORS.order);
+
+  render_log_panel();
+  update_counts();
 }
 
-function render_table(body_id, rows, cols) {
+function render_table(name, data_map) {
+  const mon = MONITORS[name];
+  render_table_body(name + '-body', data_map, mon);
+}
+
+function render_table_body(body_id, data_map, mon) {
   const tbody = document.getElementById(body_id);
   if (!tbody) return;
+  const rows = Array.from(data_map.values()).reverse();
   tbody.innerHTML = rows.map(r => {
-    const cells = cols.map(c => {
-      let v = r[c] !== undefined ? r[c] : '';
-      if (typeof v === 'number') v = v.toFixed ? (Math.abs(v) < 1000 ? v.toFixed(2) : v.toFixed(0)) : v;
-      let cls = '';
-      if (c === 'direction') cls = v === 'LONG' || v === '多' ? 'long' : 'short';
-      if (c === 'last_price') cls = 'bid';
+    return '<tr>' + mon.headers.map((h, i) => {
+      let v = r[h];
+      if (v === undefined || v === null) v = '';
+      let cls = mon.cell_class(h);
+
+      // Formatting
+      if (h === 'datetime' && v) {
+        try { v = new Date(v).toLocaleTimeString('zh-CN',{hour12:false}); } catch(e){}
+      }
+      if (typeof v === 'number') {
+        v = v.toFixed(Math.abs(v) < 10 ? 4 : 2);
+      }
+
+      // Direction cell colors
+      if (cls === 'dir') {
+        cls = (v === 'SHORT' || v === '空') ? 'c-short' : 'c-long';
+      }
+      // PnL cell colors (Chinese convention: red positive, green negative)
+      if (cls === 'pnl') {
+        const n = parseFloat(v);
+        cls = (!isNaN(n) && n < 0) ? 'pnl-neg' : 'pnl-pos';
+      }
+
       return `<td class="${cls}">${v}</td>`;
-    }).join('');
-    return `<tr>${cells}</tr>`;
+    }).join('') + '</tr>';
   }).join('');
 }
 
-function render_log() {
-  const el = document.getElementById('log-body');
+function render_log_panel() {
+  const el = document.getElementById('log-content');
   if (!el) return;
-  el.innerHTML = logs.slice(0, 100).map(l =>
-    `<div class="log-entry"><span class="ts">${(l.time||'').slice(11,19)}</span>${l.msg||''}</div>`
-  ).join('');
+  el.innerHTML = log_entries.slice(0, 200).map(l => {
+    let ts = l.time || '';
+    if (ts.length > 12) ts = ts.slice(11,19);
+    return `<div class="log-entry"><span class="ts">${ts}</span><span class="gw">[${l.gateway_name||''}]</span><span>${l.msg||''}</span></div>`;
+  }).join('');
 }
 
-// ==================== Trading ====================
-function send_order() {
-  const symbol = document.getElementById('ord-symbol').value;
-  const exchange = symbol.includes('.') ? symbol.split('.')[1] : '';
-  const sym = symbol.includes('.') ? symbol.split('.')[0] : symbol;
-  if (!symbol) return toast('Enter symbol', 'error');
+function update_counts() {
+  document.getElementById('tick-count').textContent = store.tick.size;
+  document.getElementById('trade-count').textContent = store.trade.size;
+  document.getElementById('log-count').textContent = log_entries.length;
+}
+
+// ---- Init table headers ----
+function init_headers() {
+  for (const [name, mon] of Object.entries(MONITORS)) {
+    const hdr_el = document.getElementById('hdr-' + name);
+    if (hdr_el) {
+      hdr_el.innerHTML = mon.labels.map((l, i) =>
+        `<th onclick="sort_table('${name}',${i})">${l}<span class="sort">⇅</span></th>`
+      ).join('');
+    }
+    // Also init active-order header (same as order)
+    const hdr_ao = document.getElementById('hdr-active-order');
+    if (hdr_ao && name === 'order') {
+      hdr_ao.innerHTML = mon.labels.map((l, i) =>
+        `<th onclick="sort_table('active-order',${i})">${l}<span class="sort">⇅</span></th>`
+      ).join('');
+    }
+  }
+}
+
+// ---- Trading ----
+function send_order(dir) {
+  const symbol = document.getElementById('tf-symbol').value.trim();
+  const exchange = document.getElementById('tf-exchange').value;
+  if (!symbol) return alert('请输入代码');
 
   ws_send({
     action: 'send_order',
     payload: {
-      symbol: sym,
+      symbol: symbol,
       exchange: exchange,
-      direction: document.getElementById('ord-direction').value,
-      offset: document.getElementById('ord-offset').value,
-      price: parseFloat(document.getElementById('ord-price').value) || 0,
-      volume: parseFloat(document.getElementById('ord-volume').value) || 1,
-      gateway: document.getElementById('ord-gateway').value || '',
+      direction: dir,
+      offset: document.getElementById('tf-offset').value,
+      price: parseFloat(document.getElementById('tf-price').value) || 0,
+      volume: parseFloat(document.getElementById('tf-volume').value) || 1,
+      order_type: document.getElementById('tf-ordertype').value,
+      gateway: document.getElementById('tf-gateway').value,
     }
   });
-  toast(`Order sent: ${symbol}`, 'info');
 }
 
-function query_all() {
-  ws_send({ action: 'query_account', payload: {} });
-  setTimeout(() => ws_send({ action: 'query_position', payload: {} }), 500);
+function cancel_all() {
+  for (const [id, ord] of store.order) {
+    if (['SUBMITTING','NOTTRADED','PARTTRADED'].includes(ord.status) ||
+        ['提交中','未成交','部分成交'].includes(ord.status)) {
+      ws_send({
+        action: 'cancel_order',
+        payload: {
+          orderid: ord.orderid,
+          symbol: ord.symbol,
+          exchange: ord.exchange,
+          gateway: ord.gateway_name
+        }
+      });
+    }
+  }
 }
 
-// ==================== Gateway ====================
-let current_gateway = '';
+function set_vt_symbol() {
+  const symbol = document.getElementById('tf-symbol').value.trim();
+  const exchange = document.getElementById('tf-exchange').value;
+  if (!symbol) return;
+  vt_symbol = `${symbol}.${exchange}`;
 
-function select_gateway(name) {
-  current_gateway = name;
-  document.getElementById('ord-gateway').value = name;
-  document.getElementById('gw-info').textContent = `📍 ${name}`;
-
-  // Show connect form
-  const section = document.getElementById('connect-section');
-  section.style.display = 'block';
-  const form = document.getElementById('connect-form');
-  form.innerHTML = `
-    ${Object.entries(gateway_settings[name] || {}).map(([k,v]) => {
-      const val = Array.isArray(v) ? v[0] : v;
-      return `<input type="text" id="gw-${k}" placeholder="${k}" value="${val}">`;
-    }).join('')}
-    <button style="background:var(--accent);padding:8px;border:none;border-radius:6px;color:#fff;cursor:pointer" onclick="connect_gateway()">Connect</button>
-  `;
-}
-
-async function connect_gateway() {
-  const setting = {};
-  const section = document.getElementById('connect-section');
-  section.querySelectorAll('input').forEach(inp => {
-    const key = inp.id.replace('gw-', '');
-    setting[key] = inp.value;
+  // Subscribe
+  ws_send({
+    action: 'subscribe',
+    payload: { symbol: symbol, exchange: exchange }
   });
-  ws_send({ action: 'connect_gateway', payload: { gateway: current_gateway, setting } });
-  toast(`Connecting to ${current_gateway}...`, 'info');
+
+  // Clear depth
+  clear_depth();
+  document.getElementById('tf-name').value = '';
+  document.getElementById('tf-price').value = '';
+  document.getElementById('tf-volume').value = '1';
 }
 
-let gateway_settings = {};
+function update_depth(tick) {
+  if (tick.vt_symbol !== vt_symbol) return;
+  const dg = price_digits;
 
-async function load_gateways() {
+  document.getElementById('d-ask5').innerHTML = `<span>${(tick.ask_price_5||0).toFixed(dg)}</span><span>${tick.ask_volume_5||0}</span>`;
+  document.getElementById('d-ask4').innerHTML = `<span>${(tick.ask_price_4||0).toFixed(dg)}</span><span>${tick.ask_volume_4||0}</span>`;
+  document.getElementById('d-ask3').innerHTML = `<span>${(tick.ask_price_3||0).toFixed(dg)}</span><span>${tick.ask_volume_3||0}</span>`;
+  document.getElementById('d-ask2').innerHTML = `<span>${(tick.ask_price_2||0).toFixed(dg)}</span><span>${tick.ask_volume_2||0}</span>`;
+  document.getElementById('d-ask1').innerHTML = `<span>${(tick.ask_price_1||0).toFixed(dg)}</span><span>${tick.ask_volume_1||0}</span>`;
+
+  const lp = tick.last_price || 0;
+  let ret = '';
+  if (tick.pre_close && tick.pre_close > 0) {
+    const r = (lp / tick.pre_close - 1) * 100;
+    ret = `${r >= 0 ? '+' : ''}${r.toFixed(2)}%`;
+  }
+  document.getElementById('d-mid').innerHTML = `<span style="font-weight:700;font-size:14px">${lp.toFixed(dg)}</span><span>${ret}</span>`;
+
+  document.getElementById('d-bid1').innerHTML = `<span>${(tick.bid_price_1||0).toFixed(dg)}</span><span>${tick.bid_volume_1||0}</span>`;
+  document.getElementById('d-bid2').innerHTML = `<span>${(tick.bid_price_2||0).toFixed(dg)}</span><span>${tick.bid_volume_2||0}</span>`;
+  document.getElementById('d-bid3').innerHTML = `<span>${(tick.bid_price_3||0).toFixed(dg)}</span><span>${tick.bid_volume_3||0}</span>`;
+  document.getElementById('d-bid4').innerHTML = `<span>${(tick.bid_price_4||0).toFixed(dg)}</span><span>${tick.bid_volume_4||0}</span>`;
+  document.getElementById('d-bid5').innerHTML = `<span>${(tick.bid_price_5||0).toFixed(dg)}</span><span>${tick.bid_volume_5||0}</span>`;
+
+  if (document.getElementById('tf-price-check').checked) {
+    document.getElementById('tf-price').value = lp.toFixed(dg);
+  }
+}
+
+function clear_depth() {
+  for (const id of ['d-ask5','d-ask4','d-ask3','d-ask2','d-ask1','d-bid1','d-bid2','d-bid3','d-bid4','d-bid5']) {
+    document.getElementById(id).innerHTML = '<span>--</span><span>--</span>';
+  }
+  document.getElementById('d-mid').innerHTML = '<span>最新</span><span>涨跌幅</span>';
+}
+
+// ---- Gateway Connect Dialog ----
+let gateway_configs = {};
+async function show_connect_dialog() {
   try {
     const r = await fetch('/api/gateways');
     const gws = await r.json();
-    const list = document.getElementById('gateway-list');
-    list.innerHTML = gws.map(g => {
-      gateway_settings[g.name] = g.default_setting;
-      return `<div class="gateway-item" onclick="select_gateway('${g.name}')">
-        <span>${g.name}</span><span class="dot off"></span></div>`;
-    }).join('');
-    if (gws.length > 0) {
-      document.getElementById('ord-gateway').innerHTML = gws.map(g =>
-        `<option value="${g.name}">${g.name}</option>`
-      ).join('');
-    }
+    const fields = document.getElementById('connect-fields');
+    fields.innerHTML = '<div class="row"><label>网关</label><select id="conn-gw-select">' +
+      gws.map(g => `<option value="${g.name}">${g.name}</option>`).join('') +
+      '</select></div>';
+    fields.innerHTML += '<div id="conn-dyn-fields"></div>';
+    gateway_configs = {};
+    gws.forEach(g => gateway_configs[g.name] = g.default_setting);
+
+    document.getElementById('conn-gw-select').onchange = function() {
+      render_connect_fields(this.value);
+    };
+    if (gws.length > 0) render_connect_fields(gws[0].name);
+    document.getElementById('modal-connect').classList.add('show');
   } catch(e) { console.error(e); }
 }
 
-// ==================== Tabs ====================
-document.querySelectorAll('.tabs button').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.tabs button').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-    document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
+function render_connect_fields(gw_name) {
+  const cfg = gateway_configs[gw_name] || {};
+  const el = document.getElementById('conn-dyn-fields');
+  el.innerHTML = Object.entries(cfg).map(([k, v]) => {
+    if (Array.isArray(v)) {
+      return `<div class="row"><label>${k}</label><select id="conn-${k}">${v.map(x=>`<option>${x}</option>`).join('')}</select></div>`;
+    }
+    const tp = typeof v === 'number' ? 'number' : 'text';
+    const pw = k.includes('密码') ? 'type="password"' : `type="${tp}"`;
+    return `<div class="row"><label>${k}</label><input id="conn-${k}" ${pw} value="${v}" placeholder="${k}"></div>`;
+  }).join('');
+}
+
+function connect_gateway() {
+  const gw = document.getElementById('conn-gw-select').value;
+  const setting = {};
+  const el = document.getElementById('conn-dyn-fields');
+  el.querySelectorAll('input, select').forEach(inp => {
+    const key = inp.id.replace('conn-', '');
+    setting[key] = inp.value;
+  });
+  ws_send({ action: 'connect_gateway', payload: { gateway: gw, setting: setting } });
+  connected_gateway = gw;
+  document.getElementById('gw-tag').textContent = `📍 ${gw}`;
+  close_modal('modal-connect');
+}
+
+function close_modal(id) { document.getElementById(id).classList.remove('show'); }
+
+// ---- Menu actions ----
+function refresh_status() { ws_send({action:'get_status',payload:{}}); }
+function show_help() { alert('VeighNa Web Trader v4.4.0\n基于 FastAPI + WebSocket\n严格复刻 Qt GUI 布局和颜色'); }
+
+// ---- Tabs ----
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.tab-bar').forEach(bar => {
+    bar.querySelectorAll('button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        bar.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const parent = bar.closest('.dock-panel');
+        if (parent) {
+          parent.querySelectorAll('.tab-content').forEach(tc => tc.classList.remove('active'));
+          const target = document.getElementById('tab-' + btn.dataset.tab);
+          if (target) target.classList.add('active');
+        }
+      });
+    });
   });
 });
 
-// ==================== Utils ====================
-function toast(msg, type) {
-  const el = document.createElement('div');
-  el.className = `toast ${type}`;
-  el.textContent = msg;
-  document.body.appendChild(el);
-  setTimeout(() => el.remove(), 2500);
-}
-
-function update_clock() {
-  document.getElementById('clock').textContent = new Date().toLocaleString();
-}
-
-// ==================== Init ====================
-window.addEventListener('load', () => {
+// ---- Init on load ----
+async function init() {
+  init_headers();
   ws_connect();
-  load_gateways();
-  setInterval(update_clock, 1000);
-  update_clock();
-});
+
+  // Load gateways and exchanges into trading form
+  try {
+    const r = await fetch('/api/status');
+    const s = await r.json();
+    if (s.exchanges) {
+      const ex = document.getElementById('tf-exchange');
+      ex.innerHTML = s.exchanges.map(e => `<option>${e}</option>`).join('');
+    }
+    if (s.gateways) {
+      const gw = document.getElementById('tf-gateway');
+      gw.innerHTML = s.gateways.map(g => `<option>${g}</option>`).join('');
+    }
+  } catch(e) { console.error(e); }
+
+  setInterval(() => {
+    document.getElementById('clock').textContent = new Date().toLocaleTimeString('zh-CN',{hour12:false});
+  }, 1000);
+}
+
+init();
 </script>
 </body>
 </html>
