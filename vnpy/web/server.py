@@ -310,6 +310,17 @@ def qt_wasm():
     return HTMLResponse(html_path.read_text(encoding="utf-8"))
 
 
+@app.get("/pyodide")
+def pyodide_wasm():
+    html_path = Path(__file__).parent / "wasm-dist" / "pyodide.html"
+    return HTMLResponse(html_path.read_text(encoding="utf-8"))
+
+
+@app.get("/qt6")
+def qt6_wasm():
+    return HTMLResponse((Path(__file__).parent / "wasm-dist" / "veighna.html").read_text(encoding="utf-8"))
+
+
 # Serve WASM files with correct MIME types
 @app.get("/wasm-dist/{filename}")
 async def wasm_static(filename: str):

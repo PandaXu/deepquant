@@ -4,60 +4,30 @@ project(VeighNaWasm VERSION 4.4.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
-set(CMAKE_AUTORCC ON)
-set(CMAKE_AUTOUIC ON)
 
-# Find Qt6
-find_package(Qt6 REQUIRED COMPONENTS
-    Widgets
-    WebSockets
-    Network
-    Core
+set(QT_WASM_ROOT "$ENV{HOME}/qt6-wasm")
+
+# Manually set Qt6 paths
+set(Qt6_DIR "${QT_WASM_ROOT}/lib/cmake/Qt6")
+set(Qt6HostInfo_DIR "${QT_WASM_ROOT}/lib/cmake/Qt6HostInfo")
+set(QT_BUILD_CMAKE_PREFIX_PATH "${QT_WASM_ROOT}")
+set(QT_HOST_PATH "/opt/homebrew/Cellar/qtbase/6.11.1")
+
+# Suppress private module warnings
+set(QT_FIND_PRIVATE_MODULES FALSE)
+
+find_package(Qt6 REQUIRED COMPONENTS Widgets Core Gui)
+
+add_executable(veighna_wasm main_wasm.cpp)
+target_link_libraries(veighna_wasm PRIVATE Qt6::Widgets Qt6::Gui Qt6::Core)
+target_link_options(veighna_wasm PRIVATE
+    -sALLOW_MEMORY_GROWTH=1
+    -sTOTAL_MEMORY=128MB
+    -lembind
+    "SHELL:-sEXPORTED_FUNCTIONS=['_main']"
+    "SHELL:-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap']"
 )
-
-# Source files
-set(SOURCES
-    main.cpp
-    mainwindow.cpp
-    mainwindow.h
-    websocketclient.cpp
-    websocketclient.h
-    datamodels.h
+set_target_properties(veighna_wasm PROPERTIES
+    OUTPUT_NAME veighna
+    SUFFIX ".html"
 )
-
-# Create executable
-if(EMSCRIPTEN)
-    # WASM build: produces .html + .js + .wasm
-    add_executable(veighna_wasm ${SOURCES})
-    set_target_properties(veighna_wasm PROPERTIES
-        OUTPUT_NAME veighna
-        SUFFIX ".html"
-    )
-    target_link_libraries(veighna_wasm PRIVATE
-        Qt6::Widgets
-        Qt6::WebSockets
-        Qt6::Network
-    )
-    # Qt6 WASM-specific: asyncify for WebSocket, enable threads
-    target_link_options(veighna_wasm PRIVATE
-        -sASYNCIFY
-        -sALLOW_MEMORY_GROWTH=1
-        -sTOTAL_MEMORY=128MB
-        -sUSE_QT6_HTTP=ON
-    )
-    # Copy to web directory
-    install(TARGETS veighna_wasm DESTINATION ${CMAKE_SOURCE_DIR}/../wasm-dist)
-    install(FILES
-        qtloader.js
-        qtlogo.svg
-        DESTINATION ${CMAKE_SOURCE_DIR}/../wasm-dist
-    )
-else()
-    # Desktop build for testing
-    add_executable(veighna_desktop ${SOURCES})
-    target_link_libraries(veighna_desktop PRIVATE
-        Qt6::Widgets
-        Qt6::WebSockets
-        Qt6::Network
-    )
-endif()
