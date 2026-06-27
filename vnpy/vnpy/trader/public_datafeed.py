@@ -24,10 +24,15 @@ class PublicDatafeed(BaseDatafeed):
         start = req.start
         end = req.end or datetime.now()
 
-        output(f"[PublicDatafeed] 下载请求: {symbol}.{exchange.value} {interval.value} {start.date()}~{end.date()}")
+        prefix = "[PublicDatafeed]"
+        msg = f"{prefix} 下载请求: {symbol}.{exchange.value} {interval.value} {start.date()}~{end.date()}"
+        output(msg)
+        print(msg)
 
         if interval != Interval.DAILY:
-            output(f"[PublicDatafeed] 仅支持日线数据, 当前={interval.value}")
+            warn = f"{prefix} ⚠️ 仅支持日线数据 (请求={interval.value}), 请选择日线"
+            output(warn)
+            print(warn)
             return []
 
         try:

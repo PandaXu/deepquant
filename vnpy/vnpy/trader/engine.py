@@ -92,6 +92,15 @@ class MainEngine:
             self.event_engine = EventEngine()
         self.event_engine.start()
 
+        # Auto-register public datafeed BEFORE any engine accesses get_datafeed()
+        try:
+            from .public_datafeed import PublicDatafeed
+            from . import datafeed as df_mod
+            df_mod.datafeed = PublicDatafeed()
+            df_mod.SETTINGS["datafeed.name"] = "public"
+        except ImportError:
+            pass
+
         self.gateways: dict[str, BaseGateway] = {}
         self.engines: dict[str, BaseEngine] = {}
         self.apps: dict[str, BaseApp] = {}
@@ -147,15 +156,6 @@ class MainEngine:
             from .contract_cache import init_cache, refresh_cache
             init_cache()  # Synchronous — disk is instant, network only on first run
             self.write_log("合约数据缓存已就绪")
-
-            # Auto-register public datafeed (akshare/Sina)
-            try:
-                from .public_datafeed import PublicDatafeed
-                from . import datafeed as df_mod
-                df_mod.datafeed = PublicDatafeed()
-                self.write_log("公开数据服务 (akshare/Sina) 已就绪")
-            except ImportError:
-                pass
 
             # Daily refresh at 6:00 AM
             def _refresh_contract_cache(event):
