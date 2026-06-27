@@ -43,9 +43,13 @@ class ManagerWidget(QtWidgets.QWidget):
         download_button: QtWidgets.QPushButton = QtWidgets.QPushButton("下载数据")
         download_button.clicked.connect(self.download_data)
 
+        sync_button: QtWidgets.QPushButton = QtWidgets.QPushButton("同步分钟数据")
+        sync_button.clicked.connect(self.sync_minute)
+
         hbox1: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
         hbox1.addWidget(refresh_button)
         hbox1.addWidget(download_button)
+        hbox1.addWidget(sync_button)
         hbox1.addStretch()
 
         hbox2: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
@@ -278,6 +282,30 @@ class ManagerWidget(QtWidgets.QWidget):
         dialog: DownloadDialog = DownloadDialog(self.engine, self.engine.main_engine)
         dialog.exec_()
         self.refresh_tree()
+
+    def sync_minute(self) -> None:
+        """Sync minute data for all contracts with daily data."""
+        from threading import Thread
+        btn = self.sender()
+        if btn:
+            btn.setEnabled(False)
+            btn.setText("同步中...")
+        main_engine = self.engine.main_engine
+
+        def _run():
+            count = self.engine.sync_minute_data(
+                lambda msg: main_engine.write_log(msg) if main_engine else None
+            )
+            QtCore.QTimer.singleShot(0, lambda: self._on_sync_done(count, btn))
+
+        Thread(target=_run, daemon=True).start()
+
+    def _on_sync_done(self, count: int, btn) -> None:
+        if btn:
+            btn.setEnabled(True)
+            btn.setText("同步分钟数据")
+        self.refresh_tree()
+        QtWidgets.QMessageBox.information(self, "同步完成", f"同步了 {count} 个合约的分钟数据")
 
     def show(self) -> None:
         """"""
