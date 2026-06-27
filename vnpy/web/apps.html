@@ -217,27 +217,78 @@ function bt_start() {
 }
 
 // ---- DataManager ----
-function render_data_manager() {
+async function render_data_manager() {
+  let products = [];
+  try { const r = await fetch('/api/contracts/products?exchange=CFFEX'); const d = await r.json(); products = d.products || []; } catch(e) {}
+
   content.innerHTML = `<h2>数据管理</h2>
   <div class="card">
-    <div class="row">
-      <button class="btn-primary" onclick="dm_refresh()">刷新</button>
-      <span style="flex:1"></span>
-      <button onclick="dm_import()">导入历史数据</button>
-      <button onclick="dm_update()">从数据源更新</button>
-      <button onclick="dm_download()">下载历史数据</button>
+    <h3>下载历史数据</h3>
+    <div class="row"><label>交易所</label><select id="dm-ex" onchange="dm_on_exchange()">
+      <option value="CFFEX">CFFEX(中金所)</option><option value="SHFE">SHFE(上期所)</option>
+      <option value="DCE">DCE(大商所)</option><option value="CZCE">CZCE(郑商所)</option>
+      <option value="INE">INE(上能源)</option><option value="GFEX">GFEX(广期所)</option>
+    </select></div>
+    <div class="row"><label>品种</label><select id="dm-product" onchange="dm_on_product()"><option value="">全部品种</option></select></div>
+    <div class="row"><label>合约</label><select id="dm-symbol"><option value="">全部合约</option></select></div>
+    <div class="row"><label>周期</label><select id="dm-interval">
+      <option value="MINUTE">分钟线 (1m)</option><option value="HOUR">小时线 (1h)</option><option value="DAILY" selected>日线 (d)</option>
+    </select></div>
+    <div class="row"><label>起始日</label><input id="dm-start" type="date" value="2025-01-01"></div>
+    <div class="row"><label>结束日</label><input id="dm-end" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn-primary" onclick="dm_download()">下载并导入</button>
+      <button class="btn-success" onclick="dm_refresh()">刷新已导入数据</button>
     </div>
-    <table style="margin-top:12px">
-      <thead><tr><th>本地代码</th><th>代码</th><th>交易所</th><th>周期</th><th>数据量</th><th>开始时间</th><th>结束时间</th></tr></thead>
-      <tbody id="dm-table"><tr><td colspan="7" style="color:var(--dim)">点击刷新加载数据</td></tr></tbody>
-    </table>
+    <div id="dm-status" style="margin-top:8px;color:var(--dim);font-size:11px"></div>
+  </div>
+  <div class="card">
+    <h3>已导入数据概览</h3>
+    <table><thead><tr><th>合约</th><th>交易所</th><th>周期</th><th>数据量</th><th>开始时间</th><th>结束时间</th></tr></thead>
+    <tbody id="dm-table"><tr><td colspan="6" style="color:var(--dim)">点击刷新加载</td></tr></tbody></table>
   </div>`;
+  dm_on_exchange();
+}
+
+async function dm_on_exchange() {
+  const ex = document.getElementById('dm-ex').value;
+  const sel = document.getElementById('dm-product');
+  sel.innerHTML = '<option value="">加载中...</option>';
+  try {
+    const r = await fetch(`/api/contracts/products?exchange=${ex}`);
+    const d = await r.json();
+    sel.innerHTML = '<option value="">全部品种</option>' + (d.products||[]).map(p => `<option value="${p.prefix}">${p.prefix} - ${p.name}</option>`).join('');
+  } catch(e) { sel.innerHTML = '<option value="">加载失败</option>'; }
+  dm_on_product();
+}
+
+async function dm_on_product() {
+  const ex = document.getElementById('dm-ex').value;
+  const prod = document.getElementById('dm-product').value;
+  const sel = document.getElementById('dm-symbol');
+  sel.innerHTML = '<option value="">加载中...</option>';
+  try {
+    const params = new URLSearchParams({exchange:ex});
+    if (prod) params.set('product', prod);
+    const r = await fetch(`/api/contracts/public?${params}`);
+    const d = await r.json();
+    sel.innerHTML = '<option value="">全部合约</option>' + (d.contracts||[]).map(c => `<option value="${c.symbol}">${c.symbol} | ${c.name}</option>`).join('');
+  } catch(e) { sel.innerHTML = '<option value="">加载失败</option>'; }
+}
+
+function dm_download() {
+  const sym = document.getElementById('dm-symbol').value;
+  const ex = document.getElementById('dm-ex').value;
+  const interval = document.getElementById('dm-interval').value;
+  const start = document.getElementById('dm-start').value;
+  const end = document.getElementById('dm-end').value;
+  if (!sym) return alert('请选择合约');
+  const st = document.getElementById('dm-status');
+  st.textContent = `下载中: ${sym}.${ex} ${interval} ${start}~${end}...`;
+  ws_send({action:'download_bar_data',payload:{symbol:sym,exchange:ex,interval,start,end}});
 }
 
 function dm_refresh() { ws_send({action:'get_data_overview',payload:{}}); }
-function dm_import() { alert('导入历史数据: 选择文件上传 (需后端支持)'); }
-function dm_update() { alert('从数据源更新: 从数据服务更新'); }
-function dm_download() { alert('下载历史数据: 从数据服务下载历史数据'); }
 
 // ---- WebSocket ----
 let ws;

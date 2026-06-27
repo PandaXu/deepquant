@@ -352,6 +352,31 @@ async def handle_ws_message(ws: WebSocket, msg: str) -> None:
                 t.start()
 
         # ---- App: DataManager ----
+        elif action == "download_bar_data":
+            engine = main_engine.get_engine("DataManager")
+            if engine:
+                from vnpy.trader.constant import Interval, Exchange
+                from datetime import datetime
+                symbol = payload.get("symbol", "")
+                exchange = payload.get("exchange", "")
+                interval = payload.get("interval", "DAILY")
+                start = payload.get("start", "2025-01-01")
+                end = payload.get("end", datetime.now().strftime("%Y-%m-%d"))
+
+                def _download():
+                    try:
+                        engine.download_bar_data(
+                            symbol, Exchange(exchange), Interval(interval),
+                            datetime.strptime(start, "%Y-%m-%d"),
+                            datetime.strptime(end, "%Y-%m-%d")
+                        )
+                        main_engine.write_log(f"[DataManager] 下载完成: {symbol}.{exchange} {interval}")
+                    except Exception as e:
+                        main_engine.write_log(f"[DataManager] 下载失败: {e}")
+                import threading
+                threading.Thread(target=_download, daemon=True).start()
+                await ws.send_text(json.dumps({"type": "log", "data": {"msg": f"开始下载: {symbol}.{exchange} {interval}", "gateway_name": "DataManager"}}))
+
         elif action == "get_data_overview":
             engine = main_engine.get_engine("DataManager")
             if engine:
