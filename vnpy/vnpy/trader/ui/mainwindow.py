@@ -91,12 +91,26 @@ class MainWindow(QtWidgets.QMainWindow):
             PositionMonitor, _("持仓"), QtCore.Qt.DockWidgetArea.BottomDockWidgetArea
         )
 
+        # K-line chart dock
+        try:
+            from vnpy.chart.kline_widget import KLineChartWidget
+            self.chart_widget = KLineChartWidget(event_engine)
+            chart_dock = QtWidgets.QDockWidget("📈 K线图")
+            chart_dock.setWidget(self.chart_widget)
+            self.addDockWidget(QtCore.Qt.DockWidgetArea.RightDockWidgetArea, chart_dock)
+            self.tabifyDockWidget(chart_dock, tick_dock)
+        except ImportError:
+            pass
+
         self.tabifyDockWidget(active_dock, order_dock)
 
         self.save_window_setting("default")
 
         tick_widget.itemDoubleClicked.connect(self.trading_widget.update_with_cell)
         position_widget.itemDoubleClicked.connect(self.trading_widget.update_with_cell)
+        # Connect tick double-click to load chart data
+        tick_widget.itemDoubleClicked.connect(lambda cell: self._load_chart_data(cell))
+        position_widget.itemDoubleClicked.connect(lambda cell: self._load_chart_data(cell))
 
     def init_menu(self) -> None:
         """"""
@@ -313,6 +327,34 @@ class MainWindow(QtWidgets.QMainWindow):
         if isinstance(state, QtCore.QByteArray):
             self.restoreState(state)
             self.restoreGeometry(geometry)
+
+    def _load_chart_data(self, cell) -> None:
+        """Load bar data into the K-line chart when a tick cell is double-clicked."""
+        if not hasattr(self, 'chart_widget'):
+            return
+        data = cell.get_data()
+        vt_symbol = data.vt_symbol
+        self.chart_widget.set_symbol(vt_symbol)
+
+        # Load bars from database if available
+        from vnpy.trader.database import get_database
+        from vnpy.trader.constant import Interval
+        from datetime import datetime, timedelta
+        db = get_database()
+        bars = db.load_bar_data(
+            data.symbol, data.exchange, Interval.MINUTE,
+            datetime.now() - timedelta(days=30), datetime.now()
+        )
+        if bars:
+            symbol, exchange = vt_symbol.rsplit(".", 1)
+            self.chart_widget.load_bars(bars, f"{vt_symbol} 分钟K线")
+        else:
+            bars = db.load_bar_data(
+                data.symbol, data.exchange, Interval.DAILY,
+                datetime.now() - timedelta(days=365), datetime.now()
+            )
+            if bars:
+                self.chart_widget.load_bars(bars, f"{vt_symbol} 日K线")
 
     def restore_window_setting(self) -> None:
         """

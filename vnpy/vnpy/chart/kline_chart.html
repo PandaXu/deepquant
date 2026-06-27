@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html><head><meta charset=utf-8>
+<style>html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#1e1e1e}#chart{width:100%;height:100%}</style>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+</head><body>
+<div id="chart"></div>
+<script>
+var chart = echarts.init(document.getElementById('chart'), 'dark');
+var option = {
+  backgroundColor: '#1e1e1e',
+  animation: false,
+  tooltip: { trigger: 'axis' },
+  grid: { left: 60, right: 60, top: 30, bottom: 40 },
+  xAxis: { type: 'category', data: [], axisLabel: { fontSize: 10 } },
+  yAxis: { type: 'value', scale: true, splitLine: { lineStyle: { color: '#333' } } },
+  dataZoom: [{ type: 'inside' }, { type: 'slider', bottom: 5, height: 20 }],
+  series: [
+    { name: 'K线', type: 'candlestick',
+      data: [],
+      itemStyle: { color: '#ef5350', color0: '#26a69a', borderColor: '#ef5350', borderColor0: '#26a69a' }
+    },
+    { name: 'VOL', type: 'bar',
+      data: [], yAxisIndex: 1,
+      itemStyle: { color: function(p) { return p.data[1] >= p.data[0] ? '#ef5350' : '#26a69a'; } }
+    }
+  ],
+  yAxis: [
+    { type: 'value', scale: true, splitLine: { lineStyle: { color: '#333' } } },
+    { type: 'value', scale: true, splitLine: { show: false }, axisLabel: { show: false },
+      min: 0, max: function(v) { return v.max * 5; } }
+  ]
+};
+
+function updateData(title, bars) {
+  var kdata = [], vdata = [], dates = [], o,v;
+  bars.forEach(function(b) {
+    dates.push(b.dt);
+    o = b.open || 0; v = b.volume || 0;
+    kdata.push([o, b.close||0, b.low||0, b.high||0]);
+    vdata.push([o, b.close||0, v]);
+  });
+  chart.setOption({
+    title: { text: title, left: 'center', textStyle: { fontSize: 13, color: '#aaa' } },
+    xAxis: { data: dates },
+    series: [{ data: kdata }, { data: vdata }]
+  });
+}
+
+function addTick(tick) {
+  var data = chart.getOption().series[0].data;
+  data.push([tick.open||tick.last_price, tick.last_price, tick.low||tick.last_price, tick.high||tick.last_price]);
+  if (data.length > 500) data.shift();
+  chart.setOption({ series: [{ data: data }] });
+}
+
+// Listen for data from Qt
+if (typeof qt !== 'undefined' && qt.webChannelTransport) {
+  new QWebChannel(qt.webChannelTransport, function(ch) {
+    window.bridge = ch.objects.bridge;
+    bridge.dataReady.connect(function(title, json) {
+      updateData(title, JSON.parse(json));
+    });
+    bridge.tickReady.connect(function(json) {
+      addTick(JSON.parse(json));
+    });
+  });
+}
+</script></body></html>
