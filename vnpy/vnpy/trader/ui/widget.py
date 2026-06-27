@@ -729,7 +729,8 @@ class TradingWidget(QtWidgets.QWidget):
         # Trading function area
         exchanges: list[Exchange] = self.main_engine.get_all_exchanges()
         self.exchange_combo: QtWidgets.QComboBox = QtWidgets.QComboBox()
-        self.exchange_combo.addItems([exchange.value for exchange in exchanges])
+        for exchange in exchanges:
+            self.exchange_combo.addItem(f"{exchange.value}({exchange.display_name})", exchange.value)
 
         self.symbol_line: QtWidgets.QLineEdit = QtWidgets.QLineEdit()
         self.symbol_line.returnPressed.connect(self.set_vt_symbol)
@@ -922,7 +923,7 @@ class TradingWidget(QtWidgets.QWidget):
             return
 
         # Generate vt_symbol from symbol and exchange
-        exchange_value: str = str(self.exchange_combo.currentText())
+        exchange_value: str = self.exchange_combo.currentData() or str(self.exchange_combo.currentText())
         vt_symbol: str = f"{symbol}.{exchange_value}"
 
         if vt_symbol == self.vt_symbol:
