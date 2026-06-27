@@ -937,6 +937,8 @@ class TradingWidget(QtWidgets.QWidget):
 
     def _on_exchange_changed(self) -> None:
         """When exchange changes, reset all dependent fields."""
+        ex = self.exchange_combo.currentData() or self.exchange_combo.currentText()
+        self.main_engine.write_log(f"[GUI] 交易所切换 → {ex}")
         self.symbol_filter.blockSignals(True)
         self.symbol_filter.clear()
         self.symbol_filter.addItem("全部品种", "")
@@ -950,17 +952,19 @@ class TradingWidget(QtWidgets.QWidget):
 
     def _show_symbol_popup(self) -> None:
         """Refresh contract list before showing dropdown."""
-        # Trigger public cache refresh if stale or not loaded
         try:
             from ..contract_cache import get_cache, get_cache_age, refresh_cache
             df = get_cache()
             age = get_cache_age()
+            age_str = age.isoformat() if age else "None"
+            self.main_engine.write_log(f"[GUI] 打开合约下拉框: 缓存状态 df={'有' if df is not None else '无'} age={age_str}")
             if df is None or age is None or age.date() < datetime.now().date():
+                self.main_engine.write_log(f"[GUI] 缓存过期或为空，触发后台刷新...")
                 import threading
                 t = threading.Thread(target=refresh_cache, daemon=True)
                 t.start()
-        except Exception:
-            pass
+        except Exception as e:
+            self.main_engine.write_log(f"[GUI] 缓存检查失败: {e}")
         self._refresh_symbols()
         QtWidgets.QComboBox.showPopup(self.symbol_combo)
 
@@ -1029,6 +1033,9 @@ class TradingWidget(QtWidgets.QWidget):
 
         if count == 0:
             self.symbol_combo.addItem(f"(无合约数据)", "")
+            self.main_engine.write_log(f"[GUI] 查询结果: 0条 (交易所={exchange_value} 品种={product_filter or '全部'})")
+        else:
+            self.main_engine.write_log(f"[GUI] 查询结果: {count}条合约, {len(products_seen)}个品种 (交易所={exchange_value})")
 
     def set_vt_symbol(self) -> None:
         """

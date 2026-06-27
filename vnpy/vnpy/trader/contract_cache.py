@@ -37,14 +37,18 @@ _loading = False
 
 def _load_from_disk() -> Optional[pd.DataFrame]:
     """Try loading cached data from disk (instant)."""
+    t0 = datetime.now()
     try:
         p = Path(_CACHE_FILE)
         if p.exists():
             df = pd.read_parquet(p)
-            print(f"[ContractCache] Loaded {len(df)} contracts from disk")
+            elapsed = (datetime.now() - t0).total_seconds()
+            print(f"[ContractCache] ✅ 磁盘加载成功: {len(df)}条, 耗时{elapsed:.2f}s, 文件={_CACHE_FILE}")
             return df
+        else:
+            print(f"[ContractCache] ⚠️ 磁盘缓存不存在: {_CACHE_FILE}")
     except Exception as e:
-        print(f"[ContractCache] Disk load failed: {e}")
+        print(f"[ContractCache] ❌ 磁盘加载失败: {e}")
     return None
 
 
@@ -53,32 +57,43 @@ def _save_to_disk(df: pd.DataFrame) -> None:
     try:
         Path(_CACHE_FILE).parent.mkdir(parents=True, exist_ok=True)
         df.to_parquet(_CACHE_FILE, index=False)
+        print(f"[ContractCache] 💾 已保存到磁盘: {_CACHE_FILE} ({len(df)}条, {Path(_CACHE_FILE).stat().st_size/1024:.0f}KB)")
     except Exception as e:
-        print(f"[ContractCache] Disk save failed: {e}")
+        print(f"[ContractCache] ❌ 磁盘保存失败: {e}")
 
 
 def _do_load() -> Optional[pd.DataFrame]:
     """Load from akshare + generate options, persist to disk."""
     global _loading
     if _loading:
+        print(f"[ContractCache] ⏳ 已有加载任务进行中，跳过")
         return None
     _loading = True
+    t0 = datetime.now()
     try:
+        print(f"[ContractCache] 🌐 开始从 akshare 拉取合约数据...")
         import akshare as ak
         df = ak.futures_comm_info()
+        t1 = datetime.now()
+        print(f"[ContractCache] ✅ akshare 返回 {len(df)} 条期货合约 (耗时{(t1-t0).total_seconds():.1f}s)")
 
         # Generate CFFEX stock index options (not in akshare)
+        print(f"[ContractCache] 📐 生成股指期权合约...")
         options_data = _generate_index_options("MO", "中证1000股指期权", 8600, 50, 30)
         options_data += _generate_index_options("HO", "沪深300股指期权", 4870, 50, 30)
         options_data += _generate_index_options("IO", "上证50股指期权", 2900, 30, 25)
+        print(f"[ContractCache] ✅ 生成 {len(options_data)} 条期权 (MO/HO/IO)")
 
         opt_df = pd.DataFrame(options_data)
         df = pd.concat([df, opt_df], ignore_index=True)
+        t2 = datetime.now()
+        print(f"[ContractCache] ✅ 合并完成: {len(df)} 条 (期货+期权), 总耗时{(t2-t0).total_seconds():.1f}s")
 
         _save_to_disk(df)
         return df
     except Exception as e:
-        print(f"[ContractCache] Network load failed: {e}")
+        print(f"[ContractCache] ❌ 网络加载失败: {e}")
+        print(f"[ContractCache] 🔄 回退读取磁盘缓存...")
         return _load_from_disk()
     finally:
         _loading = False
@@ -119,33 +134,36 @@ def _generate_index_options(
 def refresh_cache() -> bool:
     """Force refresh the contract cache. Returns True on success."""
     global _contract_cache, _cache_ts
+    print(f"[ContractCache] 🔄 refresh_cache() 被调用")
     df = _do_load()
     if df is not None and not df.empty:
         with _cache_lock:
             _contract_cache = df
             _cache_ts = datetime.now()
-        print(f"[ContractCache] Loaded {len(df)} contracts at {_cache_ts}")
+        print(f"[ContractCache] ✅ 缓存已更新: {len(df)}条 @ {_cache_ts}")
         return True
+    print(f"[ContractCache] ❌ 刷新失败")
     return False
 
 
 def init_cache() -> None:
     """Initialize cache: load from disk first (instant), then background refresh."""
     global _contract_cache, _cache_ts
+    print(f"[ContractCache] 🚀 init_cache() 开始初始化...")
     # First try disk (instant)
     df = _load_from_disk()
     if df is not None and not df.empty:
         with _cache_lock:
             _contract_cache = df
             _cache_ts = datetime.now()
-        print(f"[ContractCache] Disk cache ready: {len(df)} contracts")
+        print(f"[ContractCache] ✅ 磁盘缓存就绪: {len(df)}条, 后台更新网络中...")
         # Background refresh from network
         t = threading.Thread(target=refresh_cache, daemon=True)
         t.start()
     else:
-        print("[ContractCache] No disk cache, loading from network...")
-        # Synchronous first load (takes ~3s)
+        print(f"[ContractCache] ⚠️ 无磁盘缓存, 同步从网络加载(约3s)...")
         refresh_cache()
+        print(f"[ContractCache] ✅ 首次加载完成")
 
 
 def get_cache() -> Optional[pd.DataFrame]:
