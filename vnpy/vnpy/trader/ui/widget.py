@@ -807,7 +807,7 @@ class TradingWidget(QtWidgets.QWidget):
         self.symbol_filter: QtWidgets.QComboBox = QtWidgets.QComboBox()
         self.symbol_filter.setEditable(False)
         self.symbol_filter.addItem("全部品种", "")
-        self.symbol_filter.currentIndexChanged.connect(lambda: self._refresh_symbols())
+        self.symbol_filter.currentIndexChanged.connect(self._on_product_changed)
 
         self.name_line: QtWidgets.QLineEdit = QtWidgets.QLineEdit()
         self.name_line.setReadOnly(True)
@@ -1016,6 +1016,16 @@ class TradingWidget(QtWidgets.QWidget):
         self.volume_line.setText("")
         self.clear_label_text()
 
+    def _on_product_changed(self) -> None:
+        """Lightweight: just filter the local combo, no HTTP."""
+        self.symbol_combo.clear()
+        self.name_line.setText("")
+        self.price_line.setText("")
+        self.volume_line.setText("")
+        self.clear_label_text()
+        self.vt_symbol = ""
+        # Will be populated when user clicks dropdown
+
     def _show_symbol_popup(self) -> None:
         """Refresh contract list before showing dropdown (data via REST API)."""
         self._refresh_symbols()
@@ -1069,25 +1079,7 @@ class TradingWidget(QtWidgets.QWidget):
         except Exception:
             pass
 
-        # Update product filter combo from REST API (cached after first call)
-        current_filter = self.symbol_filter.currentData() or ""
-        self.symbol_filter.blockSignals(True)
-        self.symbol_filter.clear()
-        self.symbol_filter.addItem("全部品种", "")
-        try:
-            prods = _api_get_products(exchange_value)
-            for p, cn_name in prods.items():
-                label = f"{p} - {cn_name}" if cn_name else p
-                self.symbol_filter.addItem(label, p)
-        except Exception:
-            for p in sorted(products_seen.keys()):
-                cn_name = products_seen[p]
-                label = f"{p} - {cn_name}" if cn_name else p
-                self.symbol_filter.addItem(label, p)
-        idx = self.symbol_filter.findData(current_filter)
-        if idx >= 0:
-            self.symbol_filter.setCurrentIndex(idx)
-        self.symbol_filter.blockSignals(False)
+        # Product combo already populated by _on_exchange_changed — skip update
 
         if count == 0:
             self.symbol_combo.addItem(f"(无合约数据)", "")
