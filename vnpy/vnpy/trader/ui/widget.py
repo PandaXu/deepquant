@@ -716,7 +716,7 @@ def _api_get(path: str) -> dict:
     try:
         req = urllib.request.Request(f"{_API_BASE}{path}")
         req.add_header("Accept", "application/json")
-        with urllib.request.urlopen(req, timeout=5) as resp:
+        with urllib.request.urlopen(req, timeout=3) as resp:
             return json.loads(resp.read())
     except Exception as e:
         print(f"[API] {path} failed: {e}")
@@ -724,28 +724,31 @@ def _api_get(path: str) -> dict:
 
 
 def _api_get_products(exchange: str) -> dict[str, str]:
-    """Get products for exchange from REST API (cached, retries on failure)."""
+    """Get products for exchange from REST API (cached, 1 retry)."""
     if exchange not in _product_cache:
-        products = []
-        for attempt in range(5):  # Retry up to 5 times with increasing delay
+        data = _api_get(f"/api/contracts/products?exchange={exchange}")
+        products = data.get("products", [])
+        if not products:  # Single retry on timeout/error
+            time.sleep(0.3)
             data = _api_get(f"/api/contracts/products?exchange={exchange}")
             products = data.get("products", [])
-            if products:
-                break
-            time.sleep(0.3 * (attempt + 1))  # 0.3s, 0.6s, 0.9s, 1.2s, 1.5s
         _product_cache[exchange] = {p["prefix"]: p["name"] for p in products}
     return _product_cache[exchange]
 
 
 def _api_get_contracts(exchange: str, product: str = "") -> list[dict]:
-    """Get contracts from REST API (cached)."""
+    """Get contracts from REST API (cached, LRU-capped at 50)."""
     cache_key = f"{exchange}|{product}"
     if cache_key not in _contract_cache:
         path = f"/api/contracts/public?exchange={exchange}"
         if product:
             path += f"&product={product}"
         data = _api_get(path)
-        _contract_cache[cache_key] = data.get("contracts", [])
+        result = data.get("contracts", [])
+        # Prevent unbounded memory growth
+        if len(_contract_cache) >= 50:
+            _contract_cache.pop(next(iter(_contract_cache)))
+        _contract_cache[cache_key] = result
     return _contract_cache[cache_key]
 
 
@@ -791,15 +794,13 @@ class TradingWidget(QtWidgets.QWidget):
         self.register_event()
 
     def _preload_data_sync(self) -> None:
-        """Preload products and contracts synchronously before UI init."""
+        """Preload products + contracts for all exchanges before UI init."""
         try:
-            # Preload products for all exchanges (sequential, ~1-2s total)
             for ex in ["CFFEX", "SHFE", "DCE", "CZCE", "INE", "GFEX"]:
                 prods = _api_get_products(ex)
-                self.main_engine.write_log(f"[GUI] 预加载品种 {ex}: {len(prods)}个")
-            # Preload contracts for default exchange (CFFEX)
-            contracts = _api_get_contracts("CFFEX")
-            self.main_engine.write_log(f"[GUI] 启动预加载完成: 6个交易所 + {len(contracts)}个CFFEX合约")
+                contracts = _api_get_contracts(ex)
+                self.main_engine.write_log(f"[GUI] 预加载 {ex}: {len(prods)}品种 {len(contracts)}合约")
+            self.main_engine.write_log("[GUI] 启动预加载完成: 6个交易所全部就绪")
         except Exception as e:
             self.main_engine.write_log(f"[GUI] 预加载失败: {e}")
 
