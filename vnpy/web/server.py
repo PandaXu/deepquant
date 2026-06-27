@@ -498,6 +498,76 @@ def api_data():
 
 
 # ---------------------------------------------------------------------------
+# Public contract data API (backed by contract_cache)
+# ---------------------------------------------------------------------------
+@app.get("/api/contracts/public")
+async def api_public_contracts(exchange: str = "", product: str = ""):
+    """Query contracts from public cache (akshare + generated options)."""
+    from vnpy.trader.contract_cache import get_cache, refresh_cache, get_cache_age, query_contracts
+    from vnpy.trader.constant import Exchange
+
+    df = get_cache()
+    age = get_cache_age()
+    # Trigger refresh if no data or stale
+    if df is None or age is None or age.date() < datetime.now().date():
+        import threading
+        t = threading.Thread(target=refresh_cache, daemon=True)
+        t.start()
+        df = get_cache()
+
+    result = []
+    if exchange:
+        try:
+            ex = Exchange(exchange)
+            contracts = query_contracts(ex)
+            if product:
+                # Include related products
+                from vnpy.trader.contract_cache import get_related_products
+                related = set(get_related_products(product))
+                contracts = [c for c in contracts if c['symbol'].upper()[:len(product)].upper() in related or c['symbol'].upper().startswith(product.upper())]
+            for c in contracts:
+                # Add option type indicator
+                import re
+                opt = ""
+                m = re.match(r'^[A-Z]+[0-9]+-([CP])-', c['symbol'])
+                if m:
+                    opt = "看涨" if m.group(1) == 'C' else "看跌"
+                result.append({**c, "option_type": opt})
+        except ValueError:
+            pass
+    return {"contracts": result, "cache_ts": age.isoformat() if age else None, "count": len(result)}
+
+
+@app.get("/api/contracts/products")
+async def api_contract_products(exchange: str = ""):
+    """Get available product prefixes for an exchange."""
+    from vnpy.trader.contract_cache import get_cache, query_contracts
+    from vnpy.trader.constant import Exchange
+    import re
+
+    if not exchange:
+        return {"products": []}
+
+    try:
+        ex = Exchange(exchange)
+        contracts = query_contracts(ex)
+        products: dict[str, str] = {}
+        for c in contracts:
+            m = re.match(r'^([A-Za-z]+)', c['symbol'])
+            if m:
+                p = m.group(1).upper()
+                if p not in products:
+                    # Extract Chinese name from contract name
+                    name = re.sub(r'\d+$', '', c['name']).strip()
+                    name = re.sub(r'(看涨|看跌)$', '', name).strip()
+                    products[p] = name
+        result = [{"prefix": k, "name": v} for k, v in sorted(products.items())]
+        return {"products": result}
+    except ValueError:
+        return {"products": []}
+
+
+# ---------------------------------------------------------------------------
 # App pages
 # ---------------------------------------------------------------------------
 @app.get("/app")
