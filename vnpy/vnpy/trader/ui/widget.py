@@ -41,7 +41,7 @@ from ..object import (
 from ..utility import load_json, save_json, get_digits, ZoneInfo
 from ..setting import SETTING_FILENAME, SETTINGS
 from ..locale import _
-from ..contract_cache import query_contracts
+from ..contract_cache import query_contracts, get_related_products
 from ..wechat import (
     Credentials,
     WeixinError,
@@ -946,11 +946,22 @@ class TradingWidget(QtWidgets.QWidget):
 
     def _show_symbol_popup(self) -> None:
         """Refresh contract list before showing dropdown."""
+        # Trigger CTP contract query if logged in but contracts empty
         if not self.main_engine.get_all_contracts():
             for gw_name in self.main_engine.get_all_gateway_names():
                 gw = self.main_engine.get_gateway(gw_name)
                 if hasattr(gw, 'td_api') and gw.td_api.login_status and not getattr(gw.td_api, 'contract_inited', False):
                     gw.td_api.query_contract()
+        # Trigger public cache refresh if stale (older than today)
+        try:
+            from ..contract_cache import get_cache_age, refresh_cache
+            age = get_cache_age()
+            if age is None or age.date() < datetime.now().date():
+                import threading
+                t = threading.Thread(target=refresh_cache, daemon=True)
+                t.start()
+        except Exception:
+            pass
         self._refresh_symbols()
         QtWidgets.QComboBox.showPopup(self.symbol_combo)
 
@@ -960,6 +971,11 @@ class TradingWidget(QtWidgets.QWidget):
         exchange_value = self.exchange_combo.currentData() or self.exchange_combo.currentText()
         exchange = Exchange(exchange_value)
         product_filter = self.symbol_filter.currentData() or ""
+        # Include related products (futures ↔ options)
+        related_products: set[str] = {product_filter} if product_filter else set()
+        if product_filter:
+            for rp in get_related_products(product_filter):
+                related_products.add(rp)
         count = 0
         products_seen: dict[str, str] = {}  # prefix → Chinese name
 
@@ -982,7 +998,7 @@ class TradingWidget(QtWidgets.QWidget):
             prod_prefix = product.group(1).upper() if product else ""
             if prod_prefix not in products_seen:
                 products_seen[prod_prefix] = _extract_name(ct.symbol, ct.name)
-            if product_filter and prod_prefix != product_filter.upper():
+            if product_filter and prod_prefix.upper() not in related_products:
                 continue
             # Display: show Call/Put for options
             opt_type = ""
@@ -1002,7 +1018,7 @@ class TradingWidget(QtWidgets.QWidget):
                     prod_prefix = product.group(1).upper() if product else ""
                     if prod_prefix not in products_seen:
                         products_seen[prod_prefix] = _extract_name(pc["symbol"], pc["name"])
-                    if product_filter and prod_prefix != product_filter.upper():
+                    if product_filter and prod_prefix.upper() not in related_products:
                         continue
                     opt_type = ""
                     m = re.match(r'^[A-Z]+[0-9]+-([CP])-', pc["symbol"])

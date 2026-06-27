@@ -134,6 +134,24 @@ def ensure_cache() -> None:
     t.start()
 
 
+# Product family: selecting a futures product also shows its options
+_PRODUCT_FAMILY: dict[str, list[str]] = {
+    # CFFEX index futures → options
+    "IF": ["IO"],   # 沪深300期货 → 沪深300期权(IO)
+    "IO": ["IF"],   # 沪深300期权 → 沪深300期货
+    "IM": ["MO"],   # 中证1000期货 → 中证1000期权
+    "MO": ["IM"],   # 中证1000期权 → 中证1000期货
+    "IH": ["HO"],   # 上证50期货 → 上证50期权
+    "HO": ["IH"],   # 上证50期权 → 上证50期货
+}
+
+
+def get_related_products(product: str) -> list[str]:
+    """Get related product prefixes (e.g., futures ↔ options)."""
+    related = _PRODUCT_FAMILY.get(product.upper(), [])
+    return [product] + related
+
+
 def query_contracts(exchange: Exchange, keyword: str = "") -> list[dict]:
     """Query contracts for a specific exchange from cache."""
     df = get_cache()
