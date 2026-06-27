@@ -251,6 +251,9 @@ class ManagerEngine(BaseEngine):
         for ov in overviews:
             if ov.interval != Interval.DAILY:
                 continue
+            # Skip option contracts (Sina minute data only for futures)
+            if '-' in ov.symbol:
+                continue
             try:
                 count = self.download_bar_data(
                     ov.symbol, ov.exchange, Interval.MINUTE.value,

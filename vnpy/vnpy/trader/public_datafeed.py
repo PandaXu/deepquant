@@ -37,12 +37,12 @@ class PublicDatafeed(BaseDatafeed):
                 df = ak.futures_zh_daily_sina(symbol=symbol)
                 col_map = {"date": "datetime", "open": "open", "high": "high",
                            "low": "low", "close": "close", "volume": "volume", "hold": "oi"}
-            elif interval == Interval.MINUTE:
-                df = ak.futures_zh_minute_sina(symbol=symbol, period="1")
-                col_map = {"open": "open", "high": "high", "low": "low",
-                           "close": "close", "volume": "volume", "hold": "oi"}
-            elif interval == Interval.HOUR:
-                df = ak.futures_zh_minute_sina(symbol=symbol, period="1")
+            elif interval in (Interval.MINUTE, Interval.HOUR):
+                try:
+                    df = ak.futures_zh_minute_sina(symbol=symbol, period="1")
+                except Exception:
+                    output(f"{P} Sina不支持该合约的分钟数据: {symbol}")
+                    return []
                 col_map = {"open": "open", "high": "high", "low": "low",
                            "close": "close", "volume": "volume", "hold": "oi"}
             else:
