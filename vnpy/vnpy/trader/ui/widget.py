@@ -724,10 +724,15 @@ def _api_get(path: str) -> dict:
 
 
 def _api_get_products(exchange: str) -> dict[str, str]:
-    """Get products for exchange from REST API (cached)."""
+    """Get products for exchange from REST API (cached, retries on failure)."""
     if exchange not in _product_cache:
-        data = _api_get(f"/api/contracts/products?exchange={exchange}")
-        products = data.get("products", [])
+        products = []
+        for attempt in range(5):  # Retry up to 5 times with increasing delay
+            data = _api_get(f"/api/contracts/products?exchange={exchange}")
+            products = data.get("products", [])
+            if products:
+                break
+            time.sleep(0.3 * (attempt + 1))  # 0.3s, 0.6s, 0.9s, 1.2s, 1.5s
         _product_cache[exchange] = {p["prefix"]: p["name"] for p in products}
     return _product_cache[exchange]
 
@@ -1017,17 +1022,14 @@ class TradingWidget(QtWidgets.QWidget):
         ex = self.exchange_combo.currentData() or self.exchange_combo.currentText()
         self.main_engine.write_log(f"[GUI] 交易所切换 → {ex}")
 
-        # Populate product combo from REST API (cached, instant after first call)
+        # Populate product combo from REST API (retries internally)
         self.symbol_filter.blockSignals(True)
         self.symbol_filter.clear()
         self.symbol_filter.addItem("全部品种", "")
-        try:
-            prods = _api_get_products(ex)
-            for p, cn_name in prods.items():
-                label = f"{p} - {cn_name}" if cn_name else p
-                self.symbol_filter.addItem(label, p)
-        except Exception:
-            pass
+        prods = _api_get_products(ex)
+        for p, cn_name in prods.items():
+            label = f"{p} - {cn_name}" if cn_name else p
+            self.symbol_filter.addItem(label, p)
         self.symbol_filter.blockSignals(False)
 
         # Clear dependent fields
