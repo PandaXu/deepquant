@@ -833,6 +833,9 @@ class TradingWidget(QtWidgets.QWidget):
         self.symbol_filter.addItem("全部品种", "")
         self.symbol_filter.currentIndexChanged.connect(self._on_product_changed)
 
+        self.show_expired_check: QtWidgets.QCheckBox = QtWidgets.QCheckBox("展示过期合约")
+        self.show_expired_check.stateChanged.connect(self._on_show_expired_changed)
+
         self.name_line: QtWidgets.QLineEdit = QtWidgets.QLineEdit()
         self.name_line.setReadOnly(True)
 
@@ -871,6 +874,7 @@ class TradingWidget(QtWidgets.QWidget):
         grid: QtWidgets.QGridLayout = QtWidgets.QGridLayout()
         grid.addWidget(QtWidgets.QLabel(_("交易所")), 0, 0)
         grid.addWidget(QtWidgets.QLabel(_("品种")), 1, 0)
+        grid.addWidget(self.show_expired_check, 1, 2)
         grid.addWidget(QtWidgets.QLabel(_("代码")), 2, 0)
         grid.addWidget(QtWidgets.QLabel(_("名称")), 3, 0)
         grid.addWidget(QtWidgets.QLabel(_("方向")), 4, 0)
@@ -1063,6 +1067,10 @@ class TradingWidget(QtWidgets.QWidget):
         import threading
         threading.Thread(target=_fetch, daemon=True).start()
 
+    def _on_show_expired_changed(self) -> None:
+        """When show-expired checkbox toggles, re-filter the contract list."""
+        self._refresh_symbols()
+
     def _on_product_changed(self) -> None:
         """Lightweight: just filter the local combo, no HTTP."""
         self.symbol_combo.clear()
@@ -1110,16 +1118,26 @@ class TradingWidget(QtWidgets.QWidget):
                 prod_prefix = product.group(1).upper() if product else ""
                 if prod_prefix not in products_seen:
                     products_seen[prod_prefix] = _extract_name(pc["symbol"], pc["name"])
-                opt_type = f" {pc.get('option_type', '')}" if pc.get("option_type") else ""
-                # Mark expired contracts with gray indicator
                 expired = is_contract_expired(pc["symbol"])
-                display = f"{pc['symbol']} | {pc['name']}{opt_type}"
+                # Skip expired if checkbox not checked
+                if expired and not self.show_expired_check.isChecked():
+                    continue
+
+                # Build option month label
+                opt_month = ""
+                m = re.match(r'^[A-Z]+(\d{4})-([CP])-', pc["symbol"].upper())
+                if m:
+                    ym = m.group(1)
+                    cp = "看涨" if m.group(2) == "C" else "看跌"
+                    opt_month = f" {ym[:2]}年{ym[2:]}月 {cp}"
+
+                display = f"{pc['symbol']} | {pc['name']}{opt_month}"
                 if expired:
-                    display = f"⚠️ [已到期] {display}"
+                    display = f"⚠️ [到期] {display}"
                     self.symbol_combo.addItem(display, pc["vt_symbol"])
-                    # Gray out expired items (set foreground to dim)
-                    idx = self.symbol_combo.count() - 1
-                    self.symbol_combo.setItemData(idx, QtGui.QColor("#555555"), QtCore.Qt.ItemDataRole.ForegroundRole)
+                    self.symbol_combo.setItemData(
+                        self.symbol_combo.count() - 1,
+                        QtGui.QColor("#555555"), QtCore.Qt.ItemDataRole.ForegroundRole)
                 else:
                     self.symbol_combo.addItem(display, pc["vt_symbol"])
                 count += 1
