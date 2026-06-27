@@ -557,6 +557,8 @@ class DownloadDialog(QtWidgets.QDialog):
 
     def _on_progress(self, msg: str) -> None:
         self.status_label.setText(f"下载进度: {msg}")
+        if self.main_engine:
+            self.main_engine.write_log(f"[DataManager] {msg}")
 
     def _on_download_done(self, count: int) -> None:
         if count < 0:

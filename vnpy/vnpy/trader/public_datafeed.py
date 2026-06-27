@@ -85,9 +85,10 @@ class PublicDatafeed(BaseDatafeed):
             return bars
 
         except Exception as e:
-            output(f"[PublicDatafeed] 下载失败: {symbol}.{exchange.value} → {e}")
             import traceback
-            traceback.print_exc()
+            err = f"[PublicDatafeed] 下载失败: {symbol}.{exchange.value} → {e}\n{traceback.format_exc()}"
+            output(err)
+            print(err)
             return []
 
     def query_tick_history(self, req: HistoryRequest, output: Callable = print) -> list[TickData]:
