@@ -936,13 +936,17 @@ class TradingWidget(QtWidgets.QWidget):
             self.price_line.setText(f"{tick.last_price:.{price_digits}f}")
 
     def _on_exchange_changed(self) -> None:
-        """When exchange changes, reload products and contracts."""
+        """When exchange changes, reset all dependent fields."""
         self.symbol_filter.blockSignals(True)
         self.symbol_filter.clear()
         self.symbol_filter.addItem("全部品种", "")
         self.symbol_filter.blockSignals(False)
         self.symbol_combo.clear()
         self.vt_symbol = ""
+        self.name_line.setText("")
+        self.price_line.setText("")
+        self.volume_line.setText("")
+        self.clear_label_text()
 
     def _show_symbol_popup(self) -> None:
         """Refresh contract list before showing dropdown."""
@@ -968,6 +972,11 @@ class TradingWidget(QtWidgets.QWidget):
     def _refresh_symbols(self) -> None:
         """Reload all available contracts from CTP or public data, filtered by exchange + product."""
         self.symbol_combo.clear()
+        self.name_line.setText("")
+        self.price_line.setText("")
+        self.volume_line.setText("")
+        self.clear_label_text()
+        self.vt_symbol = ""
         exchange_value = self.exchange_combo.currentData() or self.exchange_combo.currentText()
         exchange = Exchange(exchange_value)
         product_filter = self.symbol_filter.currentData() or ""
