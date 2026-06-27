@@ -265,6 +265,14 @@ def api_gateways():
     return result
 
 
+@app.get("/api/apps")
+def api_apps():
+    if not main_engine:
+        return []
+    return [{"name": a.app_name, "display": a.display_name, "icon": a.icon_name}
+            for a in main_engine.get_all_apps()]
+
+
 @app.get("/api/data")
 def api_data():
     """Get all cached data (tick/order/trade/position/account)."""

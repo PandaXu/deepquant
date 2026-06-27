@@ -228,8 +228,7 @@ tbody tr:hover { background: rgba(0,122,204,0.15); }
     <button class="menu-btn">帮助</button>
     <div class="menu-dropdown">
       <div class="mi" onclick="open_contract_manager()">🔍 查询合约</div>
-      <div class="mi" onclick="resize_columns()">📐 调整列宽</div>
-      <div class="mi" onclick="save_csv()">💾 保存数据</div>
+      <div class="mi" onclick="restore_window()">🪟 还原窗口</div>
       <div class="mi" onclick="send_test_email()">📧 测试邮件</div>
       <div class="mi" onclick="open_forum()">🌐 社区论坛</div>
       <div class="mi sep"></div>
@@ -724,13 +723,15 @@ function close_modal(id) { document.getElementById(id).classList.remove('show');
 
 // ---- Menu actions (exact Qt menus) ----
 function open_contract_manager() { alert('合约管理器 (ContractManager)'); }
-function resize_columns() { alert('调整列宽'); }
-function save_csv() { alert('保存数据 (CSV)'); }
-function send_test_email() { ws_send({ action: 'get_status', payload: {} }); alert('测试邮件已发送'); }
+function resize_columns() { document.querySelectorAll('table').forEach(t => { t.style.tableLayout = 'auto'; }); }
+function save_csv() { alert('保存数据: 右键表格选择保存数据 (CSV导出)'); }
+function send_test_email() { ws_send({ action: 'get_status', payload: {} }); document.getElementById('status-msg').textContent = '测试邮件已发送'; }
 function open_forum() { window.open('https://www.vnpy.com/forum/', '_blank'); }
 function open_about() { alert('VeighNa Trader 社区版 v4.4.0\nWeb 版本'); }
 function edit_global_setting() { alert('全局配置编辑器 (GlobalDialog)'); }
 function open_wechat() { alert('微信通知绑定 (WechatDialog)'); }
+function restore_window() { location.reload(); }
+function open_app_widget(name) { alert('打开App小部件: ' + name); }
 
 function refresh_status() { ws_send({ action: 'get_status', payload: {} }); }
 
@@ -778,6 +779,13 @@ async function init() {
   ws_connect();
 
   try {
+    // Load apps into 功能 menu
+    const ar = await fetch('/api/apps');
+    const apps = await ar.json();
+    let am = '';
+    apps.forEach(a => { am += `<div class="mi" onclick="open_app_widget('${a.name}')">📦 ${a.display}</div>`; });
+    document.getElementById('menu-apps').innerHTML = am || '<div class="mi" style="color:var(--text-dim)">无已注册App</div>';
+
     const r = await fetch('/api/status');
     const s = await r.json();
     if (s.exchanges) {
