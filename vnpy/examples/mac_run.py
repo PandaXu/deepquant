@@ -11,6 +11,7 @@ from vnpy_paperaccount import PaperAccountApp
 from vnpy_ctastrategy import CtaStrategyApp
 from vnpy_ctabacktester import CtaBacktesterApp
 from vnpy_datamanager import DataManagerApp
+from vnpy_datarecorder import DataRecorderApp
 
 def main():
     qapp = create_qapp()
@@ -22,6 +23,7 @@ def main():
     main_engine.add_app(CtaStrategyApp)
     main_engine.add_app(CtaBacktesterApp)
     main_engine.add_app(DataManagerApp)
+    main_engine.add_app(DataRecorderApp)
 
     main_window = MainWindow(main_engine, event_engine)
     main_window.showMaximized()
