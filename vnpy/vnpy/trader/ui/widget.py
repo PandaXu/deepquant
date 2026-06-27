@@ -728,6 +728,11 @@ class TradingWidget(QtWidgets.QWidget):
 
         # Trading function area
         exchanges: list[Exchange] = self.main_engine.get_all_exchanges()
+        if not exchanges:
+            exchanges = [
+                Exchange.CFFEX, Exchange.SHFE, Exchange.CZCE,
+                Exchange.DCE, Exchange.INE, Exchange.GFEX,
+            ]
         self.exchange_combo: QtWidgets.QComboBox = QtWidgets.QComboBox()
         for exchange in exchanges:
             self.exchange_combo.addItem(f"{exchange.value}({exchange.display_name})", exchange.value)
