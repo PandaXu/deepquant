@@ -265,7 +265,7 @@ class ManagerWidget(QtWidgets.QWidget):
 
     def download_data(self) -> None:
         """"""
-        dialog: DownloadDialog = DownloadDialog(self.engine)
+        dialog: DownloadDialog = DownloadDialog(self.engine, self.main_engine)
         dialog.exec_()
         self.refresh_tree()
 
@@ -369,9 +369,10 @@ class ImportDialog(QtWidgets.QDialog):
 class DownloadDialog(QtWidgets.QDialog):
     """Streamlined download dialog: exchange → product → contract → download."""
 
-    def __init__(self, engine: ManagerEngine, parent=None) -> None:
+    def __init__(self, engine: ManagerEngine, main_engine=None, parent=None) -> None:
         super().__init__()
         self.engine = engine
+        self.main_engine = main_engine
         self.setWindowTitle("下载历史数据")
         self.setMinimumWidth(520)
 
@@ -511,15 +512,25 @@ class DownloadDialog(QtWidgets.QDialog):
         if not symbol:
             QtWidgets.QMessageBox.warning(self, "提示", "请选择合约")
             return
+
+        from vnpy.trader.setting import SETTINGS
+        if not SETTINGS.get("datafeed.name"):
+            QtWidgets.QMessageBox.warning(self, "未配置数据服务",
+                "请先在全局配置中设置 datafeed.name\n"
+                "常见选项: rqdata, tqsdk, tushare\n\n"
+                "配置后需重启生效。")
+            return
+
         exchange = Exchange(self.exchange_combo.currentData())
         interval = self.interval_combo.currentData()
 
         sd = self.start_date.date()
         start = datetime(sd.year(), sd.month(), sd.day()).replace(tzinfo=DB_TZ)
 
-        msg = f"[DataManager] 下载请求: {symbol}.{exchange.value} {interval.value} {start}~{datetime.now().strftime('%Y-%m-%d')}"
+        msg = f"下载请求: {symbol}.{exchange.value} {interval.value} {start.strftime('%Y-%m-%d')}~{datetime.now().strftime('%Y-%m-%d')}"
         self.status_label.setText(f"下载中: {symbol}.{exchange.value} {interval.value}...")
-        print(msg)
+        if self.main_engine:
+            self.main_engine.write_log(f"[DataManager] {msg}")
 
         from threading import Thread
         def _run():
@@ -529,10 +540,14 @@ class DownloadDialog(QtWidgets.QDialog):
                 else:
                     count = self.engine.download_bar_data(symbol, exchange, interval, start, self._on_progress)
                 self._dl_result = count
-                print(f"[DataManager] 下载完成: {symbol}.{exchange.value} {interval.value} → {count}条")
+                if self.main_engine:
+                    self.main_engine.write_log(f"[DataManager] 下载完成: {symbol}.{exchange.value} {interval.value} → {count}条")
             except Exception as e:
                 self._dl_result = -1
-                print(f"[DataManager] 下载失败: {symbol}.{exchange.value} {interval.value} → {e}")
+                err = f"下载失败: {symbol}.{exchange.value} {interval.value} → {e}"
+                self.status_label.setText(err)
+                if self.main_engine:
+                    self.main_engine.write_log(f"[DataManager] {err}")
         self._dl_result = None
         Thread(target=_run, daemon=True).start()
         QtCore.QTimer.singleShot(500, self._check_download_done)
