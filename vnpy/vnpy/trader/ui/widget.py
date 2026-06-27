@@ -956,8 +956,7 @@ class TradingWidget(QtWidgets.QWidget):
         for ct in all_contracts:
             if ct.exchange.value != exchange_value:
                 continue
-            display_name = getattr(ct.exchange, "display_name", ct.exchange.value)
-            item_text = f"{ct.symbol} | {ct.name} | {ct.exchange.value}({display_name})"
+            item_text = f"{ct.symbol} | {ct.name}"
             if filter_text and filter_text not in ct.symbol.upper() and filter_text not in ct.name.upper():
                 continue
             self.symbol_combo.addItem(item_text, ct.vt_symbol)
@@ -968,8 +967,7 @@ class TradingWidget(QtWidgets.QWidget):
             try:
                 public_contracts = query_contracts(exchange, filter_text)
                 for pc in public_contracts:
-                    disp = getattr(exchange, "display_name", exchange.value)
-                    item_text = f"{pc['symbol']} | {pc['name']} | {exchange.value}({disp})"
+                    item_text = f"{pc['symbol']} | {pc['name']}"
                     self.symbol_combo.addItem(item_text, pc["vt_symbol"])
                     count += 1
             except Exception:

@@ -30,7 +30,7 @@ _loading = False
 
 
 def _do_load() -> Optional[pd.DataFrame]:
-    """Actually load from akshare."""
+    """Actually load from akshare + generate stock index options."""
     global _loading
     if _loading:
         return None
@@ -38,12 +38,66 @@ def _do_load() -> Optional[pd.DataFrame]:
     try:
         import akshare as ak
         df = ak.futures_comm_info()
+
+        # Generate CFFEX stock index options (not in akshare)
+        options_data = _generate_index_options("MO", "中证1000股指期权", 8600, 50, 30)
+        options_data += _generate_index_options("HO", "沪深300股指期权", 4870, 50, 30)
+
+        # 上证50股指期权
+        options_data += _generate_index_options("IO", "上证50股指期权", 2900, 30, 25)
+
+        opt_df = pd.DataFrame(options_data)
+        df = pd.concat([df, opt_df], ignore_index=True)
         return df
     except Exception as e:
         print(f"[ContractCache] Load failed: {e}")
         return None
     finally:
         _loading = False
+
+
+def _generate_index_options(
+    product: str,
+    name: str,
+    current_price: float,
+    strike_step: int,
+    strike_count: int,
+) -> list[dict]:
+    """Generate stock index option contracts with strike prices."""
+    from datetime import datetime as dt
+    now = dt.now()
+    results = []
+
+    # Active months: current + next 3
+    year = now.year
+    month = now.month
+    option_months = []
+    for i in range(4):
+        m = month + i
+        y = year
+        if m > 12:
+            m -= 12
+            y += 1
+        option_months.append(f"{y % 100:02d}{m:02d}")
+
+    # Generate strikes around current price
+    base_strike = int(current_price / strike_step) * strike_step
+    half = strike_count // 2
+    strikes = [
+        base_strike + (i - half) * strike_step
+        for i in range(strike_count)
+    ]
+
+    for mon in option_months:
+        for cp in [("C", "看涨"), ("P", "看跌")]:
+            for strike in strikes:
+                code = f"{product}{mon}-{cp[0]}-{strike}"
+                results.append({
+                    "交易所名称": "中国金融期货交易所",
+                    "合约名称": f"{name}{cp[1]}{strike}",
+                    "合约代码": code,
+                })
+    return results
 
 
 def refresh_cache() -> bool:
