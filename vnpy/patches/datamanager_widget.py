@@ -513,14 +513,6 @@ class DownloadDialog(QtWidgets.QDialog):
             QtWidgets.QMessageBox.warning(self, "提示", "请选择合约")
             return
 
-        from vnpy.trader.setting import SETTINGS
-        if not SETTINGS.get("datafeed.name"):
-            QtWidgets.QMessageBox.warning(self, "未配置数据服务",
-                "请先在全局配置中设置 datafeed.name\n"
-                "常见选项: rqdata, tqsdk, tushare\n\n"
-                "配置后需重启生效。")
-            return
-
         exchange = Exchange(self.exchange_combo.currentData())
         interval = self.interval_combo.currentData()
 

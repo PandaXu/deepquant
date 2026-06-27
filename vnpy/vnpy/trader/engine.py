@@ -148,6 +148,15 @@ class MainEngine:
             init_cache()  # Synchronous — disk is instant, network only on first run
             self.write_log("合约数据缓存已就绪")
 
+            # Auto-register public datafeed (akshare/Sina)
+            try:
+                from .public_datafeed import PublicDatafeed
+                from . import datafeed as df_mod
+                df_mod.datafeed = PublicDatafeed()
+                self.write_log("公开数据服务 (akshare/Sina) 已就绪")
+            except ImportError:
+                pass
+
             # Daily refresh at 6:00 AM
             def _refresh_contract_cache(event):
                 now = datetime.now()
