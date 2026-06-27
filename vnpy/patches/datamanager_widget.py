@@ -160,6 +160,16 @@ class ManagerWidget(QtWidgets.QWidget):
         for interval_child in interval_childs.values():
             interval_child.setExpanded(True)
 
+        # Auto-preview first data item
+        if overviews:
+            first = overviews[0]
+            self.show_data(first.symbol, first.exchange, first.interval, first.start, first.end)
+        else:
+            self.table.setRowCount(1)
+            self.table.setItem(0, 0, DataCell("请先下载数据"))
+            for c in range(1, 8):
+                self.table.setItem(0, c, DataCell("—"))
+
     def import_data(self) -> None:
         """"""
         dialog: ImportDialog = ImportDialog()
