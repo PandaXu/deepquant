@@ -107,10 +107,11 @@ class EnumCell(BaseCell):
 
     def set_content(self, content: Any, data: Any) -> None:
         """
-        Set text using enum.constant.value.
+        Set text using enum.constant.value, with display_name for Exchange.
         """
         if content:
-            super().set_content(content.value, data)
+            display = getattr(content, "display_name", content.value)
+            super().set_content(display, data)
 
 
 class DirectionCell(EnumCell):

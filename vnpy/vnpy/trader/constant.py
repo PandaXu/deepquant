@@ -84,59 +84,119 @@ class Exchange(Enum):
     Exchange.
     """
     # Chinese
-    CFFEX = "CFFEX"         # China Financial Futures Exchange
-    SHFE = "SHFE"           # Shanghai Futures Exchange
-    CZCE = "CZCE"           # Zhengzhou Commodity Exchange
-    DCE = "DCE"             # Dalian Commodity Exchange
-    INE = "INE"             # Shanghai International Energy Exchange
-    GFEX = "GFEX"           # Guangzhou Futures Exchange
-    SSE = "SSE"             # Shanghai Stock Exchange
-    SZSE = "SZSE"           # Shenzhen Stock Exchange
-    BSE = "BSE"             # Beijing Stock Exchange
-    SHHK = "SHHK"           # Shanghai-HK Stock Connect
-    SZHK = "SZHK"           # Shenzhen-HK Stock Connect
-    SGE = "SGE"             # Shanghai Gold Exchange
-    WXE = "WXE"             # Wuxi Steel Exchange
-    CFETS = "CFETS"         # CFETS Bond Market Maker Trading System
-    XBOND = "XBOND"         # CFETS X-Bond Anonymous Trading System
+    CFFEX = "CFFEX"         # 中国金融期货交易所
+    SHFE = "SHFE"           # 上海期货交易所
+    CZCE = "CZCE"           # 郑州商品交易所
+    DCE = "DCE"             # 大连商品交易所
+    INE = "INE"             # 上海国际能源交易中心
+    GFEX = "GFEX"           # 广州期货交易所
+    SSE = "SSE"             # 上海证券交易所
+    SZSE = "SZSE"           # 深圳证券交易所
+    BSE = "BSE"             # 北京证券交易所
+    SHHK = "SHHK"           # 沪港通
+    SZHK = "SZHK"           # 深港通
+    SGE = "SGE"             # 上海黄金交易所
+    WXE = "WXE"             # 无锡不锈钢交易所
+    CFETS = "CFETS"         # 外汇交易中心
+    XBOND = "XBOND"         # X债券
 
     # Global
-    SMART = "SMART"         # Smart Router for US stocks
-    NYSE = "NYSE"           # New York Stock Exchnage
-    NASDAQ = "NASDAQ"       # Nasdaq Exchange
-    ARCA = "ARCA"           # ARCA Exchange
-    EDGEA = "EDGEA"         # Direct Edge Exchange
-    ISLAND = "ISLAND"       # Nasdaq Island ECN
+    SMART = "SMART"         # 智能路由(美股)
+    NYSE = "NYSE"           # 纽约证券交易所
+    NASDAQ = "NASDAQ"       # 纳斯达克交易所
+    ARCA = "ARCA"           # ARCA交易所
+    EDGEA = "EDGEA"         # Direct Edge交易所
+    ISLAND = "ISLAND"       # 纳斯达克ISLAND
     BATS = "BATS"           # Bats Global Markets
-    IEX = "IEX"             # The Investors Exchange
-    AMEX = "AMEX"           # American Stock Exchange
-    TSE = "TSE"             # Toronto Stock Exchange
-    NYMEX = "NYMEX"         # New York Mercantile Exchange
-    COMEX = "COMEX"         # COMEX of CME
-    GLOBEX = "GLOBEX"       # Globex of CME
-    IDEALPRO = "IDEALPRO"   # Forex ECN of Interactive Brokers
-    CME = "CME"             # Chicago Mercantile Exchange
-    ICE = "ICE"             # Intercontinental Exchange
-    SEHK = "SEHK"           # Stock Exchange of Hong Kong
-    HKFE = "HKFE"           # Hong Kong Futures Exchange
-    SGX = "SGX"             # Singapore Global Exchange
-    CBOT = "CBOT"           # Chicago Board of Trade
-    CBOE = "CBOE"           # Chicago Board Options Exchange
-    CFE = "CFE"             # CBOE Futures Exchange
-    DME = "DME"             # Dubai Mercantile Exchange
-    EUREX = "EUX"           # Eurex Exchange
-    APEX = "APEX"           # Asia Pacific Exchange
-    LME = "LME"             # London Metal Exchange
-    BMD = "BMD"             # Bursa Malaysia Derivatives
-    TOCOM = "TOCOM"         # Tokyo Commodity Exchange
-    EUNX = "EUNX"           # Euronext Exchange
-    KRX = "KRX"             # Korean Exchange
-    OTC = "OTC"             # OTC Product (Forex/CFD/Pink Sheet Equity)
-    IBKRATS = "IBKRATS"     # Paper Trading Exchange of IB
+    IEX = "IEX"             # IEX交易所
+    AMEX = "AMEX"           # 美国证券交易所
+    TSE = "TSE"             # 多伦多证券交易所
+    NYMEX = "NYMEX"         # 纽约商业交易所
+    COMEX = "COMEX"         # 纽约商品交易所
+    GLOBEX = "GLOBEX"       # 芝加哥Globex
+    IDEALPRO = "IDEALPRO"   # IB外汇ECN
+    CME = "CME"             # 芝加哥商业交易所
+    ICE = "ICE"             # 洲际交易所
+    SEHK = "SEHK"           # 香港证券交易所
+    HKFE = "HKFE"           # 香港期货交易所
+    SGX = "SGX"             # 新加坡交易所
+    CBOT = "CBOT"           # 芝加哥期货交易所
+    CBOE = "CBOE"           # 芝加哥期权交易所
+    CFE = "CFE"             # CBOE期货交易所
+    DME = "DME"             # 迪拜商业交易所
+    EUREX = "EUX"           # 欧交所
+    APEX = "APEX"           # 亚太交易所
+    LME = "LME"             # 伦敦金属交易所
+    BMD = "BMD"             # 马来西亚衍生品交易所
+    TOCOM = "TOCOM"         # 东京商品交易所
+    EUNX = "EUNX"           # 泛欧交易所
+    KRX = "KRX"             # 韩国交易所
+    OTC = "OTC"             # OTC产品(外汇/CFD)
+    IBKRATS = "IBKRATS"     # IB模拟交易
 
-    # Special Function
-    LOCAL = "LOCAL"         # For local generated data
-    GLOBAL = "GLOBAL"       # For those exchanges not supported yet
+    # Special
+    LOCAL = "LOCAL"         # 本地生成数据
+    GLOBAL = "GLOBAL"       # 其他未支持交易所
+
+    @property
+    def display_name(self) -> str:
+        """Return Chinese display name."""
+        return _exchange_display_name.get(self.value, self.value)
+
+
+_exchange_display_name: dict[str, str] = {
+    # Chinese
+    "CFFEX": "中金所",
+    "SHFE": "上期所",
+    "CZCE": "郑商所",
+    "DCE": "大商所",
+    "INE": "上能源",
+    "GFEX": "广期所",
+    "SSE": "上交所",
+    "SZSE": "深交所",
+    "BSE": "北交所",
+    "SHHK": "沪港通",
+    "SZHK": "深港通",
+    "SGE": "上金所",
+    "WXE": "无锡钢交所",
+    "CFETS": "外汇交易中心",
+    "XBOND": "X债券",
+    # Global
+    "SMART": "智能路由",
+    "NYSE": "纽交所",
+    "NASDAQ": "纳斯达克",
+    "ARCA": "ARCA",
+    "EDGEA": "EDGEA",
+    "ISLAND": "ISLAND",
+    "BATS": "BATS",
+    "IEX": "IEX",
+    "AMEX": "美交所",
+    "TSE": "多伦多",
+    "NYMEX": "纽商所",
+    "COMEX": "COMEX",
+    "GLOBEX": "GLOBEX",
+    "IDEALPRO": "IB外汇",
+    "CME": "芝商所",
+    "ICE": "洲际交易所",
+    "SEHK": "港交所",
+    "HKFE": "港期所",
+    "SGX": "新交所",
+    "CBOT": "芝加哥期交所",
+    "CBOE": "芝加哥期权所",
+    "CFE": "CBOE期交所",
+    "DME": "迪拜商交所",
+    "EUX": "欧交所",
+    "APEX": "亚太交易所",
+    "LME": "伦敦金属",
+    "BMD": "马来西亚衍生品",
+    "TOCOM": "东京商交所",
+    "EUNX": "泛欧交易所",
+    "KRX": "韩国交易所",
+    "OTC": "OTC",
+    "IBKRATS": "IB模拟",
+    "LOCAL": "本地",
+    "GLOBAL": "全球",
+}
 
 
 class Currency(Enum):
