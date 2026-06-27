@@ -20,7 +20,8 @@ from .event import (
     EVENT_ACCOUNT,
     EVENT_CONTRACT,
     EVENT_LOG,
-    EVENT_QUOTE
+    EVENT_QUOTE,
+    EVENT_TIMER
 )
 from .gateway import BaseGateway
 from .object import (
@@ -140,6 +141,21 @@ class MainEngine:
         Init all engines.
         """
         self.add_engine(LogEngine)
+
+        # Preload public contract cache in background
+        try:
+            from .contract_cache import ensure_cache, refresh_cache
+            ensure_cache()
+
+            # Daily refresh at 6:00 AM
+            def _refresh_contract_cache(event):
+                now = datetime.now()
+                if now.hour == 6 and now.minute == 0:
+                    refresh_cache()
+
+            self.event_engine.register(EVENT_TIMER, _refresh_contract_cache)
+        except ImportError:
+            pass
 
         oms_engine: OmsEngine = self.add_engine(OmsEngine)
         self.get_tick: Callable[[str], TickData | None] = oms_engine.get_tick

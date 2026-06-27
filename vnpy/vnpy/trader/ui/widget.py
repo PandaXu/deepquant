@@ -940,12 +940,6 @@ class TradingWidget(QtWidgets.QWidget):
                 gw = self.main_engine.get_gateway(gw_name)
                 if hasattr(gw, 'td_api') and gw.td_api.login_status and not getattr(gw.td_api, 'contract_inited', False):
                     gw.td_api.query_contract()
-        # Load public data if still empty (first time, may take 2-3 seconds)
-        from ..contract_cache import load_contract_cache
-        try:
-            load_contract_cache()
-        except Exception:
-            pass
         self._refresh_symbols()
         QtWidgets.QComboBox.showPopup(self.symbol_combo)
 

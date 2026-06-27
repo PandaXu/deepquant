@@ -1,13 +1,15 @@
 """
-Public contract data cache — queries akshare for futures contract listings.
-Provides contract names/codes even without a live CTP connection.
+Public contract data cache — preloaded by backend timer task.
+Queries akshare for futures contract listings on startup and daily refresh.
 """
+import threading
+from datetime import datetime, timedelta
 from typing import Optional
 import pandas as pd
 
 from vnpy.trader.constant import Exchange
 
-# akshare exchange name → VeighNa Exchange enum mapping
+# akshare exchange name → VeighNa Exchange enum
 _AKSHARE_EXCHANGE_MAP: dict[str, Exchange] = {
     "上海期货交易所": Exchange.SHFE,
     "大连商品交易所": Exchange.DCE,
@@ -22,32 +24,68 @@ _AKSHARE_EXCHANGE_MAP: dict[str, Exchange] = {
 
 # Global cache
 _contract_cache: Optional[pd.DataFrame] = None
+_cache_ts: Optional[datetime] = None
+_cache_lock = threading.Lock()
+_loading = False
 
 
-def load_contract_cache(force: bool = False) -> pd.DataFrame:
-    """Load futures contract info from akshare (cached)."""
-    global _contract_cache
-    if _contract_cache is not None and not force:
-        return _contract_cache
+def _do_load() -> Optional[pd.DataFrame]:
+    """Actually load from akshare."""
+    global _loading
+    if _loading:
+        return None
+    _loading = True
     try:
         import akshare as ak
         df = ak.futures_comm_info()
-        _contract_cache = df
         return df
     except Exception as e:
-        print(f"[ContractCache] Failed to load: {e}")
-        return pd.DataFrame()
+        print(f"[ContractCache] Load failed: {e}")
+        return None
+    finally:
+        _loading = False
+
+
+def refresh_cache() -> bool:
+    """Force refresh the contract cache. Returns True on success."""
+    global _contract_cache, _cache_ts
+    df = _do_load()
+    if df is not None and not df.empty:
+        with _cache_lock:
+            _contract_cache = df
+            _cache_ts = datetime.now()
+        print(f"[ContractCache] Loaded {len(df)} contracts at {_cache_ts}")
+        return True
+    return False
+
+
+def get_cache() -> Optional[pd.DataFrame]:
+    """Get the current cached dataframe (thread-safe)."""
+    with _cache_lock:
+        return _contract_cache
+
+
+def get_cache_age() -> Optional[datetime]:
+    """Get cache timestamp."""
+    with _cache_lock:
+        return _cache_ts
+
+
+def ensure_cache() -> None:
+    """Load cache in background if not loaded yet."""
+    with _cache_lock:
+        if _contract_cache is not None:
+            return
+    t = threading.Thread(target=refresh_cache, daemon=True)
+    t.start()
 
 
 def query_contracts(exchange: Exchange, keyword: str = "") -> list[dict]:
-    """Query contracts for a specific exchange.
-    Returns list of {symbol, name, exchange_code, vt_symbol}
-    """
-    df = load_contract_cache()
-    if df.empty:
+    """Query contracts for a specific exchange from cache."""
+    df = get_cache()
+    if df is None or df.empty:
         return []
 
-    # Map Exchange enum → akshare name
     reverse_map = {v: k for k, v in _AKSHARE_EXCHANGE_MAP.items()}
     exchange_name = reverse_map.get(exchange, "")
 
@@ -76,10 +114,10 @@ def query_contracts(exchange: Exchange, keyword: str = "") -> list[dict]:
     return results
 
 
-def get_contract_name(code: str, exchange: Optional[Exchange] = None) -> str:
+def get_contract_name(code: str) -> str:
     """Look up a contract's display name from the cache."""
-    df = load_contract_cache()
-    if df.empty:
+    df = get_cache()
+    if df is None or df.empty:
         return ""
     code_upper = code.upper()
     matches = df[df["合约代码"].str.upper() == code_upper]
