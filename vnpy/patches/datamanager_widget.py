@@ -441,22 +441,22 @@ class DownloadDialog(QtWidgets.QDialog):
                 from vnpy.trader.contract_cache import get_products
                 prods = get_products(exchange_code)
                 result = [{"prefix": k, "name": v} for k, v in prods.items()]
-                QtCore.QMetaObject.invokeMethod(
-                    self, "_on_products_loaded", QtCore.Qt.ConnectionType.QueuedConnection,
-                    QtCore.Q_ARG(list, result)
-                )
+                self._thread_result = result
             except Exception:
-                QtCore.QMetaObject.invokeMethod(
-                    self, "_on_products_loaded", QtCore.Qt.ConnectionType.QueuedConnection,
-                    QtCore.Q_ARG(list, [])
-                )
+                self._thread_result = []
+        self._thread_result = None
         Thread(target=_fetch, daemon=True).start()
+        # Poll for result on main thread
+        QtCore.QTimer.singleShot(100, self._check_products_loaded)
 
-    def _on_products_loaded(self, products: list) -> None:
-        """Called on main thread after products are fetched."""
+    def _check_products_loaded(self) -> None:
+        """Poll for thread result and update UI."""
+        if self._thread_result is None:
+            QtCore.QTimer.singleShot(100, self._check_products_loaded)
+            return
         self.product_combo.clear()
         self.product_combo.addItem("全部品种", "")
-        for p in products:
+        for p in self._thread_result:
             label = f"{p['prefix']} - {p['name']}" if p.get('name') else p['prefix']
             self.product_combo.addItem(label, p['prefix'])
 
@@ -482,28 +482,26 @@ class DownloadDialog(QtWidgets.QDialog):
                     for rp in get_related_products(product):
                         related.add(rp)
                     contracts = [c for c in contracts if c['symbol'].upper()[:len(product)].upper() in related]
-                # Add option type indicators
                 import re
                 for c in contracts:
                     m = re.match(r'^[A-Z]+[0-9]+-([CP])-', c['symbol'].upper())
                     if m:
                         c['option_type'] = "看涨" if m.group(1) == 'C' else "看跌"
-                QtCore.QMetaObject.invokeMethod(
-                    self, "_on_contracts_loaded", QtCore.Qt.ConnectionType.QueuedConnection,
-                    QtCore.Q_ARG(list, contracts)
-                )
+                self._ct_result = contracts
             except Exception:
-                QtCore.QMetaObject.invokeMethod(
-                    self, "_on_contracts_loaded", QtCore.Qt.ConnectionType.QueuedConnection,
-                    QtCore.Q_ARG(list, [])
-                )
+                self._ct_result = []
+        self._ct_result = None
         Thread(target=_fetch, daemon=True).start()
+        QtCore.QTimer.singleShot(100, self._check_contracts_loaded)
 
-    def _on_contracts_loaded(self, contracts: list) -> None:
+    def _check_contracts_loaded(self) -> None:
+        if self._ct_result is None:
+            QtCore.QTimer.singleShot(100, self._check_contracts_loaded)
+            return
         self.symbol_combo.clear()
-        if not contracts:
+        if not self._ct_result:
             self.symbol_combo.addItem("无合约", "")
-        for c in contracts:
+        for c in self._ct_result:
             opt = f" {c.get('option_type', '')}" if c.get('option_type') else ""
             self.symbol_combo.addItem(f"{c['symbol']} | {c['name']}{opt}", c['symbol'])
 
@@ -527,22 +525,26 @@ class DownloadDialog(QtWidgets.QDialog):
                     count = self.engine.download_tick_data(symbol, exchange, start, self._on_progress)
                 else:
                     count = self.engine.download_bar_data(symbol, exchange, interval, start, self._on_progress)
-                QtCore.QMetaObject.invokeMethod(
-                    self, "_on_download_done", QtCore.Qt.ConnectionType.QueuedConnection,
-                    QtCore.Q_ARG(int, count)
-                )
-            except Exception as e:
-                QtCore.QMetaObject.invokeMethod(
-                    self, "_on_download_done", QtCore.Qt.ConnectionType.QueuedConnection,
-                    QtCore.Q_ARG(int, -1)
-                )
+                self._dl_result = count
+            except Exception:
+                self._dl_result = -1
+        self._dl_result = None
         Thread(target=_run, daemon=True).start()
+        QtCore.QTimer.singleShot(500, self._check_download_done)
+
+    def _check_download_done(self) -> None:
+        if self._dl_result is None:
+            QtCore.QTimer.singleShot(500, self._check_download_done)
+            return
+        count = self._dl_result
+        if count < 0:
+            self.status_label.setText("下载失败，请检查数据服务配置")
+        else:
+            self.status_label.setText(f"下载完成，共 {count} 条数据")
+            QtWidgets.QMessageBox.information(self, "下载完成", f"下载总数据量：{count}条")
 
     def _on_progress(self, msg: str) -> None:
-        QtCore.QMetaObject.invokeMethod(
-            self.status_label, "setText", QtCore.Qt.ConnectionType.QueuedConnection,
-            QtCore.Q_ARG(str, f"下载进度: {msg}")
-        )
+        self.status_label.setText(f"下载进度: {msg}")
 
     def _on_download_done(self, count: int) -> None:
         if count < 0:
