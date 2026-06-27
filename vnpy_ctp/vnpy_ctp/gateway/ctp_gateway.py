@@ -174,6 +174,11 @@ class CtpGateway(BaseGateway):
         envrionment: str = setting.get("柜台环境", "实盘")
         production_mode: bool = envrionment == "实盘"
 
+        self.write_log(f"[CtpGateway] ====== 开始连接 ======")
+        self.write_log(f"[CtpGateway] 用户={userid} 经纪商={brokerid}")
+        self.write_log(f"[CtpGateway] 交易地址={td_address} 行情地址={md_address}")
+        self.write_log(f"[CtpGateway] 产品名称={appid} 授权编码={auth_code} 环境={envrionment}")
+
         if (
             (not td_address.startswith("tcp://"))
             and (not td_address.startswith("ssl://"))
@@ -188,7 +193,9 @@ class CtpGateway(BaseGateway):
         ):
             md_address = "tcp://" + md_address
 
+        self.write_log(f"[CtpGateway] → 连接交易接口 {td_address}")
         self.td_api.connect(td_address, userid, password, brokerid, auth_code, appid, production_mode)
+        self.write_log(f"[CtpGateway] → 连接行情接口 {md_address}")
         self.md_api.connect(md_address, userid, password, brokerid, production_mode)
 
         self.init_query()
@@ -269,20 +276,21 @@ class CtpMdApi(MdApi):
 
     def onFrontConnected(self) -> None:
         """服务器连接成功回报"""
-        self.gateway.write_log("行情服务器连接成功")
+        self.gateway.write_log("[MdApi] onFrontConnected 行情服务器TCP连接成功")
+        self.gateway.write_log(f"[MdApi] → 即将登录: user={self.userid}, broker={self.brokerid}")
         self.login()
 
     def onFrontDisconnected(self, reason: int) -> None:
         """服务器连接断开回报"""
         self.login_status = False
-        self.gateway.write_log(f"行情服务器连接断开，原因{reason}")
+        self.gateway.write_log(f"[MdApi] onFrontDisconnected 行情连接断开, reason={reason}")
 
     def onRspUserLogin(self, data: dict, error: dict, reqid: int, last: bool) -> None:
         """用户登录请求回报"""
+        self.gateway.write_log(f"[MdApi] onRspUserLogin reqid={reqid} last={last} error={error} data={data}")
         if not error["ErrorID"]:
             self.login_status = True
-            self.gateway.write_log("行情服务器登录成功")
-
+            self.gateway.write_log("[MdApi] ✅ 行情登录成功")
             for symbol in self.subscribed:
                 self.subscribeMarketData(symbol)
         else:
@@ -290,13 +298,15 @@ class CtpMdApi(MdApi):
 
     def onRspError(self, error: dict, reqid: int, last: bool) -> None:
         """请求报错回报"""
+        self.gateway.write_log(f"[MdApi] onRspError reqid={reqid} error={error}")
         self.gateway.write_error("行情接口报错", error)
 
     def onRspSubMarketData(self, data: dict, error: dict, reqid: int, last: bool) -> None:
         """订阅行情回报"""
+        self.gateway.write_log(f"[MdApi] onRspSubMarketData reqid={reqid} data={data} error={error}")
         if not error or not error["ErrorID"]:
+            self.gateway.write_log(f"[MdApi] ✅ 行情订阅成功: {data.get('InstrumentID','?')}")
             return
-
         self.gateway.write_error("行情订阅失败", error)
 
     def onRtnDepthMarketData(self, data: dict) -> None:
@@ -379,12 +389,18 @@ class CtpMdApi(MdApi):
         self.password = password
         self.brokerid = brokerid
 
+        self.gateway.write_log(f"[MdApi] connect: address={address} user={userid} broker={brokerid} production={production_mode}")
+
         # 禁止重复发起连接，会导致异常崩溃
         if not self.connect_status:
             path: Path = get_folder_path(self.gateway_name.lower())
-            self.createFtdcMdApi((str(path) + "\\Md").encode("GBK"), production_mode)
+            flow_path = (str(path) + "\\Md").encode("GBK")
+            self.gateway.write_log(f"[MdApi] → createFtdcMdApi flowPath={flow_path}")
 
+            self.createFtdcMdApi(flow_path, production_mode)
+            self.gateway.write_log(f"[MdApi] → registerFront {address}")
             self.registerFront(address)
+            self.gateway.write_log(f"[MdApi] → init() 开始建立TCP连接...")
             self.init()
 
             self.connect_status = True
@@ -396,12 +412,13 @@ class CtpMdApi(MdApi):
             "Password": self.password,
             "BrokerID": self.brokerid
         }
-
+        self.gateway.write_log(f"[MdApi] → reqUserLogin req={ctp_req} reqid={self.reqid+1}")
         self.reqid += 1
         self.reqUserLogin(ctp_req, self.reqid)
 
     def subscribe(self, req: SubscribeRequest) -> None:
         """订阅行情"""
+        self.gateway.write_log(f"[MdApi] subscribe: symbol={req.symbol} login_status={self.login_status}")
         if self.login_status:
             self.subscribeMarketData(req.symbol)
         self.subscribed.add(req.symbol)
@@ -409,6 +426,7 @@ class CtpMdApi(MdApi):
     def close(self) -> None:
         """关闭连接"""
         if self.connect_status:
+            self.gateway.write_log("[MdApi] → exit()")
             self.exit()
 
     def update_date(self) -> None:
@@ -451,40 +469,40 @@ class CtpTdApi(TdApi):
 
     def onFrontConnected(self) -> None:
         """服务器连接成功回报"""
-        self.gateway.write_log("交易服务器连接成功")
-
+        self.gateway.write_log(f"[TdApi] onFrontConnected 交易服务器TCP连接成功 auth_code={'有' if self.auth_code else '无'}")
         if self.auth_code:
+            self.gateway.write_log("[TdApi] → 需要认证，调用 authenticate()")
             self.authenticate()
         else:
+            self.gateway.write_log("[TdApi] → 无需认证，调用 login()")
             self.login()
 
     def onFrontDisconnected(self, reason: int) -> None:
         """服务器连接断开回报"""
         self.login_status = False
-        self.gateway.write_log(f"交易服务器连接断开，原因{reason}")
+        self.gateway.write_log(f"[TdApi] onFrontDisconnected 交易连接断开, reason={reason}")
 
     def onRspAuthenticate(self, data: dict, error: dict, reqid: int, last: bool) -> None:
         """用户授权验证回报"""
+        self.gateway.write_log(f"[TdApi] onRspAuthenticate reqid={reqid} error={error} data={data}")
         if not error['ErrorID']:
             self.auth_status = True
-            self.gateway.write_log("交易服务器授权验证成功")
+            self.gateway.write_log("[TdApi] ✅ 认证成功，→ login()")
             self.login()
         else:
-            # 如果是授权码错误，则禁止再次发起认证
             if error['ErrorID'] == 63:
                 self.auth_failed = True
-
             self.gateway.write_error("交易服务器授权验证失败", error)
 
     def onRspUserLogin(self, data: dict, error: dict, reqid: int, last: bool) -> None:
         """用户登录请求回报"""
+        self.gateway.write_log(f"[TdApi] onRspUserLogin reqid={reqid} error={error} data={data}")
         if not error["ErrorID"]:
             self.frontid = data["FrontID"]
             self.sessionid = data["SessionID"]
             self.login_status = True
-            self.gateway.write_log("交易服务器登录成功")
-
-            # 自动确认结算单
+            self.gateway.write_log(f"[TdApi] ✅ 交易登录成功! FrontID={self.frontid} SessionID={self.sessionid}")
+            self.gateway.write_log("[TdApi] → reqSettlementInfoConfirm 确认结算单...")
             ctp_req: dict = {
                 "BrokerID": self.brokerid,
                 "InvestorID": self.userid
@@ -493,7 +511,6 @@ class CtpTdApi(TdApi):
             self.reqSettlementInfoConfirm(ctp_req, self.reqid)
         else:
             self.login_failed = True
-
             self.gateway.write_error("交易服务器登录失败", error)
 
     def onRspOrderInsert(self, data: dict, error: dict, reqid: int, last: bool) -> None:
@@ -525,16 +542,20 @@ class CtpTdApi(TdApi):
 
     def onRspSettlementInfoConfirm(self, data: dict, error: dict, reqid: int, last: bool) -> None:
         """确认结算单回报"""
-        self.gateway.write_log("结算信息确认成功")
+        self.gateway.write_log(f"[TdApi] onRspSettlementInfoConfirm 结算确认成功 error={error}")
+        self.gateway.write_log("[TdApi] → reqQryInstrument 查询合约...")
 
         # 由于流控，单次查询可能失败，通过while循环持续尝试，直到成功发出请求
+        attempt = 0
         while True:
             self.reqid += 1
             n: int = self.reqQryInstrument({}, self.reqid)
-
             if not n:
+                self.gateway.write_log(f"[TdApi] ✅ reqQryInstrument 请求发送成功 reqid={self.reqid} (尝试{attempt+1}次)")
                 break
             else:
+                attempt += 1
+                self.gateway.write_log(f"[TdApi] ⚠️ reqQryInstrument 流控重试 ret={n} 尝试#{attempt}")
                 sleep(1)
 
     def onRspQryInvestorPosition(self, data: dict, error: dict, reqid: int, last: bool) -> None:
@@ -646,7 +667,7 @@ class CtpTdApi(TdApi):
 
         if last:
             self.contract_inited = True
-            self.gateway.write_log("合约信息查询成功")
+            self.gateway.write_log(f"[TdApi] ✅ 合约信息查询成功! 共{symbol_contract_map.__len__()}个合约")
 
             for data in self.order_data:
                 self.onRtnOrder(data)
@@ -764,14 +785,19 @@ class CtpTdApi(TdApi):
         self.auth_code = auth_code
         self.appid = appid
 
+        self.gateway.write_log(f"[TdApi] connect: address={address} user={userid} broker={brokerid} auth={'有' if auth_code else '无'} production={production_mode}")
+
         if not self.connect_status:
             path: Path = get_folder_path(self.gateway_name.lower())
             self.createFtdcTraderApi((str(path) + "\\Td").encode("GBK"), production_mode)
+            self.gateway.write_log("[TdApi] → subscribePrivateTopic(0) subscribePublicTopic(0)")
 
             self.subscribePrivateTopic(0)
             self.subscribePublicTopic(0)
 
+            self.gateway.write_log(f"[TdApi] → registerFront {address}")
             self.registerFront(address)
+            self.gateway.write_log("[TdApi] → init() 开始建立TCP连接...")
             self.init()
 
             self.connect_status = True
