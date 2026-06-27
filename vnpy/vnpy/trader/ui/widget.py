@@ -707,7 +707,8 @@ class ConnectDialog(QtWidgets.QDialog):
 
 # ---- REST API helpers for contract data ----
 _API_BASE = "http://127.0.0.1:8888"
-_product_cache: dict[str, dict[str, str]] = {}  # exchange → {prefix: name}
+_product_cache: dict[str, dict[str, str]] = {}    # exchange → {prefix: name}
+_contract_cache: dict[str, list[dict]] = {}        # "exchange|product" → contracts
 
 
 def _api_get(path: str) -> dict:
@@ -732,12 +733,15 @@ def _api_get_products(exchange: str) -> dict[str, str]:
 
 
 def _api_get_contracts(exchange: str, product: str = "") -> list[dict]:
-    """Get contracts from REST API."""
-    path = f"/api/contracts/public?exchange={exchange}"
-    if product:
-        path += f"&product={product}"
-    data = _api_get(path)
-    return data.get("contracts", [])
+    """Get contracts from REST API (cached)."""
+    cache_key = f"{exchange}|{product}"
+    if cache_key not in _contract_cache:
+        path = f"/api/contracts/public?exchange={exchange}"
+        if product:
+            path += f"&product={product}"
+        data = _api_get(path)
+        _contract_cache[cache_key] = data.get("contracts", [])
+    return _contract_cache[cache_key]
 
 
 def is_contract_expired(code: str) -> bool:
@@ -991,7 +995,7 @@ class TradingWidget(QtWidgets.QWidget):
             self.price_line.setText(f"{tick.last_price:.{price_digits}f}")
 
     def _on_exchange_changed(self) -> None:
-        """When exchange changes, populate product list instantly from cache."""
+        """When exchange changes, populate product list + preload contracts."""
         ex = self.exchange_combo.currentData() or self.exchange_combo.currentText()
         self.main_engine.write_log(f"[GUI] 交易所切换 → {ex}")
 
@@ -1007,6 +1011,16 @@ class TradingWidget(QtWidgets.QWidget):
         except Exception:
             pass
         self.symbol_filter.blockSignals(False)
+
+        # Preload contracts for this exchange in background
+        def _preload():
+            try:
+                _api_get_contracts(ex)
+                self.main_engine.write_log(f"[GUI] 合约预加载完成: {ex}")
+            except Exception:
+                pass
+        import threading
+        threading.Thread(target=_preload, daemon=True).start()
 
         # Clear dependent fields
         self.symbol_combo.clear()
