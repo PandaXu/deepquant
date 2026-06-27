@@ -890,9 +890,7 @@ class TradingWidget(QtWidgets.QWidget):
 
         grid: QtWidgets.QGridLayout = QtWidgets.QGridLayout()
         grid.addWidget(QtWidgets.QLabel(_("交易所")), 0, 0)
-        grid.addWidget(self.settings_btn, 0, 2)
         grid.addWidget(QtWidgets.QLabel(_("品种")), 1, 0)
-        grid.addWidget(self.show_expired_check, 1, 2)
         grid.addWidget(QtWidgets.QLabel(_("代码")), 2, 0)
         grid.addWidget(QtWidgets.QLabel(_("名称")), 3, 0)
         grid.addWidget(QtWidgets.QLabel(_("方向")), 4, 0)
@@ -901,8 +899,16 @@ class TradingWidget(QtWidgets.QWidget):
         grid.addWidget(QtWidgets.QLabel(_("价格")), 7, 0)
         grid.addWidget(QtWidgets.QLabel(_("数量")), 8, 0)
         grid.addWidget(QtWidgets.QLabel(_("接口")), 9, 0)
-        grid.addWidget(self.exchange_combo, 0, 1, 1, 2)
-        grid.addWidget(self.symbol_filter, 1, 1, 1, 2)
+        # Exchange row: combo + ⚙ button
+        exchange_row = QtWidgets.QHBoxLayout()
+        exchange_row.addWidget(self.exchange_combo)
+        exchange_row.addWidget(self.settings_btn)
+        grid.addLayout(exchange_row, 0, 1, 1, 2)
+        # Product row: combo + expire checkbox
+        product_row = QtWidgets.QHBoxLayout()
+        product_row.addWidget(self.symbol_filter)
+        product_row.addWidget(self.show_expired_check)
+        grid.addLayout(product_row, 1, 1, 1, 2)
         grid.addWidget(self.symbol_combo, 2, 1, 1, 2)
         grid.addWidget(self.name_line, 3, 1, 1, 2)
         grid.addWidget(self.direction_combo, 4, 1, 1, 2)
