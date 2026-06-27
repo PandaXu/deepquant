@@ -731,7 +731,7 @@ function open_about() { alert('VeighNa Trader 社区版 v4.4.0\nWeb 版本'); }
 function edit_global_setting() { alert('全局配置编辑器 (GlobalDialog)'); }
 function open_wechat() { alert('微信通知绑定 (WechatDialog)'); }
 function restore_window() { location.reload(); }
-function open_app_widget(name) { alert('打开App小部件: ' + name); }
+function open_app_widget(name) { window.open('/app?name=' + encodeURIComponent(name), '_blank'); }
 
 function refresh_status() { ws_send({ action: 'get_status', payload: {} }); }
 

@@ -215,6 +215,128 @@ async def handle_ws_message(ws: WebSocket, msg: str) -> None:
             if gw:
                 gw.query_position()
 
+        # ---- App: PaperAccount ----
+        elif action == "get_paper_settings":
+            engine = main_engine.get_engine("PaperAccount")
+            if engine:
+                await ws.send_text(json.dumps({"type": "paper_settings", "data": {
+                    "slippage": engine.get_trade_slippage(),
+                    "interval": engine.get_timer_interval(),
+                    "instant": engine.get_instant_trade(),
+                }}))
+
+        elif action == "set_paper_settings":
+            engine = main_engine.get_engine("PaperAccount")
+            if engine:
+                engine.set_trade_slippage(int(payload.get("slippage", 0)))
+                engine.set_timer_interval(int(payload.get("interval", 30)))
+                engine.set_instant_trade(bool(payload.get("instant", True)))
+                main_engine.write_log("模拟交易设置已更新")
+
+        elif action == "paper_clear_position":
+            engine = main_engine.get_engine("PaperAccount")
+            if engine:
+                engine.clear_position()
+                main_engine.write_log("模拟交易持仓已清空")
+
+        # ---- App: CtaStrategy ----
+        elif action == "get_cta_classes":
+            engine = main_engine.get_engine("CtaStrategy")
+            if engine:
+                names = engine.get_all_strategy_class_names()
+                names.sort()
+                await ws.send_text(json.dumps({"type": "cta_classes", "data": names}))
+
+        elif action == "get_cta_strategies":
+            engine = main_engine.get_engine("CtaStrategy")
+            if engine:
+                strategies = engine.get_all_strategies()
+                result = []
+                for s in strategies:
+                    result.append({
+                        "strategy_name": s.strategy_name,
+                        "vt_symbol": s.vt_symbol,
+                        "class_name": s.class_name,
+                        "parameters": engine.get_strategy_parameters(s.strategy_name),
+                        "variables": engine.get_strategy_variables(s.strategy_name),
+                    })
+                await ws.send_text(json.dumps({"type": "cta_strategies", "data": result}))
+
+        elif action.startswith("cta_strategy_"):
+            engine = main_engine.get_engine("CtaStrategy")
+            if engine:
+                name = payload.get("strategy_name", "")
+                act = action.replace("cta_strategy_", "")
+                if act == "init":
+                    engine.init_strategy(name)
+                elif act == "start":
+                    engine.start_strategy(name)
+                elif act == "stop":
+                    engine.stop_strategy(name)
+                elif act == "remove":
+                    engine.remove_strategy(name)
+                await ws.send_text(json.dumps({"type": "cta_strategies", "data": []}))
+                # Refresh strategy list
+                await asyncio.sleep(0.5)
+
+        elif action.startswith("cta_"):
+            engine = main_engine.get_engine("CtaStrategy")
+            if engine:
+                act = action.replace("cta_", "")
+                if act == "init_all":
+                    engine.init_all_strategies()
+                elif act == "start_all":
+                    engine.start_all_strategies()
+                elif act == "stop_all":
+                    engine.stop_all_strategies()
+
+        # ---- App: CtaBacktester ----
+        elif action == "get_backtest_classes":
+            engine = main_engine.get_engine("CtaBacktester")
+            if engine:
+                names = engine.get_strategy_class_names()
+                names.sort()
+                await ws.send_text(json.dumps({"type": "bt_classes", "data": names}))
+
+        elif action == "start_backtesting":
+            engine = main_engine.get_engine("CtaBacktester")
+            if engine:
+                # This runs synchronously and may take a while
+                import threading
+                def run_bt():
+                    try:
+                        engine.start_backtesting(
+                            payload["class_name"],
+                            payload["vt_symbol"],
+                            payload["interval"],
+                            payload["start"],
+                            payload["end"],
+                            float(payload.get("capital", 1000000)),
+                            float(payload.get("rate", 0.0001)),
+                            float(payload.get("slippage", 0.2)),
+                            int(payload.get("size", 10)),
+                            float(payload.get("pricetick", 1)),
+                        )
+                        result = engine.get_result_statistics()
+                        # Send result via event bridge
+                        event_engine.put(Event("backtestResult", result))
+                    except Exception as e:
+                        event_engine.put(Event("backtestError", str(e)))
+                t = threading.Thread(target=run_bt, daemon=True)
+                t.start()
+
+        # ---- App: DataManager ----
+        elif action == "get_data_overview":
+            engine = main_engine.get_engine("DataManager")
+            if engine:
+                overviews = engine.get_bar_overview()
+                result = [{"symbol": o.symbol, "exchange": o.exchange.value if o.exchange else "",
+                           "interval": o.interval.value if o.interval else "", "count": o.count,
+                           "start": o.start.isoformat() if o.start else "", "end": o.end.isoformat() if o.end else "",
+                           "vt_symbol": f"{o.symbol}.{o.exchange.value}" if o.exchange else o.symbol}
+                          for o in overviews]
+                await ws.send_text(json.dumps({"type": "data_overview", "data": result}))
+
     except Exception as e:
         await ws.send_text(json.dumps({"type": "error", "msg": str(e)}))
 
@@ -290,6 +412,15 @@ def api_data():
 
 
 # ---------------------------------------------------------------------------
+# App pages
+# ---------------------------------------------------------------------------
+@app.get("/app")
+def app_page():
+    html_path = Path(__file__).parent / "apps.html"
+    return HTMLResponse(html_path.read_text(encoding="utf-8"))
+
+
+# ---------------------------------------------------------------------------
 # Main page
 # ---------------------------------------------------------------------------
 @app.get("/")
@@ -325,6 +456,23 @@ def start_engine() -> None:
     if HAS_DATAMANAGER:
         main_engine.add_app(DataManagerApp)
         print("  ✅ Data Manager")
+
+    # Register backtest result events
+    event_engine.register("backtestResult", bridge_event)
+    event_engine.register("backtestError", bridge_event)
+    # Register CTA log events to forward to WebSocket
+    if HAS_CTA:
+        try:
+            from vnpy_ctastrategy.base import EVENT_CTA_LOG
+            event_engine.register(EVENT_CTA_LOG, bridge_event)
+        except ImportError:
+            pass
+    if HAS_BACKTESTER:
+        try:
+            from vnpy_ctabacktester.engine import EVENT_BACKTESTER_LOG
+            event_engine.register(EVENT_BACKTESTER_LOG, bridge_event)
+        except ImportError:
+            pass
 
     event_engine.register_general(bridge_event)
     main_engine.write_log("Web Trader engine started")

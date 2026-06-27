@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VeighNa App</title>
+<style>
+:root { --bg:#1e1e1e;--bg2:#2d2d2d;--bg3:#252526;--text:#d4d4d4;--dim:#808080;--blue:#569cd6;--accent:#007acc;--border:#3c3c3c;--red:#c42b1c;--green:#0b6016;--hdr:#333; }
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI','PingFang SC',sans-serif;font-size:12px;background:var(--bg);color:var(--text);height:100vh;overflow:hidden;display:flex;flex-direction:column}
+#titlebar{height:30px;background:var(--bg3);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 12px;gap:8px}
+#titlebar .t{font-weight:600;font-size:13px}
+#titlebar .back{color:var(--accent);cursor:pointer;font-size:11px;text-decoration:none}
+#content{flex:1;overflow:auto;padding:16px}
+h2{font-size:16px;margin-bottom:12px;color:var(--blue)}
+.row{display:flex;gap:8px;margin-bottom:8px;align-items:center}
+.row label{min-width:100px;color:var(--dim);font-size:11px;text-align:right}
+input,select,button{padding:4px 8px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:3px;font-size:12px}
+button{cursor:pointer;font-weight:600}
+button:hover{border-color:var(--accent)}
+.btn-primary{background:var(--accent);color:#fff;border:none}
+.btn-danger{background:var(--red);color:#fff;border:none}
+.btn-success{background:var(--green);color:#fff;border:none}
+table{width:100%;border-collapse:collapse;font-size:12px;margin-top:12px}
+th{background:var(--hdr);padding:4px 8px;text-align:left;border-bottom:1px solid var(--border);font-size:11px;color:var(--text)}
+td{padding:3px 8px;border-bottom:1px solid rgba(255,255,255,0.03)}
+tr:nth-child(even){background:rgba(255,255,255,0.02)}
+tr:hover{background:rgba(0,122,204,0.1)}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:16px;margin-bottom:16px}
+.card h3{font-size:13px;margin-bottom:10px;color:var(--text)}
+.mgr-card{background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:14px;margin-bottom:10px}
+.mgr-card h4{font-size:13px;margin-bottom:8px}
+.mgr-card .btns{display:flex;gap:6px;margin-bottom:8px}
+.status-badge{padding:1px 8px;border-radius:999px;font-size:10px;display:inline-block}
+.status-badge.inited{background:rgba(88,166,255,0.2);color:var(--blue)}
+.status-badge.trading{background:rgba(63,185,80,0.2);color:#3fb950}
+.status-badge.stopped{background:rgba(248,81,73,0.2);color:#f85149}
+.log-panel{font-family:monospace;font-size:11px;max-height:200px;overflow:auto;background:var(--bg3);padding:8px;border-radius:4px}
+.log-entry{padding:1px 0}
+</style>
+</head>
+<body>
+<div id="titlebar">
+  <span class="t"><a href="/" class="back">← VeighNa</a> — <span id="app-title">App</span></span>
+</div>
+<div id="content"></div>
+
+<script>
+const APP_NAME = new URLSearchParams(location.search).get('name') || 'PaperAccount';
+document.getElementById('app-title').textContent = APP_NAME;
+
+const content = document.getElementById('content');
+
+// ---- PaperAccount ----
+function render_paper_account() {
+  content.innerHTML = `<h2>模拟交易设置</h2>
+  <div class="card">
+    <div class="row"><label>成交滑点 (跳)</label><input id="pa-slippage" type="number" min="0" value="0"><span style="color:var(--dim);font-size:11px">市价/停止委托的滑点</span></div>
+    <div class="row"><label>计算频率 (秒)</label><input id="pa-interval" type="number" min="1" value="30"><span style="color:var(--dim);font-size:11px">持仓盈亏计算频率</span></div>
+    <div class="row"><label>立即撮合</label><input id="pa-instant" type="checkbox" checked><span style="color:var(--dim);font-size:11px">下单后立即用当前盘口撮合</span></div>
+    <div class="row" style="margin-top:16px">
+      <button class="btn-primary" onclick="pa_save()">保存设置</button>
+      <button class="btn-danger" onclick="pa_clear()">清空所有持仓</button>
+    </div>
+  </div>`;
+  ws_send({action:'get_paper_settings',payload:{}});
+}
+
+function pa_save() {
+  ws_send({action:'set_paper_settings',payload:{
+    slippage: parseInt(document.getElementById('pa-slippage').value)||0,
+    interval: parseInt(document.getElementById('pa-interval').value)||30,
+    instant: document.getElementById('pa-instant').checked
+  }});
+}
+function pa_clear() { if(confirm('确认清空所有模拟持仓?')) ws_send({action:'paper_clear_position',payload:{}}); }
+
+// ---- CtaStrategy ----
+function render_cta_strategy() {
+  content.innerHTML = `<h2>CTA策略管理</h2>
+  <div class="card">
+    <div class="row">
+      <select id="cs-class"><option value="">选择策略类...</option></select>
+      <button class="btn-primary" onclick="cs_add()">添加策略</button>
+      <span style="flex:1"></span>
+      <button class="btn-primary" onclick="cs_action('init_all')">全部初始化</button>
+      <button class="btn-success" onclick="cs_action('start_all')">全部启动</button>
+      <button class="btn-danger" onclick="cs_action('stop_all')">全部停止</button>
+      <button onclick="cs_clear_log()">清空日志</button>
+    </div>
+  </div>
+  <div id="cs-strategies"></div>
+  <div class="card" style="margin-top:12px">
+    <h3>日志</h3>
+    <div class="log-panel" id="cs-log"></div>
+  </div>`;
+  ws_send({action:'get_cta_classes',payload:{}});
+  ws_send({action:'get_cta_strategies',payload:{}});
+}
+
+function cs_add() {
+  const cls = document.getElementById('cs-class').value;
+  if (!cls) return alert('选择策略类');
+  ws_send({action:'get_cta_params',payload:{class_name:cls}});
+}
+function cs_action(action) { ws_send({action:'cta_'+action,payload:{}}); }
+function cs_clear_log() { document.getElementById('cs-log').innerHTML = ''; }
+
+// ---- CtaBacktester ----
+function render_cta_backtester() {
+  content.innerHTML = `<h2>CTA策略回测</h2>
+  <div class="card">
+    <h3>回测配置</h3>
+    <div class="row"><label>策略类</label><select id="bt-class"><option value="">选择...</option></select></div>
+    <div class="row"><label>合约代码</label><input id="bt-symbol" placeholder="如 rb2510.SHFE"></div>
+    <div class="row"><label>K线周期</label>
+      <select id="bt-interval"><option value="MINUTE">分钟线</option><option value="HOUR">小时线</option><option value="DAILY">日线</option></select></div>
+    <div class="row"><label>开始日期</label><input id="bt-start" type="date" value="2024-01-01"></div>
+    <div class="row"><label>结束日期</label><input id="bt-end" type="date" value="2025-01-01"></div>
+    <div class="row"><label>起始资金</label><input id="bt-capital" type="number" value="1000000"></div>
+    <div class="row"><label>手续费率</label><input id="bt-rate" type="number" step="any" value="0.0001"></div>
+    <div class="row"><label>滑点</label><input id="bt-slippage" type="number" step="any" value="0.2"></div>
+    <div class="row"><label>合约乘数</label><input id="bt-size" type="number" value="10"></div>
+    <div class="row"><label>价格跳动</label><input id="bt-pricetick" type="number" step="any" value="1"></div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn-primary" onclick="bt_start()">开始回测</button>
+    </div>
+  </div>
+  <div class="card" id="bt-results" style="display:none">
+    <h3>回测结果</h3>
+    <div id="bt-stats"></div>
+  </div>
+  <div class="card" style="margin-top:12px">
+    <h3>日志</h3>
+    <div class="log-panel" id="bt-log"></div>
+  </div>`;
+  ws_send({action:'get_backtest_classes',payload:{}});
+}
+
+function bt_start() {
+  ws_send({action:'start_backtesting',payload:{
+    class_name: document.getElementById('bt-class').value,
+    vt_symbol: document.getElementById('bt-symbol').value,
+    interval: document.getElementById('bt-interval').value,
+    start: document.getElementById('bt-start').value,
+    end: document.getElementById('bt-end').value,
+    capital: parseFloat(document.getElementById('bt-capital').value)||1000000,
+    rate: parseFloat(document.getElementById('bt-rate').value)||0.0001,
+    slippage: parseFloat(document.getElementById('bt-slippage').value)||0.2,
+    size: parseInt(document.getElementById('bt-size').value)||10,
+    pricetick: parseFloat(document.getElementById('bt-pricetick').value)||1,
+  }});
+  document.getElementById('bt-results').style.display = 'block';
+  document.getElementById('bt-stats').innerHTML = '<span style="color:var(--dim)">回测运行中...</span>';
+}
+
+// ---- DataManager ----
+function render_data_manager() {
+  content.innerHTML = `<h2>数据管理</h2>
+  <div class="card">
+    <div class="row">
+      <button class="btn-primary" onclick="dm_refresh()">刷新</button>
+      <span style="flex:1"></span>
+      <button onclick="dm_import()">导入数据</button>
+      <button onclick="dm_update()">更新数据</button>
+      <button onclick="dm_download()">下载数据</button>
+    </div>
+    <table style="margin-top:12px">
+      <thead><tr><th>本地代码</th><th>代码</th><th>交易所</th><th>周期</th><th>数据量</th><th>开始时间</th><th>结束时间</th></tr></thead>
+      <tbody id="dm-table"><tr><td colspan="7" style="color:var(--dim)">点击刷新加载数据</td></tr></tbody>
+    </table>
+  </div>`;
+}
+
+function dm_refresh() { ws_send({action:'get_data_overview',payload:{}}); }
+function dm_import() { alert('导入数据: 选择文件上传 (需后端支持)'); }
+function dm_update() { alert('更新数据: 从数据服务更新'); }
+function dm_download() { alert('下载数据: 从数据服务下载历史数据'); }
+
+// ---- WebSocket ----
+let ws;
+function ws_connect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+  ws.onopen = () => console.log('App WS connected');
+  ws.onmessage = e => handle_msg(JSON.parse(e.data));
+  ws.onclose = () => setTimeout(ws_connect, 2000);
+}
+function ws_send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
+
+function handle_msg(m) {
+  const t = m.type, d = m.data;
+  if (t === 'paper_settings' && d) {
+    document.getElementById('pa-slippage').value = d.slippage || 0;
+    document.getElementById('pa-interval').value = d.interval || 30;
+    document.getElementById('pa-instant').checked = d.instant !== false;
+  }
+  if (t === 'cta_classes' && d) {
+    const sel = document.getElementById('cs-class');
+    if (sel) { sel.innerHTML = '<option value="">选择策略类...</option>' + d.map(c => `<option>${c}</option>`).join(''); }
+  }
+  if (t === 'bt_classes' && d) {
+    const sel = document.getElementById('bt-class');
+    if (sel) { sel.innerHTML = '<option value="">选择...</option>' + d.map(c => `<option>${c}</option>`).join(''); }
+  }
+  if (t === 'cta_strategies' && d) {
+    const el = document.getElementById('cs-strategies');
+    if (el) {
+      el.innerHTML = d.map(s => `<div class="mgr-card">
+        <h4>${s.strategy_name} — ${s.vt_symbol} <span style="font-size:10px;color:var(--dim)">(${s.class_name})</span>
+          <span class="status-badge ${s.variables?.trading?'trading':s.variables?.inited?'inited':'stopped'}">${s.variables?.trading?'运行中':s.variables?.inited?'已初始化':'已停止'}</span></h4>
+        <div class="btns">
+          <button onclick="cs_strategy_action('${s.strategy_name}','init')" ${s.variables?.inited?'disabled':''}>初始化</button>
+          <button onclick="cs_strategy_action('${s.strategy_name}','start')" ${s.variables?.trading?'disabled':''}>启动</button>
+          <button onclick="cs_strategy_action('${s.strategy_name}','stop')" ${!s.variables?.trading?'disabled':''}>停止</button>
+          <button onclick="cs_strategy_action('${s.strategy_name}','edit')" ${s.variables?.trading?'disabled':''}>编辑</button>
+          <button onclick="cs_strategy_action('${s.strategy_name}','remove')" ${s.variables?.trading?'disabled':''}>移除</button>
+        </div>
+        <table><thead><tr>${Object.keys(s.parameters||{}).map(k=>`<th>${k}</th>`).join('')}</tr></thead>
+        <tbody><tr>${Object.values(s.parameters||{}).map(v=>`<td>${v}</td>`).join('')}</tr></tbody></table>
+        <table style="margin-top:8px"><thead><tr>${Object.keys(s.variables||{}).map(k=>`<th>${k}</th>`).join('')}</tr></thead>
+        <tbody><tr>${Object.values(s.variables||{}).map(v=>`<td>${v}</td>`).join('')}</tr></tbody></table>
+      </div>`).join('') || '<div style="color:var(--dim)">无已添加策略</div>';
+    }
+  }
+  if (t === 'backtest_result' && d) {
+    document.getElementById('bt-stats').innerHTML =
+      `<table><tr><td>总收益率</td><td style="color:${d.total_return>0?'#ff4444':'#00aa00'}">${(d.total_return*100).toFixed(2)}%</td></tr>
+      <tr><td>夏普比率</td><td>${(d.sharpe_ratio||0).toFixed(2)}</td></tr>
+      <tr><td>最大回撤</td><td>${(d.max_drawdown*100).toFixed(2)}%</td></tr>
+      <tr><td>总交易日</td><td>${d.total_days||0}</td></tr>
+      <tr><td>总成交笔数</td><td>${d.total_trades||0}</td></tr></table>`;
+  }
+  if (t === 'data_overview' && d) {
+    const el = document.getElementById('dm-table');
+    if (el) {
+      el.innerHTML = (d||[]).map(r => `<tr><td>${r.vt_symbol||''}</td><td>${r.symbol||''}</td><td>${r.exchange||''}</td><td>${r.interval||''}</td><td>${r.count||0}</td><td>${r.start||''}</td><td>${r.end||''}</td></tr>`).join('') || '<tr><td colspan="7" style="color:var(--dim)">无数据</td></tr>';
+    }
+  }
+  if (t === 'log' && d) {
+    ['cs-log','bt-log'].forEach(id => {
+      const el = document.getElementById(id); if (el) el.innerHTML += `<div class="log-entry">${d.msg||''}</div>`;
+    });
+  }
+}
+
+function cs_strategy_action(name, action) {
+  ws_send({action:'cta_strategy_'+action,payload:{strategy_name:name}});
+}
+
+// ---- Router ----
+const renderers = {
+  PaperAccount: render_paper_account,
+  CtaStrategy: render_cta_strategy,
+  CtaBacktester: render_cta_backtester,
+  DataManager: render_data_manager,
+};
+if (renderers[APP_NAME]) renderers[APP_NAME]();
+else content.innerHTML = '<h2>未知App: ' + APP_NAME + '</h2>';
+
+ws_connect();
+// Poll for strategy updates
+if (APP_NAME === 'CtaStrategy') setInterval(() => ws_send({action:'get_cta_strategies',payload:{}}), 3000);
+</script>
+</body>
+</html>
