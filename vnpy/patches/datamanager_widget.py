@@ -265,7 +265,7 @@ class ManagerWidget(QtWidgets.QWidget):
 
     def download_data(self) -> None:
         """"""
-        dialog: DownloadDialog = DownloadDialog(self.engine, self.main_engine)
+        dialog: DownloadDialog = DownloadDialog(self.engine, self.engine.main_engine)
         dialog.exec_()
         self.refresh_tree()
 
