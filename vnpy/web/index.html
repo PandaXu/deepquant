@@ -722,16 +722,73 @@ function connect_gateway() {
 function close_modal(id) { document.getElementById(id).classList.remove('show'); }
 
 // ---- Menu actions (exact Qt menus) ----
-function open_contract_manager() { alert('合约管理器 (ContractManager)'); }
+function open_contract_manager() { show_contract_dialog(); }
 function resize_columns() { document.querySelectorAll('table').forEach(t => { t.style.tableLayout = 'auto'; }); }
-function save_csv() { alert('保存数据: 右键表格选择保存数据 (CSV导出)'); }
+function save_csv() {
+  const rows = []; const tbody = document.querySelector('.tab-content.active tbody') || document.querySelector('tbody');
+  if (!tbody) return alert('无数据');
+  tbody.querySelectorAll('tr').forEach(tr => { const cols = []; tr.querySelectorAll('td').forEach(td => cols.push(td.textContent)); rows.push(cols.join(',')); });
+  const csv = rows.join('\n'); const blob = new Blob([csv], {type:'text/csv'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'data.csv'; a.click();
+}
 function send_test_email() { ws_send({ action: 'get_status', payload: {} }); document.getElementById('status-msg').textContent = '测试邮件已发送'; }
 function open_forum() { window.open('https://www.vnpy.com/forum/', '_blank'); }
-function open_about() { alert('VeighNa Trader 社区版 v4.4.0\nWeb 版本'); }
-function edit_global_setting() { alert('全局配置编辑器 (GlobalDialog)'); }
-function open_wechat() { alert('微信通知绑定 (WechatDialog)'); }
+function open_about() { show_about_dialog(); }
+function edit_global_setting() { show_settings_dialog(); }
+function open_wechat() { alert('微信通知绑定 (WechatDialog)\n请在桌面版中使用微信扫码绑定'); }
 function restore_window() { location.reload(); }
 function open_app_widget(name) { window.open('/app?name=' + encodeURIComponent(name), '_blank'); }
+
+async function show_contract_dialog() {
+  const overlay = document.createElement('div'); overlay.className = 'modal-overlay show';
+  overlay.innerHTML = `<div class="modal" style="min-width:900px;max-width:95vw">
+    <h2>🔍 查询合约</h2>
+    <div class="row"><input id="ct-filter" placeholder="输入合约代码或者交易所，留空则查询所有合约" style="flex:1"><button style="background:var(--accent);color:#fff;border:none" id="ct-query">查询</button></div>
+    <div style="max-height:500px;overflow:auto"><table><thead><tr><th>本地代码</th><th>代码</th><th>交易所</th><th>名称</th><th>产品</th><th>乘数</th><th>价格跳动</th><th>最小量</th><th>接口</th></tr></thead><tbody id="ct-body"><tr><td colspan="9" style="color:var(--dim)">点击查询加载合约数据</td></tr></tbody></table></div>
+    <div class="btn-row"><button onclick="this.closest('.modal-overlay').remove()" style="background:var(--bg3);color:var(--text)">关闭</button></div></div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  document.getElementById('ct-query').onclick = async () => {
+    const f = document.getElementById('ct-filter').value;
+    const r = await fetch('/api/contracts?filter=' + encodeURIComponent(f));
+    const data = await r.json();
+    document.getElementById('ct-body').innerHTML = data.length ? data.map(c =>
+      `<tr><td>${c.vt_symbol}</td><td>${c.symbol}</td><td>${c.exchange}</td><td>${c.name}</td><td>${c.product}</td><td>${c.size}</td><td>${c.pricetick}</td><td>${c.min_volume}</td><td>${c.gateway_name}</td></tr>`
+    ).join('') : '<tr><td colspan="9" style="color:var(--dim)">无匹配合约</td></tr>';
+  };
+}
+
+async function show_settings_dialog() {
+  const r = await fetch('/api/settings'); const settings = await r.json();
+  const overlay = document.createElement('div'); overlay.className = 'modal-overlay show';
+  overlay.innerHTML = `<div class="modal" style="min-width:700px;max-width:90vw;max-height:80vh;overflow:auto">
+    <h2>⚙️ 全局配置</h2>
+    <div id="gs-form">${Object.entries(settings).map(([k,v]) => `<div class="row"><label>${k} &lt;${typeof v}&gt;</label><input id="gs-${k}" value="${v}"></div>`).join('')}</div>
+    <div class="btn-row">
+      <button onclick="this.closest('.modal-overlay').remove()" style="background:var(--bg3);color:var(--text)">取消</button>
+      <button id="gs-save" style="background:var(--accent);color:#fff;border:none">确定</button></div></div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  document.getElementById('gs-save').onclick = async () => {
+    const data = {}; Object.keys(settings).forEach(k => { const el = document.getElementById('gs-'+k); if(el){ const v = el.value; data[k] = typeof settings[k] === 'boolean' ? (v==='True'||v==='true') : typeof settings[k] === 'number' ? parseFloat(v)||0 : v; }});
+    await fetch('/api/settings', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
+    overlay.remove(); alert('全局配置的修改需要重启后才会生效！');
+  };
+}
+
+async function show_about_dialog() {
+  const r = await fetch('/api/about'); const info = await r.json();
+  const overlay = document.createElement('div'); overlay.className = 'modal-overlay show';
+  overlay.innerHTML = `<div class="modal" style="min-width:450px;text-align:center">
+    <h2>关于 VeighNa Trader</h2>
+    <p style="color:var(--text);margin:12px 0">By Traders, For Traders.</p>
+    <p style="color:var(--dim);font-size:11px">Created by VeighNa Technology</p>
+    <table style="margin:16px auto;width:auto"><tr><td style="color:var(--dim);text-align:right">VeighNa</td><td>${info.vnpy}</td></tr><tr><td style="color:var(--dim);text-align:right">Python</td><td>${info.python}</td></tr><tr><td style="color:var(--dim);text-align:right">Platform</td><td>${info.platform}</td></tr><tr><td style="color:var(--dim);text-align:right">PySide6</td><td>${info.pyside6}</td></tr><tr><td style="color:var(--dim);text-align:right">NumPy</td><td>${info.numpy}</td></tr><tr><td style="color:var(--dim);text-align:right">pandas</td><td>${info.pandas}</td></tr></table>
+    <p style="font-size:11px;margin:8px 0">License: MIT | <a href="https://www.vnpy.com" target="_blank">www.vnpy.com</a> | <a href="https://github.com/vnpy/vnpy" target="_blank">GitHub</a></p>
+    <button onclick="this.closest('.modal-overlay').remove()" style="background:var(--accent);color:#fff;border:none;margin-top:8px">关闭</button></div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+}
 
 function refresh_status() { ws_send({ action: 'get_status', payload: {} }); }
 

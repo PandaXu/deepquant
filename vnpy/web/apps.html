@@ -101,10 +101,72 @@ function render_cta_strategy() {
 function cs_add() {
   const cls = document.getElementById('cs-class').value;
   if (!cls) return alert('选择策略类');
+  // Show setting editor dialog
   ws_send({action:'get_cta_params',payload:{class_name:cls}});
+  // Listen for params response and show dialog
+  function onParams(m) {
+    if (m.type === 'cta_params' && m.data) {
+      ws.removeEventListener('message', tempHandler);
+      show_setting_editor(m.data, m.class_name, null, (setting) => {
+        ws_send({action:'add_cta_strategy',payload:{
+          class_name: cls, strategy_name: setting.strategy_name,
+          vt_symbol: setting.vt_symbol, parameters: setting
+        }});
+        setTimeout(() => ws_send({action:'get_cta_strategies',payload:{}}), 500);
+      });
+    }
+  }
+  function tempHandler(e) { try { onParams(JSON.parse(e.data)); } catch(ex) {} }
+  ws.addEventListener('message', tempHandler);
+}
+function cs_strategy_edit(name) {
+  ws_send({action:'get_cta_strategies',payload:{}});
+  function onStrats(m) {
+    if (m.type === 'cta_strategies') {
+      ws.removeEventListener('message', tempHandler);
+      const strat = (m.data||[]).find(s => s.strategy_name === name);
+      if (strat) {
+        show_setting_editor(strat.parameters, strat.class_name, name, (setting) => {
+          ws_send({action:'edit_cta_strategy',payload:{strategy_name:name, setting:setting}});
+          setTimeout(() => ws_send({action:'get_cta_strategies',payload:{}}), 500);
+        });
+      }
+    }
+  }
+  function tempHandler(e) { try { onStrats(JSON.parse(e.data)); } catch(ex) {} }
+  ws.addEventListener('message', tempHandler);
 }
 function cs_action(action) { ws_send({action:'cta_'+action,payload:{}}); }
 function cs_clear_log() { document.getElementById('cs-log').innerHTML = ''; }
+
+function show_setting_editor(parameters, class_name, strategy_name, callback) {
+  const overlay = document.createElement('div'); overlay.className = 'modal-overlay show';
+  const title = strategy_name ? `参数编辑：${strategy_name}` : `添加策略：${class_name}`;
+  const btnText = strategy_name ? '确定' : '添加';
+  const fields = Object.entries(parameters).map(([k,v]) => {
+    return `<div class="row"><label>${k} &lt;${typeof v}&gt;</label><input id="se-${k}" value="${v}" style="flex:1"></div>`;
+  }).join('');
+  overlay.innerHTML = `<div class="modal" style="max-height:80vh;overflow:auto">
+    <h2>${title}</h2><div>${fields}</div>
+    <div class="btn-row">
+      <button onclick="this.closest('.modal-overlay').remove()" style="background:var(--bg3);color:var(--text)">取消</button>
+      <button id="se-ok" style="background:var(--accent);color:#fff;border:none">${btnText}</button></div></div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  document.getElementById('se-ok').onclick = () => {
+    const setting = {};
+    Object.keys(parameters).forEach(k => {
+      const el = document.getElementById('se-'+k);
+      if (!el) return;
+      const v = el.value;
+      setting[k] = typeof parameters[k] === 'boolean' ? (v==='True'||v==='true')
+        : typeof parameters[k] === 'number' ? parseFloat(v)||0
+        : typeof parameters[k] === 'string' ? v : v;
+    });
+    overlay.remove();
+    callback(setting);
+  };
+}
 
 // ---- CtaBacktester ----
 function render_cta_backtester() {
@@ -213,7 +275,7 @@ function handle_msg(m) {
           <button onclick="cs_strategy_action('${s.strategy_name}','init')" ${s.variables?.inited?'disabled':''}>初始化</button>
           <button onclick="cs_strategy_action('${s.strategy_name}','start')" ${s.variables?.trading?'disabled':''}>启动</button>
           <button onclick="cs_strategy_action('${s.strategy_name}','stop')" ${!s.variables?.trading?'disabled':''}>停止</button>
-          <button onclick="cs_strategy_action('${s.strategy_name}','edit')" ${s.variables?.trading?'disabled':''}>编辑</button>
+          <button onclick="cs_strategy_edit('${s.strategy_name}')" ${s.variables?.trading?'disabled':''}>编辑</button>
           <button onclick="cs_strategy_action('${s.strategy_name}','remove')" ${s.variables?.trading?'disabled':''}>移除</button>
         </div>
         <table><thead><tr>${Object.keys(s.parameters||{}).map(k=>`<th>${k}</th>`).join('')}</tr></thead>

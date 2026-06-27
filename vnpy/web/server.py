@@ -10,7 +10,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.responses import HTMLResponse
 
 from vnpy.event import EventEngine, Event
@@ -247,6 +247,32 @@ async def handle_ws_message(ws: WebSocket, msg: str) -> None:
                 names.sort()
                 await ws.send_text(json.dumps({"type": "cta_classes", "data": names}))
 
+        elif action == "get_cta_params":
+            engine = main_engine.get_engine("CtaStrategy")
+            if engine:
+                class_name = payload.get("class_name", "")
+                parameters = engine.get_strategy_class_parameters(class_name) if class_name else {}
+                result = {"strategy_name": "", "vt_symbol": ""}
+                result.update(parameters)
+                await ws.send_text(json.dumps({"type": "cta_params", "data": result, "class_name": class_name}))
+
+        elif action == "edit_cta_strategy":
+            engine = main_engine.get_engine("CtaStrategy")
+            if engine:
+                engine.edit_strategy(payload["strategy_name"], payload.get("setting", {}))
+                main_engine.write_log(f"策略 {payload['strategy_name']} 参数已更新")
+
+        elif action == "add_cta_strategy":
+            engine = main_engine.get_engine("CtaStrategy")
+            if engine:
+                engine.add_strategy(
+                    payload["class_name"],
+                    payload["strategy_name"],
+                    payload["vt_symbol"],
+                    payload.get("parameters", {})
+                )
+                await ws.send_text(json.dumps({"type": "cta_strategies", "data": []}))
+
         elif action == "get_cta_strategies":
             engine = main_engine.get_engine("CtaStrategy")
             if engine:
@@ -393,6 +419,66 @@ def api_apps():
         return []
     return [{"name": a.app_name, "display": a.display_name, "icon": a.icon_name}
             for a in main_engine.get_all_apps()]
+
+
+@app.get("/api/contracts")
+def api_contracts(filter: str = ""):
+    if not main_engine:
+        return []
+    contracts = main_engine.get_all_contracts()
+    result = []
+    for c in contracts:
+        if filter and filter not in c.vt_symbol and filter not in c.exchange.value:
+            continue
+        result.append({
+            "vt_symbol": c.vt_symbol, "symbol": c.symbol,
+            "exchange": c.exchange.value, "name": c.name,
+            "product": c.product.value if c.product else "",
+            "size": c.size, "pricetick": c.pricetick,
+            "min_volume": c.min_volume, "gateway_name": c.gateway_name,
+            "option_portfolio": c.option_portfolio or "",
+            "option_expiry": c.option_expiry.isoformat() if c.option_expiry else "",
+            "option_strike": c.option_strike or "",
+            "option_type": c.option_type.value if c.option_type else "",
+        })
+    return result
+
+
+@app.get("/api/settings")
+def api_settings():
+    from vnpy.trader.setting import SETTINGS
+    return {k: v for k, v in SETTINGS.items()}
+
+
+@app.post("/api/settings")
+async def api_save_settings(request):
+    from vnpy.trader.setting import SETTINGS, SETTING_FILENAME
+    from vnpy.trader.utility import save_json
+    body = await request.json()
+    for k, v in body.items():
+        if k in SETTINGS:
+            if isinstance(SETTINGS[k], bool):
+                SETTINGS[k] = v if isinstance(v, bool) else v == "True"
+            elif isinstance(SETTINGS[k], int):
+                SETTINGS[k] = int(v)
+            else:
+                SETTINGS[k] = v
+    save_json(SETTING_FILENAME, dict(SETTINGS))
+    return {"status": "ok"}
+
+
+@app.get("/api/about")
+def api_about():
+    import vnpy, platform
+    from importlib import metadata
+    return {
+        "vnpy": vnpy.__version__,
+        "python": platform.python_version(),
+        "platform": platform.platform(),
+        "pyside6": metadata.version("pyside6"),
+        "numpy": metadata.version("numpy"),
+        "pandas": metadata.version("pandas"),
+    }
 
 
 @app.get("/api/data")
