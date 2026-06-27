@@ -961,7 +961,17 @@ class TradingWidget(QtWidgets.QWidget):
         exchange = Exchange(exchange_value)
         product_filter = self.symbol_filter.currentData() or ""
         count = 0
-        products_seen: set[str] = set()
+        products_seen: dict[str, str] = {}  # prefix → Chinese name
+
+        def _extract_name(code: str, contract_name: str) -> str:
+            """Extract Chinese product name from contract name.
+            e.g., '白银2607' → '白银', '中证1000股指期权看涨' → '中证1000股指期权'
+            """
+            # Remove digits and spaces from end to get product name
+            name = re.sub(r'\d+$', '', contract_name).strip()
+            # Remove 看涨/看跌 suffix for option products
+            name = re.sub(r'(看涨|看跌)$', '', name).strip()
+            return name
 
         # First try CTP contracts (live data)
         all_contracts = self.main_engine.get_all_contracts()
@@ -970,10 +980,16 @@ class TradingWidget(QtWidgets.QWidget):
                 continue
             product = re.match(r'^([A-Za-z]+)', ct.symbol)
             prod_prefix = product.group(1).upper() if product else ""
-            products_seen.add(prod_prefix)
+            if prod_prefix not in products_seen:
+                products_seen[prod_prefix] = _extract_name(ct.symbol, ct.name)
             if product_filter and prod_prefix != product_filter.upper():
                 continue
-            item_text = f"{ct.symbol} | {ct.name}"
+            # Display: show Call/Put for options
+            opt_type = ""
+            m = re.match(r'^[A-Z]+[0-9]+-([CP])-', ct.symbol)
+            if m:
+                opt_type = " 看涨" if m.group(1) == "C" else " 看跌"
+            item_text = f"{ct.symbol} | {ct.name}{opt_type}"
             self.symbol_combo.addItem(item_text, ct.vt_symbol)
             count += 1
 
@@ -984,22 +1000,28 @@ class TradingWidget(QtWidgets.QWidget):
                 for pc in public_contracts:
                     product = re.match(r'^([A-Za-z]+)', pc["symbol"])
                     prod_prefix = product.group(1).upper() if product else ""
-                    products_seen.add(prod_prefix)
+                    if prod_prefix not in products_seen:
+                        products_seen[prod_prefix] = _extract_name(pc["symbol"], pc["name"])
                     if product_filter and prod_prefix != product_filter.upper():
                         continue
-                    self.symbol_combo.addItem(f"{pc['symbol']} | {pc['name']}", pc["vt_symbol"])
+                    opt_type = ""
+                    m = re.match(r'^[A-Z]+[0-9]+-([CP])-', pc["symbol"])
+                    if m:
+                        opt_type = " 看涨" if m.group(1) == "C" else " 看跌"
+                    self.symbol_combo.addItem(f"{pc['symbol']} | {pc['name']}{opt_type}", pc["vt_symbol"])
                     count += 1
             except Exception:
                 pass
 
-        # Update product filter combo
+        # Update product filter combo with Chinese names
         current_filter = self.symbol_filter.currentData() or ""
         self.symbol_filter.blockSignals(True)
         self.symbol_filter.clear()
         self.symbol_filter.addItem("全部品种", "")
-        for p in sorted(products_seen):
-            self.symbol_filter.addItem(p, p)
-        # Restore selection
+        for p in sorted(products_seen.keys()):
+            cn_name = products_seen[p]
+            label = f"{p} - {cn_name}" if cn_name else p
+            self.symbol_filter.addItem(label, p)
         idx = self.symbol_filter.findData(current_filter)
         if idx >= 0:
             self.symbol_filter.setCurrentIndex(idx)
