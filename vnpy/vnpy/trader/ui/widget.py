@@ -795,10 +795,11 @@ class TradingWidget(QtWidgets.QWidget):
         try:
             # Preload products for all exchanges (sequential, ~1-2s total)
             for ex in ["CFFEX", "SHFE", "DCE", "CZCE", "INE", "GFEX"]:
-                _api_get_products(ex)
+                prods = _api_get_products(ex)
+                self.main_engine.write_log(f"[GUI] 预加载品种 {ex}: {len(prods)}个")
             # Preload contracts for default exchange (CFFEX)
-            _api_get_contracts("CFFEX")
-            self.main_engine.write_log(f"[GUI] 启动预加载完成: 6个交易所品种 + CFFEX合约")
+            contracts = _api_get_contracts("CFFEX")
+            self.main_engine.write_log(f"[GUI] 启动预加载完成: 6个交易所 + {len(contracts)}个CFFEX合约")
         except Exception as e:
             self.main_engine.write_log(f"[GUI] 预加载失败: {e}")
 
@@ -951,6 +952,8 @@ class TradingWidget(QtWidgets.QWidget):
         vbox.addLayout(grid)
         vbox.addLayout(form)
         self.setLayout(vbox)
+        # Trigger initial population of products/contracts for default exchange
+        self._on_exchange_changed()
 
     def create_label(
         self,
@@ -1023,9 +1026,12 @@ class TradingWidget(QtWidgets.QWidget):
         self.symbol_filter.clear()
         self.symbol_filter.addItem("全部品种", "")
         prods = _api_get_products(ex)
+        count = 0
         for p, cn_name in prods.items():
             label = f"{p} - {cn_name}" if cn_name else p
             self.symbol_filter.addItem(label, p)
+            count += 1
+        self.main_engine.write_log(f"[GUI] 品种填充: {ex} → {count}个品种")
         self.symbol_filter.blockSignals(False)
 
         # Clear dependent fields
