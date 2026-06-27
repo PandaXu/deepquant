@@ -142,17 +142,11 @@ class MainEngine:
         """
         self.add_engine(LogEngine)
 
-        # Preload public contract cache (disk-first, instant on subsequent starts)
+        # Preload public contract cache (synchronous disk load ~0.01s, network async)
         try:
             from .contract_cache import init_cache, refresh_cache
-            import threading
-
-            def _init():
-                init_cache()
-
-            t = threading.Thread(target=_init, daemon=True)
-            t.start()
-            self.write_log("加载合约数据缓存...")
+            init_cache()  # Synchronous — disk is instant, network only on first run
+            self.write_log("合约数据缓存已就绪")
 
             # Daily refresh at 6:00 AM
             def _refresh_contract_cache(event):

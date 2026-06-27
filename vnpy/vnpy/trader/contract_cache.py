@@ -179,10 +179,10 @@ def refresh_cache() -> bool:
 
 
 def init_cache() -> None:
-    """Initialize cache: load from disk first (instant), then background refresh."""
+    """Initialize cache: synchronous disk load (instant), async network refresh."""
     global _contract_cache, _cache_ts, _product_cache
     print(f"[ContractCache] 🚀 init_cache() 开始初始化...")
-    # First try disk (instant)
+    # Disk load is synchronous and takes ~0.01s
     df = _load_from_disk()
     if df is not None and not df.empty:
         products = _build_product_cache(df)
@@ -191,12 +191,12 @@ def init_cache() -> None:
             _product_cache = products
             _cache_ts = datetime.now()
         total_prods = sum(len(v) for v in products.values())
-        print(f"[ContractCache] ✅ 磁盘缓存就绪: {len(df)}条合约, {total_prods}个品种, 后台更新网络中...")
-        # Background refresh from network
+        print(f"[ContractCache] ✅ 磁盘缓存就绪: {len(df)}条合约, {total_prods}个品种")
+        print(f"[ContractCache] 🔄 后台异步更新网络数据...")
         t = threading.Thread(target=refresh_cache, daemon=True)
         t.start()
     else:
-        print(f"[ContractCache] ⚠️ 无磁盘缓存, 同步从网络加载(约3s)...")
+        print(f"[ContractCache] ⚠️ 无磁盘缓存, 同步加载网络数据(约3s)...")
         refresh_cache()
         print(f"[ContractCache] ✅ 首次加载完成")
 

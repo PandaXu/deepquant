@@ -952,14 +952,13 @@ class TradingWidget(QtWidgets.QWidget):
 
     def _show_symbol_popup(self) -> None:
         """Refresh contract list before showing dropdown."""
+        # Cache is guaranteed ready (synchronous disk load on startup).
+        # Only trigger async refresh if stale.
         try:
-            from ..contract_cache import get_cache, get_cache_age, refresh_cache
-            df = get_cache()
+            from ..contract_cache import get_cache_age, refresh_cache
             age = get_cache_age()
-            age_str = age.isoformat() if age else "None"
-            self.main_engine.write_log(f"[GUI] 打开合约下拉框: 缓存状态 df={'有' if df is not None else '无'} age={age_str}")
-            if df is None or age is None or age.date() < datetime.now().date():
-                self.main_engine.write_log(f"[GUI] 缓存过期或为空，触发后台刷新...")
+            if age and age.date() < datetime.now().date():
+                self.main_engine.write_log(f"[GUI] 缓存已过期({age.date()})，触发后台刷新...")
                 import threading
                 t = threading.Thread(target=refresh_cache, daemon=True)
                 t.start()
