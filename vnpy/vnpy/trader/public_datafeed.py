@@ -1,8 +1,11 @@
 """
 Public datafeed using akshare/Sina — free historical bar data.
+Supports DAILY (futures_zh_daily_sina) and MINUTE/HOUR (futures_zh_minute_sina).
 """
 from datetime import datetime
 from typing import Callable
+
+import pandas as pd
 
 from vnpy.trader.datafeed import BaseDatafeed
 from vnpy.trader.object import BarData, TickData, HistoryRequest
@@ -17,83 +20,81 @@ class PublicDatafeed(BaseDatafeed):
         return True
 
     def query_bar_history(self, req: HistoryRequest, output: Callable = print) -> list[BarData]:
-        """Download bar history from akshare futures_zh_daily_sina."""
-        symbol = req.symbol
+        """Download bar history. DAILY→futures_zh_daily_sina, MINUTE→futures_zh_minute_sina."""
+        symbol = req.symbol.upper()
         exchange = req.exchange
         interval = req.interval
         start = req.start
         end = req.end or datetime.now()
 
-        prefix = "[PublicDatafeed]"
-        msg = f"{prefix} 下载请求: {symbol}.{exchange.value} {interval.value} {start.date()}~{end.date()}"
-        output(msg)
-        print(msg)
-
-        if interval != Interval.DAILY:
-            warn = f"{prefix} ⚠️ 仅支持日线数据 (请求={interval.value}), 请选择日线"
-            output(warn)
-            print(warn)
-            return []
+        P = "[PublicDatafeed]"
+        output(f"{P} 下载: {symbol}.{exchange.value} {interval.value} {start.date()}~{end.date()}")
 
         try:
             import akshare as ak
-            import pandas as pd
 
-            # Use futures_zh_daily_sina for daily data
-            akshare_symbol = symbol.upper()
-            df = ak.futures_zh_daily_sina(symbol=akshare_symbol)
-
-            if df is None or df.empty:
-                output(f"[PublicDatafeed] akshare 返回空: {akshare_symbol}")
+            if interval == Interval.DAILY:
+                df = ak.futures_zh_daily_sina(symbol=symbol)
+                col_map = {"date": "datetime", "open": "open", "high": "high",
+                           "low": "low", "close": "close", "volume": "volume", "hold": "oi"}
+            elif interval == Interval.MINUTE:
+                df = ak.futures_zh_minute_sina(symbol=symbol, period="1")
+                col_map = {"open": "open", "high": "high", "low": "low",
+                           "close": "close", "volume": "volume", "hold": "oi"}
+            elif interval == Interval.HOUR:
+                df = ak.futures_zh_minute_sina(symbol=symbol, period="1")
+                col_map = {"open": "open", "high": "high", "low": "low",
+                           "close": "close", "volume": "volume", "hold": "oi"}
+            else:
+                output(f"{P} 不支持的周期: {interval.value}")
                 return []
 
-            # Standardize columns
-            df = df.rename(columns={
-                "date": "datetime",
-                "open": "open_price",
-                "high": "high_price",
-                "low": "low_price",
-                "close": "close_price",
-                "volume": "volume",
-                "hold": "open_interest",
-            })
+            if df is None or df.empty:
+                output(f"{P} 无数据: {symbol}")
+                return []
 
+            df = df.rename(columns=col_map)
+
+            if "datetime" not in df.columns:
+                df["datetime"] = pd.to_datetime(df.index)
             df["datetime"] = pd.to_datetime(df["datetime"]).dt.tz_localize(None)
 
-            # Filter date range (strip timezone for comparison with akshare naive datetime)
-            start_naive = pd.Timestamp(start).tz_localize(None)
-            end_naive = pd.Timestamp(end).tz_localize(None)
-            df["datetime"] = df["datetime"].dt.tz_localize(None)
-            mask = (df["datetime"] >= start_naive) & (df["datetime"] <= end_naive)
-            df = df[mask]
+            # Hour resample
+            if interval == Interval.HOUR:
+                df = df.set_index("datetime").resample("1h").agg({
+                    "open": "first", "high": "max", "low": "min",
+                    "close": "last", "volume": "sum", "oi": "last"
+                }).dropna().reset_index()
+
+            # Filter date range
+            s = pd.Timestamp(start).tz_localize(None)
+            e = pd.Timestamp(end).tz_localize(None)
+            df = df[(df["datetime"] >= s) & (df["datetime"] <= e)]
 
             bars: list[BarData] = []
             for _, row in df.iterrows():
-                bar = BarData(
-                    symbol=symbol,
-                    exchange=exchange,
-                    datetime=row["datetime"].to_pydatetime(),
-                    interval=interval,
-                    open_price=float(row.get("open_price", 0) or 0),
-                    high_price=float(row.get("high_price", 0) or 0),
-                    low_price=float(row.get("low_price", 0) or 0),
-                    close_price=float(row.get("close_price", 0) or 0),
+                bars.append(BarData(
+                    symbol=req.symbol, exchange=exchange,
+                    datetime=row["datetime"].to_pydatetime(), interval=interval,
+                    open_price=float(row.get("open", 0) or 0),
+                    high_price=float(row.get("high", 0) or 0),
+                    low_price=float(row.get("low", 0) or 0),
+                    close_price=float(row.get("close", 0) or 0),
                     volume=float(row.get("volume", 0) or 0),
-                    open_interest=float(row.get("open_interest", 0) or 0),
+                    open_interest=float(row.get("oi", 0) or 0),
                     gateway_name="PUBLIC",
-                )
-                bars.append(bar)
+                ))
 
-            output(f"[PublicDatafeed] 下载完成: {symbol}.{exchange.value} → {len(bars)}条")
+            output(f"{P} 完成: {symbol}.{exchange.value} → {len(bars)}条")
             return bars
 
         except Exception as e:
             import traceback
-            err = f"[PublicDatafeed] 下载失败: {symbol}.{exchange.value} → {e}\n{traceback.format_exc()}"
+            err = f"{P} 失败: {symbol}.{exchange.value} → {e}\n{traceback.format_exc()}"
             output(err)
             print(err)
             return []
 
     def query_tick_history(self, req: HistoryRequest, output: Callable = print) -> list[TickData]:
-        output("[PublicDatafeed] 不支持 Tick 数据下载")
+        output("[PublicDatafeed] 不支持 Tick 数据")
         return []
