@@ -956,11 +956,12 @@ class TradingWidget(QtWidgets.QWidget):
                 gw = self.main_engine.get_gateway(gw_name)
                 if hasattr(gw, 'td_api') and gw.td_api.login_status and not getattr(gw.td_api, 'contract_inited', False):
                     gw.td_api.query_contract()
-        # Trigger public cache refresh if stale (older than today)
+        # Trigger public cache refresh if stale or not loaded
         try:
-            from ..contract_cache import get_cache_age, refresh_cache
+            from ..contract_cache import get_cache, get_cache_age, refresh_cache
+            df = get_cache()
             age = get_cache_age()
-            if age is None or age.date() < datetime.now().date():
+            if df is None or age is None or age.date() < datetime.now().date():
                 import threading
                 t = threading.Thread(target=refresh_cache, daemon=True)
                 t.start()
@@ -1018,25 +1019,25 @@ class TradingWidget(QtWidgets.QWidget):
             self.symbol_combo.addItem(item_text, ct.vt_symbol)
             count += 1
 
-        # Fallback: public data
-        if count == 0:
-            try:
-                public_contracts = query_contracts(exchange)
-                for pc in public_contracts:
-                    product = re.match(r'^([A-Za-z]+)', pc["symbol"])
-                    prod_prefix = product.group(1).upper() if product else ""
-                    if prod_prefix not in products_seen:
-                        products_seen[prod_prefix] = _extract_name(pc["symbol"], pc["name"])
-                    if product_filter and prod_prefix.upper() not in related_products:
-                        continue
-                    opt_type = ""
-                    m = re.match(r'^[A-Z]+[0-9]+-([CP])-', pc["symbol"])
-                    if m:
-                        opt_type = " 看涨" if m.group(1) == "C" else " 看跌"
-                    self.symbol_combo.addItem(f"{pc['symbol']} | {pc['name']}{opt_type}", pc["vt_symbol"])
-                    count += 1
-            except Exception:
-                pass
+        # Public data (always merged with CTP)
+        try:
+            public_contracts = query_contracts(exchange)
+            for pc in public_contracts:
+                product = re.match(r'^([A-Za-z]+)', pc["symbol"])
+                prod_prefix = product.group(1).upper() if product else ""
+                if prod_prefix not in products_seen:
+                    products_seen[prod_prefix] = _extract_name(pc["symbol"], pc["name"])
+                if product_filter and prod_prefix.upper() not in related_products:
+                    continue
+                opt_type = ""
+                m = re.match(r'^[A-Z]+[0-9]+-([CP])-', pc["symbol"])
+                if m:
+                    opt_type = " 看涨" if m.group(1) == "C" else " 看跌"
+                display = f"{pc['symbol']} | {pc['name']}{opt_type}"
+                self.symbol_combo.addItem(display, pc["vt_symbol"])
+                count += 1
+        except Exception:
+            pass
 
         # Update product filter combo with Chinese names
         current_filter = self.symbol_filter.currentData() or ""

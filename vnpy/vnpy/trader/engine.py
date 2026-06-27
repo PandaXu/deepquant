@@ -142,10 +142,28 @@ class MainEngine:
         """
         self.add_engine(LogEngine)
 
-        # Preload public contract cache in background
+        # Preload public contract cache (synchronous on first startup, daily refresh)
         try:
-            from .contract_cache import ensure_cache, refresh_cache
-            ensure_cache()
+            from .contract_cache import refresh_cache, get_cache
+            if get_cache() is None:
+                # First load: try synchronously with short timeout
+                import threading
+                loaded = threading.Event()
+
+                def _load():
+                    refresh_cache()
+                    loaded.set()
+
+                t = threading.Thread(target=_load, daemon=True)
+                t.start()
+                # Don't block — cache will be available shortly
+                self.write_log("后台加载公开合约数据...")
+            else:
+                # Already cached from previous startup, refresh in background
+                import threading
+                t = threading.Thread(target=refresh_cache, daemon=True)
+                t.start()
+                self.write_log("合约数据缓存已就绪")
 
             # Daily refresh at 6:00 AM
             def _refresh_contract_cache(event):
