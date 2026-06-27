@@ -133,12 +133,11 @@ def _generate_index_options(
 
 
 def _build_product_cache(df: pd.DataFrame) -> dict[str, dict[str, str]]:
-    """Precompute product info per exchange: {exchange_code: {prefix: chinese_name}}."""
+    """Precompute product info per exchange: {exchange_value: {prefix: chinese_name}}."""
     import re
     products: dict[str, dict[str, str]] = {}
-    reverse_map = {v: k for k, v in _AKSHARE_EXCHANGE_MAP.items()}
-    for ex_val, ex_cn in reverse_map.items():
-        ex_df = df[df["交易所名称"] == ex_cn]
+    for akshare_name, ex_enum in _AKSHARE_EXCHANGE_MAP.items():
+        ex_df = df[df["交易所名称"] == akshare_name]
         prods: dict[str, str] = {}
         for _, row in ex_df.iterrows():
             code = str(row["合约代码"]).upper()
@@ -150,7 +149,7 @@ def _build_product_cache(df: pd.DataFrame) -> dict[str, dict[str, str]]:
                 cn = re.sub(r'(看涨|看跌)$', '', cn).strip()
                 prods[p] = cn
         if prods:
-            products[ex_val] = dict(sorted(prods.items()))
+            products[ex_enum.value] = dict(sorted(prods.items()))
     return products
 
 
