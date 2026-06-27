@@ -919,6 +919,14 @@ class CtpTdApi(TdApi):
         self.reqid += 1
         self.reqQryInvestorPosition(ctp_req, self.reqid)
 
+    def query_contract(self) -> None:
+        """查询合约（主动触发）"""
+        if not self.login_status:
+            return
+        self.reqid += 1
+        n: int = self.reqQryInstrument({}, self.reqid)
+        self.gateway.write_log(f"[TdApi] query_contract 手动触发 reqid={self.reqid} ret={n}")
+
     def close(self) -> None:
         """关闭连接"""
         if self.connect_status:

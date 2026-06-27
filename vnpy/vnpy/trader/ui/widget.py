@@ -40,6 +40,7 @@ from ..object import (
 from ..utility import load_json, save_json, get_digits, ZoneInfo
 from ..setting import SETTING_FILENAME, SETTINGS
 from ..locale import _
+from ..contract_cache import query_contracts
 from ..wechat import (
     Credentials,
     WeixinError,
@@ -933,15 +934,31 @@ class TradingWidget(QtWidgets.QWidget):
 
     def _show_symbol_popup(self) -> None:
         """Refresh contract list before showing dropdown."""
+        # Trigger CTP contract query if logged in but contracts empty
+        if not self.main_engine.get_all_contracts():
+            for gw_name in self.main_engine.get_all_gateway_names():
+                gw = self.main_engine.get_gateway(gw_name)
+                if hasattr(gw, 'td_api') and gw.td_api.login_status and not getattr(gw.td_api, 'contract_inited', False):
+                    gw.td_api.query_contract()
+        # Load public data if still empty (first time, may take 2-3 seconds)
+        from ..contract_cache import load_contract_cache
+        try:
+            load_contract_cache()
+        except Exception:
+            pass
         self._refresh_symbols()
         QtWidgets.QComboBox.showPopup(self.symbol_combo)
 
     def _refresh_symbols(self) -> None:
-        """Reload all available contracts from engine."""
+        """Reload all available contracts from engine (CTP) or public data (akshare)."""
         self.symbol_combo.clear()
         exchange_value = self.exchange_combo.currentData() or self.exchange_combo.currentText()
-        all_contracts = self.main_engine.get_all_contracts()
+        exchange = Exchange(exchange_value)
         filter_text = self.symbol_filter.text().strip().upper()
+        count = 0
+
+        # First try CTP contracts (live data)
+        all_contracts = self.main_engine.get_all_contracts()
         for ct in all_contracts:
             if ct.exchange.value != exchange_value:
                 continue
@@ -950,6 +967,22 @@ class TradingWidget(QtWidgets.QWidget):
             if filter_text and filter_text not in ct.symbol.upper() and filter_text not in ct.name.upper():
                 continue
             self.symbol_combo.addItem(item_text, ct.vt_symbol)
+            count += 1
+
+        # Fallback: public data from akshare
+        if count == 0:
+            try:
+                public_contracts = query_contracts(exchange, filter_text)
+                for pc in public_contracts:
+                    disp = getattr(exchange, "display_name", exchange.value)
+                    item_text = f"{pc['symbol']} | {pc['name']} | {exchange.value}({disp})"
+                    self.symbol_combo.addItem(item_text, pc["vt_symbol"])
+                    count += 1
+            except Exception:
+                pass
+
+        if count == 0:
+            self.symbol_combo.addItem(f"(无合约数据)", "")
 
     def _filter_symbols(self) -> None:
         """Filter contracts by keyword."""
