@@ -950,12 +950,6 @@ class TradingWidget(QtWidgets.QWidget):
 
     def _show_symbol_popup(self) -> None:
         """Refresh contract list before showing dropdown."""
-        # Trigger CTP contract query if logged in but contracts empty
-        if not self.main_engine.get_all_contracts():
-            for gw_name in self.main_engine.get_all_gateway_names():
-                gw = self.main_engine.get_gateway(gw_name)
-                if hasattr(gw, 'td_api') and gw.td_api.login_status and not getattr(gw.td_api, 'contract_inited', False):
-                    gw.td_api.query_contract()
         # Trigger public cache refresh if stale or not loaded
         try:
             from ..contract_cache import get_cache, get_cache_age, refresh_cache
@@ -999,27 +993,7 @@ class TradingWidget(QtWidgets.QWidget):
             name = re.sub(r'(看涨|看跌)$', '', name).strip()
             return name
 
-        # First try CTP contracts (live data)
-        all_contracts = self.main_engine.get_all_contracts()
-        for ct in all_contracts:
-            if ct.exchange.value != exchange_value:
-                continue
-            product = re.match(r'^([A-Za-z]+)', ct.symbol)
-            prod_prefix = product.group(1).upper() if product else ""
-            if prod_prefix not in products_seen:
-                products_seen[prod_prefix] = _extract_name(ct.symbol, ct.name)
-            if product_filter and prod_prefix.upper() not in related_products:
-                continue
-            # Display: show Call/Put for options
-            opt_type = ""
-            m = re.match(r'^[A-Z]+[0-9]+-([CP])-', ct.symbol)
-            if m:
-                opt_type = " 看涨" if m.group(1) == "C" else " 看跌"
-            item_text = f"{ct.symbol} | {ct.name}{opt_type}"
-            self.symbol_combo.addItem(item_text, ct.vt_symbol)
-            count += 1
-
-        # Public data (always merged with CTP)
+        # Public data (primary source, always available)
         try:
             public_contracts = query_contracts(exchange)
             for pc in public_contracts:
