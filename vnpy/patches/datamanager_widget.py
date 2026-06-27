@@ -373,7 +373,7 @@ class DownloadDialog(QtWidgets.QDialog):
         super().__init__()
         self.engine = engine
         self.setWindowTitle("下载历史数据")
-        self.setMinimumWidth(420)
+        self.setMinimumWidth(520)
 
         # Exchange
         self.exchange_combo = QtWidgets.QComboBox()
@@ -391,6 +391,7 @@ class DownloadDialog(QtWidgets.QDialog):
         self.symbol_combo = QtWidgets.QComboBox()
         self.symbol_combo.addItem("请先选择品种", "")
         self.symbol_combo.setEditable(True)
+        self.symbol_combo.setMinimumWidth(400)
 
         # Interval
         self.interval_combo = QtWidgets.QComboBox()
@@ -516,7 +517,9 @@ class DownloadDialog(QtWidgets.QDialog):
         sd = self.start_date.date()
         start = datetime(sd.year(), sd.month(), sd.day()).replace(tzinfo=DB_TZ)
 
+        msg = f"[DataManager] 下载请求: {symbol}.{exchange.value} {interval.value} {start}~{datetime.now().strftime('%Y-%m-%d')}"
         self.status_label.setText(f"下载中: {symbol}.{exchange.value} {interval.value}...")
+        print(msg)
 
         from threading import Thread
         def _run():
@@ -526,8 +529,10 @@ class DownloadDialog(QtWidgets.QDialog):
                 else:
                     count = self.engine.download_bar_data(symbol, exchange, interval, start, self._on_progress)
                 self._dl_result = count
-            except Exception:
+                print(f"[DataManager] 下载完成: {symbol}.{exchange.value} {interval.value} → {count}条")
+            except Exception as e:
                 self._dl_result = -1
+                print(f"[DataManager] 下载失败: {symbol}.{exchange.value} {interval.value} → {e}")
         self._dl_result = None
         Thread(target=_run, daemon=True).start()
         QtCore.QTimer.singleShot(500, self._check_download_done)
