@@ -836,8 +836,10 @@ class TradingWidget(QtWidgets.QWidget):
         self.show_expired_check: QtWidgets.QCheckBox = QtWidgets.QCheckBox("展示过期合约")
         self.show_expired_check.stateChanged.connect(self._on_show_expired_changed)
 
-        self.name_line: QtWidgets.QLineEdit = QtWidgets.QLineEdit()
-        self.name_line.setReadOnly(True)
+        self.name_line: QtWidgets.QLabel = QtWidgets.QLabel()
+        self.name_line.setStyleSheet("color: #58a6ff; font-size: 12px; padding: 3px;")
+        self.name_line.setWordWrap(True)
+        self.name_line.setMinimumHeight(16)
 
         self.direction_combo: QtWidgets.QComboBox = QtWidgets.QComboBox()
         self.direction_combo.addItem(Direction.LONG.value)
