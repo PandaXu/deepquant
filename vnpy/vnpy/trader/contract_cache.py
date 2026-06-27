@@ -1,13 +1,19 @@
 """
 Public contract data cache — preloaded by backend timer task.
 Queries akshare for futures contract listings on startup and daily refresh.
+Data persisted to disk for instant startup on subsequent runs.
 """
 import threading
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Optional
 import pandas as pd
 
 from vnpy.trader.constant import Exchange
+from vnpy.trader.utility import get_folder_path
+
+# Disk cache path
+_CACHE_FILE = str(get_folder_path(".").joinpath("contract_cache.parquet"))
 
 # akshare exchange name → VeighNa Exchange enum
 _AKSHARE_EXCHANGE_MAP: dict[str, Exchange] = {
@@ -29,8 +35,30 @@ _cache_lock = threading.Lock()
 _loading = False
 
 
+def _load_from_disk() -> Optional[pd.DataFrame]:
+    """Try loading cached data from disk (instant)."""
+    try:
+        p = Path(_CACHE_FILE)
+        if p.exists():
+            df = pd.read_parquet(p)
+            print(f"[ContractCache] Loaded {len(df)} contracts from disk")
+            return df
+    except Exception as e:
+        print(f"[ContractCache] Disk load failed: {e}")
+    return None
+
+
+def _save_to_disk(df: pd.DataFrame) -> None:
+    """Persist cache to disk."""
+    try:
+        Path(_CACHE_FILE).parent.mkdir(parents=True, exist_ok=True)
+        df.to_parquet(_CACHE_FILE, index=False)
+    except Exception as e:
+        print(f"[ContractCache] Disk save failed: {e}")
+
+
 def _do_load() -> Optional[pd.DataFrame]:
-    """Actually load from akshare + generate stock index options."""
+    """Load from akshare + generate options, persist to disk."""
     global _loading
     if _loading:
         return None
@@ -42,35 +70,27 @@ def _do_load() -> Optional[pd.DataFrame]:
         # Generate CFFEX stock index options (not in akshare)
         options_data = _generate_index_options("MO", "中证1000股指期权", 8600, 50, 30)
         options_data += _generate_index_options("HO", "沪深300股指期权", 4870, 50, 30)
-
-        # 上证50股指期权
         options_data += _generate_index_options("IO", "上证50股指期权", 2900, 30, 25)
 
         opt_df = pd.DataFrame(options_data)
         df = pd.concat([df, opt_df], ignore_index=True)
+
+        _save_to_disk(df)
         return df
     except Exception as e:
-        print(f"[ContractCache] Load failed: {e}")
-        return None
+        print(f"[ContractCache] Network load failed: {e}")
+        return _load_from_disk()
     finally:
         _loading = False
 
 
 def _generate_index_options(
-    product: str,
-    name: str,
-    current_price: float,
-    strike_step: int,
-    strike_count: int,
+    product: str, name: str, current_price: float,
+    strike_step: int, strike_count: int,
 ) -> list[dict]:
     """Generate stock index option contracts with strike prices."""
-    from datetime import datetime as dt
-    now = dt.now()
-    results = []
-
-    # Active months: current + next 3
-    year = now.year
-    month = now.month
+    now = datetime.now()
+    year, month = now.year, now.month
     option_months = []
     for i in range(4):
         m = month + i
@@ -80,22 +100,18 @@ def _generate_index_options(
             y += 1
         option_months.append(f"{y % 100:02d}{m:02d}")
 
-    # Generate strikes around current price
     base_strike = int(current_price / strike_step) * strike_step
     half = strike_count // 2
-    strikes = [
-        base_strike + (i - half) * strike_step
-        for i in range(strike_count)
-    ]
+    strikes = [base_strike + (i - half) * strike_step for i in range(strike_count)]
 
+    results = []
     for mon in option_months:
         for cp in [("C", "看涨"), ("P", "看跌")]:
             for strike in strikes:
-                code = f"{product}{mon}-{cp[0]}-{strike}"
                 results.append({
                     "交易所名称": "中国金融期货交易所",
                     "合约名称": f"{name}{cp[1]}{strike}",
-                    "合约代码": code,
+                    "合约代码": f"{product}{mon}-{cp[0]}-{strike}",
                 })
     return results
 
@@ -113,6 +129,25 @@ def refresh_cache() -> bool:
     return False
 
 
+def init_cache() -> None:
+    """Initialize cache: load from disk first (instant), then background refresh."""
+    global _contract_cache, _cache_ts
+    # First try disk (instant)
+    df = _load_from_disk()
+    if df is not None and not df.empty:
+        with _cache_lock:
+            _contract_cache = df
+            _cache_ts = datetime.now()
+        print(f"[ContractCache] Disk cache ready: {len(df)} contracts")
+        # Background refresh from network
+        t = threading.Thread(target=refresh_cache, daemon=True)
+        t.start()
+    else:
+        print("[ContractCache] No disk cache, loading from network...")
+        # Synchronous first load (takes ~3s)
+        refresh_cache()
+
+
 def get_cache() -> Optional[pd.DataFrame]:
     """Get the current cached dataframe (thread-safe)."""
     with _cache_lock:
@@ -125,24 +160,11 @@ def get_cache_age() -> Optional[datetime]:
         return _cache_ts
 
 
-def ensure_cache() -> None:
-    """Load cache in background if not loaded yet."""
-    with _cache_lock:
-        if _contract_cache is not None:
-            return
-    t = threading.Thread(target=refresh_cache, daemon=True)
-    t.start()
-
-
 # Product family: selecting a futures product also shows its options
 _PRODUCT_FAMILY: dict[str, list[str]] = {
-    # CFFEX index futures → options
-    "IF": ["IO"],   # 沪深300期货 → 沪深300期权(IO)
-    "IO": ["IF"],   # 沪深300期权 → 沪深300期货
-    "IM": ["MO"],   # 中证1000期货 → 中证1000期权
-    "MO": ["IM"],   # 中证1000期权 → 中证1000期货
-    "IH": ["HO"],   # 上证50期货 → 上证50期权
-    "HO": ["IH"],   # 上证50期权 → 上证50期货
+    "IF": ["IO"], "IO": ["IF"],
+    "IM": ["MO"], "MO": ["IM"],
+    "IH": ["HO"], "HO": ["IH"],
 }
 
 
@@ -191,8 +213,7 @@ def get_contract_name(code: str) -> str:
     df = get_cache()
     if df is None or df.empty:
         return ""
-    code_upper = code.upper()
-    matches = df[df["合约代码"].str.upper() == code_upper]
+    matches = df[df["合约代码"].str.upper() == code.upper()]
     if not matches.empty:
         return str(matches.iloc[0]["合约名称"])
     return ""
