@@ -837,9 +837,8 @@ class TradingWidget(QtWidgets.QWidget):
         self.show_expired_check.stateChanged.connect(self._on_show_expired_changed)
 
         self.name_line: QtWidgets.QLabel = QtWidgets.QLabel()
-        self.name_line.setStyleSheet("color: #58a6ff; font-size: 12px; padding: 3px;")
-        self.name_line.setWordWrap(True)
-        self.name_line.setMinimumHeight(16)
+        self.name_line.setStyleSheet("color: #58a6ff; font-size: 12px; padding: 2px 4px; background: #1e1e1e; border: 1px solid #3c3c3c; border-radius: 2px;")
+        self.name_line.setMaximumHeight(20)
 
         self.direction_combo: QtWidgets.QComboBox = QtWidgets.QComboBox()
         self.direction_combo.addItem(Direction.LONG.value)
