@@ -840,8 +840,10 @@ class TradingWidget(QtWidgets.QWidget):
         self.name_line.setReadOnly(True)
 
         self.direction_combo: QtWidgets.QComboBox = QtWidgets.QComboBox()
-        self.direction_combo.addItems(
-            [Direction.LONG.value, Direction.SHORT.value])
+        self.direction_combo.addItem(Direction.LONG.value)
+        self.direction_combo.setItemData(0, QtGui.QColor("#ff4444"), QtCore.Qt.ItemDataRole.ForegroundRole)
+        self.direction_combo.addItem(Direction.SHORT.value)
+        self.direction_combo.setItemData(1, QtGui.QColor("#00aa00"), QtCore.Qt.ItemDataRole.ForegroundRole)
 
         self.offset_combo: QtWidgets.QComboBox = QtWidgets.QComboBox()
         self.offset_combo.addItems([offset.value for offset in Offset])
@@ -867,6 +869,13 @@ class TradingWidget(QtWidgets.QWidget):
 
         send_button: QtWidgets.QPushButton = QtWidgets.QPushButton(_("委托"))
         send_button.clicked.connect(self.send_order)
+        self.direction_combo.currentIndexChanged.connect(lambda: send_button.setStyleSheet(
+            "QPushButton { background: #c42b1c; color: white; font-weight: bold; padding: 6px; border:none; }"
+            if self.direction_combo.currentText() == Direction.LONG.value else
+            "QPushButton { background: #0b6016; color: white; font-weight: bold; padding: 6px; border:none; }"
+        ))
+        # Trigger initial style
+        send_button.setStyleSheet("QPushButton { background: #c42b1c; color: white; font-weight: bold; padding: 6px; border:none; }")
 
         cancel_button: QtWidgets.QPushButton = QtWidgets.QPushButton(_("全撤"))
         cancel_button.clicked.connect(self.cancel_all)
