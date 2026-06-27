@@ -4,6 +4,7 @@ Basic widgets for UI.
 
 import csv
 import platform
+import re
 import time
 from enum import Enum
 from io import BytesIO
@@ -737,6 +738,7 @@ class TradingWidget(QtWidgets.QWidget):
         self.exchange_combo: QtWidgets.QComboBox = QtWidgets.QComboBox()
         for exchange in exchanges:
             self.exchange_combo.addItem(f"{exchange.value}({exchange.display_name})", exchange.value)
+        self.exchange_combo.currentIndexChanged.connect(lambda: self._on_exchange_changed())
 
         self.symbol_combo: QtWidgets.QComboBox = QtWidgets.QComboBox()
         self.symbol_combo.setEditable(True)
@@ -747,9 +749,10 @@ class TradingWidget(QtWidgets.QWidget):
         # Refresh contract list when combo is clicked
         self.symbol_combo.showPopup = self._show_symbol_popup
 
-        self.symbol_filter: QtWidgets.QLineEdit = QtWidgets.QLineEdit()
-        self.symbol_filter.setPlaceholderText("过滤合约（输入关键字）")
-        self.symbol_filter.textChanged.connect(self._filter_symbols)
+        self.symbol_filter: QtWidgets.QComboBox = QtWidgets.QComboBox()
+        self.symbol_filter.setEditable(False)
+        self.symbol_filter.addItem("全部品种", "")
+        self.symbol_filter.currentIndexChanged.connect(lambda: self._refresh_symbols())
 
         self.name_line: QtWidgets.QLineEdit = QtWidgets.QLineEdit()
         self.name_line.setReadOnly(True)
@@ -788,8 +791,8 @@ class TradingWidget(QtWidgets.QWidget):
 
         grid: QtWidgets.QGridLayout = QtWidgets.QGridLayout()
         grid.addWidget(QtWidgets.QLabel(_("交易所")), 0, 0)
-        grid.addWidget(QtWidgets.QLabel(_("代码")), 1, 0)
-        grid.addWidget(QtWidgets.QLabel(_("过滤")), 2, 0)
+        grid.addWidget(QtWidgets.QLabel(_("品种")), 1, 0)
+        grid.addWidget(QtWidgets.QLabel(_("代码")), 2, 0)
         grid.addWidget(QtWidgets.QLabel(_("名称")), 3, 0)
         grid.addWidget(QtWidgets.QLabel(_("方向")), 4, 0)
         grid.addWidget(QtWidgets.QLabel(_("开平")), 5, 0)
@@ -798,8 +801,8 @@ class TradingWidget(QtWidgets.QWidget):
         grid.addWidget(QtWidgets.QLabel(_("数量")), 8, 0)
         grid.addWidget(QtWidgets.QLabel(_("接口")), 9, 0)
         grid.addWidget(self.exchange_combo, 0, 1, 1, 2)
-        grid.addWidget(self.symbol_combo, 1, 1, 1, 2)
-        grid.addWidget(self.symbol_filter, 2, 1, 1, 2)
+        grid.addWidget(self.symbol_filter, 1, 1, 1, 2)
+        grid.addWidget(self.symbol_combo, 2, 1, 1, 2)
         grid.addWidget(self.name_line, 3, 1, 1, 2)
         grid.addWidget(self.direction_combo, 4, 1, 1, 2)
         grid.addWidget(self.offset_combo, 5, 1, 1, 2)
@@ -932,9 +935,17 @@ class TradingWidget(QtWidgets.QWidget):
         if self.price_check.isChecked():
             self.price_line.setText(f"{tick.last_price:.{price_digits}f}")
 
+    def _on_exchange_changed(self) -> None:
+        """When exchange changes, reload products and contracts."""
+        self.symbol_filter.blockSignals(True)
+        self.symbol_filter.clear()
+        self.symbol_filter.addItem("全部品种", "")
+        self.symbol_filter.blockSignals(False)
+        self.symbol_combo.clear()
+        self.vt_symbol = ""
+
     def _show_symbol_popup(self) -> None:
         """Refresh contract list before showing dropdown."""
-        # Trigger CTP contract query if logged in but contracts empty
         if not self.main_engine.get_all_contracts():
             for gw_name in self.main_engine.get_all_gateway_names():
                 gw = self.main_engine.get_gateway(gw_name)
@@ -944,43 +955,58 @@ class TradingWidget(QtWidgets.QWidget):
         QtWidgets.QComboBox.showPopup(self.symbol_combo)
 
     def _refresh_symbols(self) -> None:
-        """Reload all available contracts from engine (CTP) or public data (akshare)."""
+        """Reload all available contracts from CTP or public data, filtered by exchange + product."""
         self.symbol_combo.clear()
         exchange_value = self.exchange_combo.currentData() or self.exchange_combo.currentText()
         exchange = Exchange(exchange_value)
-        filter_text = self.symbol_filter.text().strip().upper()
+        product_filter = self.symbol_filter.currentData() or ""
         count = 0
+        products_seen: set[str] = set()
 
         # First try CTP contracts (live data)
         all_contracts = self.main_engine.get_all_contracts()
         for ct in all_contracts:
             if ct.exchange.value != exchange_value:
                 continue
-            item_text = f"{ct.symbol} | {ct.name}"
-            if filter_text and filter_text not in ct.symbol.upper() and filter_text not in ct.name.upper():
+            product = re.match(r'^([A-Za-z]+)', ct.symbol)
+            prod_prefix = product.group(1).upper() if product else ""
+            products_seen.add(prod_prefix)
+            if product_filter and prod_prefix != product_filter.upper():
                 continue
+            item_text = f"{ct.symbol} | {ct.name}"
             self.symbol_combo.addItem(item_text, ct.vt_symbol)
             count += 1
 
-        # Fallback: public data from akshare
+        # Fallback: public data
         if count == 0:
             try:
-                public_contracts = query_contracts(exchange, filter_text)
+                public_contracts = query_contracts(exchange)
                 for pc in public_contracts:
-                    item_text = f"{pc['symbol']} | {pc['name']}"
-                    self.symbol_combo.addItem(item_text, pc["vt_symbol"])
+                    product = re.match(r'^([A-Za-z]+)', pc["symbol"])
+                    prod_prefix = product.group(1).upper() if product else ""
+                    products_seen.add(prod_prefix)
+                    if product_filter and prod_prefix != product_filter.upper():
+                        continue
+                    self.symbol_combo.addItem(f"{pc['symbol']} | {pc['name']}", pc["vt_symbol"])
                     count += 1
             except Exception:
                 pass
 
+        # Update product filter combo
+        current_filter = self.symbol_filter.currentData() or ""
+        self.symbol_filter.blockSignals(True)
+        self.symbol_filter.clear()
+        self.symbol_filter.addItem("全部品种", "")
+        for p in sorted(products_seen):
+            self.symbol_filter.addItem(p, p)
+        # Restore selection
+        idx = self.symbol_filter.findData(current_filter)
+        if idx >= 0:
+            self.symbol_filter.setCurrentIndex(idx)
+        self.symbol_filter.blockSignals(False)
+
         if count == 0:
             self.symbol_combo.addItem(f"(无合约数据)", "")
-
-    def _filter_symbols(self) -> None:
-        """Filter contracts by keyword."""
-        self._refresh_symbols()
-        if self.symbol_combo.count() > 0:
-            self.symbol_combo.showPopup()
 
     def set_vt_symbol(self) -> None:
         """
