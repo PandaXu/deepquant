@@ -512,6 +512,30 @@ function update_counts() {
   document.getElementById('log-count').textContent = log_entries.length;
 }
 
+// ---- Contract data via REST API ----
+let productCache = {};  // {exchange: [{prefix, name}]}
+
+async function loadProducts(exchange) {
+  if (!exchange) return [];
+  if (productCache[exchange]) return productCache[exchange];
+  try {
+    const r = await fetch(`/api/contracts/products?exchange=${exchange}`);
+    const data = await r.json();
+    productCache[exchange] = data.products || [];
+    return productCache[exchange];
+  } catch(e) { console.error(e); return []; }
+}
+
+async function loadContracts(exchange, product) {
+  try {
+    const params = new URLSearchParams({exchange});
+    if (product) params.set('product', product);
+    const r = await fetch(`/api/contracts/public?${params}`);
+    const data = await r.json();
+    return data.contracts || [];
+  } catch(e) { console.error(e); return []; }
+}
+
 // ---- Init table headers ----
 function init_headers() {
   for (const [name, mon] of Object.entries(MONITORS)) {

@@ -3,9 +3,11 @@ Basic widgets for UI.
 """
 
 import csv
+import json
 import platform
 import re
 import time
+import urllib.request
 from enum import Enum
 from io import BytesIO
 from typing import cast, Any
@@ -41,7 +43,6 @@ from ..object import (
 from ..utility import load_json, save_json, get_digits, ZoneInfo
 from ..setting import SETTING_FILENAME, SETTINGS
 from ..locale import _
-from ..contract_cache import query_contracts, get_related_products, get_products
 from ..wechat import (
     Credentials,
     WeixinError,
@@ -704,6 +705,41 @@ class ConnectDialog(QtWidgets.QDialog):
         self.accept()
 
 
+# ---- REST API helpers for contract data ----
+_API_BASE = "http://127.0.0.1:8888"
+_product_cache: dict[str, dict[str, str]] = {}  # exchange → {prefix: name}
+
+
+def _api_get(path: str) -> dict:
+    """Call REST API and return JSON."""
+    try:
+        req = urllib.request.Request(f"{_API_BASE}{path}")
+        req.add_header("Accept", "application/json")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return json.loads(resp.read())
+    except Exception as e:
+        print(f"[API] {path} failed: {e}")
+        return {}
+
+
+def _api_get_products(exchange: str) -> dict[str, str]:
+    """Get products for exchange from REST API (cached)."""
+    if exchange not in _product_cache:
+        data = _api_get(f"/api/contracts/products?exchange={exchange}")
+        products = data.get("products", [])
+        _product_cache[exchange] = {p["prefix"]: p["name"] for p in products}
+    return _product_cache[exchange]
+
+
+def _api_get_contracts(exchange: str, product: str = "") -> list[dict]:
+    """Get contracts from REST API."""
+    path = f"/api/contracts/public?exchange={exchange}"
+    if product:
+        path += f"&product={product}"
+    data = _api_get(path)
+    return data.get("contracts", [])
+
+
 class TradingWidget(QtWidgets.QWidget):
     """
     General manual trading widget.
@@ -940,12 +976,12 @@ class TradingWidget(QtWidgets.QWidget):
         ex = self.exchange_combo.currentData() or self.exchange_combo.currentText()
         self.main_engine.write_log(f"[GUI] 交易所切换 → {ex}")
 
-        # Populate product combo from precomputed cache (instant, no recursion)
+        # Populate product combo from REST API (cached, instant after first call)
         self.symbol_filter.blockSignals(True)
         self.symbol_filter.clear()
         self.symbol_filter.addItem("全部品种", "")
         try:
-            prods = get_products(ex)
+            prods = _api_get_products(ex)
             for p, cn_name in prods.items():
                 label = f"{p} - {cn_name}" if cn_name else p
                 self.symbol_filter.addItem(label, p)
@@ -962,19 +998,7 @@ class TradingWidget(QtWidgets.QWidget):
         self.clear_label_text()
 
     def _show_symbol_popup(self) -> None:
-        """Refresh contract list before showing dropdown."""
-        # Cache is guaranteed ready (synchronous disk load on startup).
-        # Only trigger async refresh if stale.
-        try:
-            from ..contract_cache import get_cache_age, refresh_cache
-            age = get_cache_age()
-            if age and age.date() < datetime.now().date():
-                self.main_engine.write_log(f"[GUI] 缓存已过期({age.date()})，触发后台刷新...")
-                import threading
-                t = threading.Thread(target=refresh_cache, daemon=True)
-                t.start()
-        except Exception as e:
-            self.main_engine.write_log(f"[GUI] 缓存检查失败: {e}")
+        """Refresh contract list before showing dropdown (data via REST API)."""
         self._refresh_symbols()
         QtWidgets.QComboBox.showPopup(self.symbol_combo)
 
@@ -989,11 +1013,6 @@ class TradingWidget(QtWidgets.QWidget):
         exchange_value = self.exchange_combo.currentData() or self.exchange_combo.currentText()
         exchange = Exchange(exchange_value)
         product_filter = self.symbol_filter.currentData() or ""
-        # Include related products (futures ↔ options)
-        related_products: set[str] = {product_filter} if product_filter else set()
-        if product_filter:
-            for rp in get_related_products(product_filter):
-                related_products.add(rp)
         count = 0
         products_seen: dict[str, str] = {}  # prefix → Chinese name
 
@@ -1007,39 +1026,32 @@ class TradingWidget(QtWidgets.QWidget):
             name = re.sub(r'(看涨|看跌)$', '', name).strip()
             return name
 
-        # Public data (primary source, always available)
+        # Public data via REST API (primary source)
         try:
-            public_contracts = query_contracts(exchange)
+            public_contracts = _api_get_contracts(exchange_value, product_filter)
             for pc in public_contracts:
                 product = re.match(r'^([A-Za-z]+)', pc["symbol"])
                 prod_prefix = product.group(1).upper() if product else ""
                 if prod_prefix not in products_seen:
                     products_seen[prod_prefix] = _extract_name(pc["symbol"], pc["name"])
-                if product_filter and prod_prefix.upper() not in related_products:
-                    continue
-                opt_type = ""
-                m = re.match(r'^[A-Z]+[0-9]+-([CP])-', pc["symbol"])
-                if m:
-                    opt_type = " 看涨" if m.group(1) == "C" else " 看跌"
+                opt_type = f" {pc.get('option_type', '')}" if pc.get("option_type") else ""
                 display = f"{pc['symbol']} | {pc['name']}{opt_type}"
                 self.symbol_combo.addItem(display, pc["vt_symbol"])
                 count += 1
         except Exception:
             pass
 
-        # Update product filter combo from precomputed cache (instant)
+        # Update product filter combo from REST API (cached after first call)
         current_filter = self.symbol_filter.currentData() or ""
         self.symbol_filter.blockSignals(True)
         self.symbol_filter.clear()
         self.symbol_filter.addItem("全部品种", "")
         try:
-            from ..contract_cache import get_products
-            precomputed = get_products(exchange_value)
-            for p, cn_name in precomputed.items():
+            prods = _api_get_products(exchange_value)
+            for p, cn_name in prods.items():
                 label = f"{p} - {cn_name}" if cn_name else p
                 self.symbol_filter.addItem(label, p)
         except Exception:
-            # Fallback to on-the-fly computation
             for p in sorted(products_seen.keys()):
                 cn_name = products_seen[p]
                 label = f"{p} - {cn_name}" if cn_name else p
