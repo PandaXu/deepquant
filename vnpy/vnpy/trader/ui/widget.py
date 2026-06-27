@@ -41,7 +41,7 @@ from ..object import (
 from ..utility import load_json, save_json, get_digits, ZoneInfo
 from ..setting import SETTING_FILENAME, SETTINGS
 from ..locale import _
-from ..contract_cache import query_contracts, get_related_products
+from ..contract_cache import query_contracts, get_related_products, get_products
 from ..wechat import (
     Credentials,
     WeixinError,
@@ -1017,15 +1017,23 @@ class TradingWidget(QtWidgets.QWidget):
         except Exception:
             pass
 
-        # Update product filter combo with Chinese names
+        # Update product filter combo from precomputed cache (instant)
         current_filter = self.symbol_filter.currentData() or ""
         self.symbol_filter.blockSignals(True)
         self.symbol_filter.clear()
         self.symbol_filter.addItem("全部品种", "")
-        for p in sorted(products_seen.keys()):
-            cn_name = products_seen[p]
-            label = f"{p} - {cn_name}" if cn_name else p
-            self.symbol_filter.addItem(label, p)
+        try:
+            from ..contract_cache import get_products
+            precomputed = get_products(exchange_value)
+            for p, cn_name in precomputed.items():
+                label = f"{p} - {cn_name}" if cn_name else p
+                self.symbol_filter.addItem(label, p)
+        except Exception:
+            # Fallback to on-the-fly computation
+            for p in sorted(products_seen.keys()):
+                cn_name = products_seen[p]
+                label = f"{p} - {cn_name}" if cn_name else p
+                self.symbol_filter.addItem(label, p)
         idx = self.symbol_filter.findData(current_filter)
         if idx >= 0:
             self.symbol_filter.setCurrentIndex(idx)

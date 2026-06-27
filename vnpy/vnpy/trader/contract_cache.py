@@ -31,6 +31,7 @@ _AKSHARE_EXCHANGE_MAP: dict[str, Exchange] = {
 # Global cache
 _contract_cache: Optional[pd.DataFrame] = None
 _cache_ts: Optional[datetime] = None
+_product_cache: dict[str, dict[str, str]] = {}  # exchange_value → {prefix → chinese_name}
 _cache_lock = threading.Lock()
 _loading = False
 
@@ -131,16 +132,47 @@ def _generate_index_options(
     return results
 
 
+def _build_product_cache(df: pd.DataFrame) -> dict[str, dict[str, str]]:
+    """Precompute product info per exchange: {exchange_code: {prefix: chinese_name}}."""
+    import re
+    products: dict[str, dict[str, str]] = {}
+    reverse_map = {v: k for k, v in _AKSHARE_EXCHANGE_MAP.items()}
+    for ex_val, ex_cn in reverse_map.items():
+        ex_df = df[df["交易所名称"] == ex_cn]
+        prods: dict[str, str] = {}
+        for _, row in ex_df.iterrows():
+            code = str(row["合约代码"]).upper()
+            name = str(row["合约名称"])
+            m = re.match(r'^([A-Za-z]+)', code)
+            if m and m.group(1) not in prods:
+                p = m.group(1).upper()
+                cn = re.sub(r'\d+$', '', name).strip()
+                cn = re.sub(r'(看涨|看跌)$', '', cn).strip()
+                prods[p] = cn
+        if prods:
+            products[ex_val] = dict(sorted(prods.items()))
+    return products
+
+
+def get_products(exchange_code: str) -> dict[str, str]:
+    """Get precomputed product map for an exchange (instant)."""
+    with _cache_lock:
+        return _product_cache.get(exchange_code, {})
+
+
 def refresh_cache() -> bool:
     """Force refresh the contract cache. Returns True on success."""
-    global _contract_cache, _cache_ts
+    global _contract_cache, _cache_ts, _product_cache
     print(f"[ContractCache] 🔄 refresh_cache() 被调用")
     df = _do_load()
     if df is not None and not df.empty:
+        products = _build_product_cache(df)
         with _cache_lock:
             _contract_cache = df
+            _product_cache = products
             _cache_ts = datetime.now()
-        print(f"[ContractCache] ✅ 缓存已更新: {len(df)}条 @ {_cache_ts}")
+        total_prods = sum(len(v) for v in products.values())
+        print(f"[ContractCache] ✅ 缓存已更新: {len(df)}条合约, {total_prods}个品种 @ {_cache_ts}")
         return True
     print(f"[ContractCache] ❌ 刷新失败")
     return False
@@ -148,15 +180,18 @@ def refresh_cache() -> bool:
 
 def init_cache() -> None:
     """Initialize cache: load from disk first (instant), then background refresh."""
-    global _contract_cache, _cache_ts
+    global _contract_cache, _cache_ts, _product_cache
     print(f"[ContractCache] 🚀 init_cache() 开始初始化...")
     # First try disk (instant)
     df = _load_from_disk()
     if df is not None and not df.empty:
+        products = _build_product_cache(df)
         with _cache_lock:
             _contract_cache = df
+            _product_cache = products
             _cache_ts = datetime.now()
-        print(f"[ContractCache] ✅ 磁盘缓存就绪: {len(df)}条, 后台更新网络中...")
+        total_prods = sum(len(v) for v in products.values())
+        print(f"[ContractCache] ✅ 磁盘缓存就绪: {len(df)}条合约, {total_prods}个品种, 后台更新网络中...")
         # Background refresh from network
         t = threading.Thread(target=refresh_cache, daemon=True)
         t.start()
