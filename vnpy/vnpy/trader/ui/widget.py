@@ -1042,6 +1042,27 @@ class TradingWidget(QtWidgets.QWidget):
         self.volume_line.setText("")
         self.clear_label_text()
 
+    def _try_public_tick(self, vt_symbol: str) -> None:
+        """Fetch public tick data if CTP has no cached data for this symbol."""
+        def _fetch():
+            try:
+                # Check if CTP already has data
+                tick = self.main_engine.get_tick(vt_symbol)
+                if tick is not None:
+                    return  # Already have CTP data, no need for fallback
+
+                from ..market_data import is_trading_time, get_public_tick
+                public_tick = get_public_tick(vt_symbol)
+                if public_tick is not None:
+                    event = Event("eTick." + vt_symbol, public_tick)
+                    self.event_engine.put(event)
+                    self.main_engine.write_log(f"[GUI] 公开行情: {vt_symbol} → {public_tick.last_price}")
+            except Exception as e:
+                self.main_engine.write_log(f"[GUI] 公开行情获取失败: {e}")
+
+        import threading
+        threading.Thread(target=_fetch, daemon=True).start()
+
     def _on_product_changed(self) -> None:
         """Lightweight: just filter the local combo, no HTTP."""
         self.symbol_combo.clear()
@@ -1159,13 +1180,15 @@ class TradingWidget(QtWidgets.QWidget):
         self.volume_line.setText("")
         self.price_line.setText("")
 
-        # Subscribe tick data
-        # Parse symbol from vt_symbol
+        # Subscribe tick data from gateway
         symbol, exchange = vt_symbol.rsplit(".", 1)
         req: SubscribeRequest = SubscribeRequest(
             symbol=symbol, exchange=Exchange(exchange)
         )
         self.main_engine.subscribe(req, gateway_name)
+
+        # Fallback: fetch public tick if no CTP data available
+        self._try_public_tick(vt_symbol)
 
     def clear_label_text(self) -> None:
         """
