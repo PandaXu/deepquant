@@ -737,8 +737,18 @@ class TradingWidget(QtWidgets.QWidget):
         for exchange in exchanges:
             self.exchange_combo.addItem(f"{exchange.value}({exchange.display_name})", exchange.value)
 
-        self.symbol_line: QtWidgets.QLineEdit = QtWidgets.QLineEdit()
-        self.symbol_line.returnPressed.connect(self.set_vt_symbol)
+        self.symbol_combo: QtWidgets.QComboBox = QtWidgets.QComboBox()
+        self.symbol_combo.setEditable(True)
+        self.symbol_combo.setInsertPolicy(QtWidgets.QComboBox.InsertPolicy.NoInsert)
+        self.symbol_combo.lineEdit().setPlaceholderText("输入或选择合约代码")
+        self.symbol_combo.lineEdit().returnPressed.connect(self.set_vt_symbol)
+        self.symbol_combo.activated.connect(lambda idx: self.set_vt_symbol())
+        # Refresh contract list when combo is clicked
+        self.symbol_combo.showPopup = self._show_symbol_popup
+
+        self.symbol_filter: QtWidgets.QLineEdit = QtWidgets.QLineEdit()
+        self.symbol_filter.setPlaceholderText("过滤合约（输入关键字）")
+        self.symbol_filter.textChanged.connect(self._filter_symbols)
 
         self.name_line: QtWidgets.QLineEdit = QtWidgets.QLineEdit()
         self.name_line.setReadOnly(True)
@@ -778,25 +788,27 @@ class TradingWidget(QtWidgets.QWidget):
         grid: QtWidgets.QGridLayout = QtWidgets.QGridLayout()
         grid.addWidget(QtWidgets.QLabel(_("交易所")), 0, 0)
         grid.addWidget(QtWidgets.QLabel(_("代码")), 1, 0)
-        grid.addWidget(QtWidgets.QLabel(_("名称")), 2, 0)
-        grid.addWidget(QtWidgets.QLabel(_("方向")), 3, 0)
-        grid.addWidget(QtWidgets.QLabel(_("开平")), 4, 0)
-        grid.addWidget(QtWidgets.QLabel(_("类型")), 5, 0)
-        grid.addWidget(QtWidgets.QLabel(_("价格")), 6, 0)
-        grid.addWidget(QtWidgets.QLabel(_("数量")), 7, 0)
-        grid.addWidget(QtWidgets.QLabel(_("接口")), 8, 0)
+        grid.addWidget(QtWidgets.QLabel(_("过滤")), 2, 0)
+        grid.addWidget(QtWidgets.QLabel(_("名称")), 3, 0)
+        grid.addWidget(QtWidgets.QLabel(_("方向")), 4, 0)
+        grid.addWidget(QtWidgets.QLabel(_("开平")), 5, 0)
+        grid.addWidget(QtWidgets.QLabel(_("类型")), 6, 0)
+        grid.addWidget(QtWidgets.QLabel(_("价格")), 7, 0)
+        grid.addWidget(QtWidgets.QLabel(_("数量")), 8, 0)
+        grid.addWidget(QtWidgets.QLabel(_("接口")), 9, 0)
         grid.addWidget(self.exchange_combo, 0, 1, 1, 2)
-        grid.addWidget(self.symbol_line, 1, 1, 1, 2)
-        grid.addWidget(self.name_line, 2, 1, 1, 2)
-        grid.addWidget(self.direction_combo, 3, 1, 1, 2)
-        grid.addWidget(self.offset_combo, 4, 1, 1, 2)
-        grid.addWidget(self.order_type_combo, 5, 1, 1, 2)
-        grid.addWidget(self.price_line, 6, 1, 1, 1)
-        grid.addWidget(self.price_check, 6, 2, 1, 1)
-        grid.addWidget(self.volume_line, 7, 1, 1, 2)
-        grid.addWidget(self.gateway_combo, 8, 1, 1, 2)
-        grid.addWidget(send_button, 9, 0, 1, 3)
-        grid.addWidget(cancel_button, 10, 0, 1, 3)
+        grid.addWidget(self.symbol_combo, 1, 1, 1, 2)
+        grid.addWidget(self.symbol_filter, 2, 1, 1, 2)
+        grid.addWidget(self.name_line, 3, 1, 1, 2)
+        grid.addWidget(self.direction_combo, 4, 1, 1, 2)
+        grid.addWidget(self.offset_combo, 5, 1, 1, 2)
+        grid.addWidget(self.order_type_combo, 6, 1, 1, 2)
+        grid.addWidget(self.price_line, 7, 1, 1, 1)
+        grid.addWidget(self.price_check, 7, 2, 1, 1)
+        grid.addWidget(self.volume_line, 8, 1, 1, 2)
+        grid.addWidget(self.gateway_combo, 9, 1, 1, 2)
+        grid.addWidget(send_button, 10, 0, 1, 3)
+        grid.addWidget(cancel_button, 11, 0, 1, 3)
 
         # Market depth display area
         bid_color: str = "rgb(255,174,201)"
@@ -919,17 +931,49 @@ class TradingWidget(QtWidgets.QWidget):
         if self.price_check.isChecked():
             self.price_line.setText(f"{tick.last_price:.{price_digits}f}")
 
+    def _show_symbol_popup(self) -> None:
+        """Refresh contract list before showing dropdown."""
+        self._refresh_symbols()
+        QtWidgets.QComboBox.showPopup(self.symbol_combo)
+
+    def _refresh_symbols(self) -> None:
+        """Reload all available contracts from engine."""
+        self.symbol_combo.clear()
+        exchange_value = self.exchange_combo.currentData() or self.exchange_combo.currentText()
+        all_contracts = self.main_engine.get_all_contracts()
+        filter_text = self.symbol_filter.text().strip().upper()
+        for ct in all_contracts:
+            if ct.exchange.value != exchange_value:
+                continue
+            display_name = getattr(ct.exchange, "display_name", ct.exchange.value)
+            item_text = f"{ct.symbol} | {ct.name} | {ct.exchange.value}({display_name})"
+            if filter_text and filter_text not in ct.symbol.upper() and filter_text not in ct.name.upper():
+                continue
+            self.symbol_combo.addItem(item_text, ct.vt_symbol)
+
+    def _filter_symbols(self) -> None:
+        """Filter contracts by keyword."""
+        self._refresh_symbols()
+        if self.symbol_combo.count() > 0:
+            self.symbol_combo.showPopup()
+
     def set_vt_symbol(self) -> None:
         """
         Set the tick depth data to monitor by vt_symbol.
         """
-        symbol: str = str(self.symbol_line.text())
-        if not symbol:
-            return
-
-        # Generate vt_symbol from symbol and exchange
-        exchange_value: str = self.exchange_combo.currentData() or str(self.exchange_combo.currentText())
-        vt_symbol: str = f"{symbol}.{exchange_value}"
+        # Get symbol from combo data (vt_symbol), or fall back to text
+        idx = self.symbol_combo.currentIndex()
+        if idx >= 0:
+            vt_symbol: str = self.symbol_combo.currentData()
+            if not vt_symbol:
+                return
+        else:
+            # Free text entry: construct vt_symbol from combo text + exchange
+            symbol: str = str(self.symbol_combo.currentText()).strip()
+            if not symbol:
+                return
+            exchange_value: str = self.exchange_combo.currentData() or str(self.exchange_combo.currentText())
+            vt_symbol = f"{symbol}.{exchange_value}"
 
         if vt_symbol == self.vt_symbol:
             return
@@ -943,12 +987,8 @@ class TradingWidget(QtWidgets.QWidget):
         else:
             self.name_line.setText(contract.name)
             gateway_name = contract.gateway_name
-
-            # Update gateway combo box.
             ix: int = self.gateway_combo.findText(gateway_name)
             self.gateway_combo.setCurrentIndex(ix)
-
-            # Update price digits
             self.price_digits = get_digits(contract.pricetick)
 
         self.clear_label_text()
@@ -956,10 +996,11 @@ class TradingWidget(QtWidgets.QWidget):
         self.price_line.setText("")
 
         # Subscribe tick data
+        # Parse symbol from vt_symbol
+        symbol, exchange = vt_symbol.rsplit(".", 1)
         req: SubscribeRequest = SubscribeRequest(
-            symbol=symbol, exchange=Exchange(exchange_value)
+            symbol=symbol, exchange=Exchange(exchange)
         )
-
         self.main_engine.subscribe(req, gateway_name)
 
     def clear_label_text(self) -> None:
@@ -997,7 +1038,7 @@ class TradingWidget(QtWidgets.QWidget):
         """
         Send new order manually.
         """
-        symbol: str = str(self.symbol_line.text())
+        symbol: str = str(self.symbol_combo.currentText()).strip().split(" ")[0]
         if not symbol:
             QtWidgets.QMessageBox.critical(self, _("委托失败"), _("请输入合约代码"))
             return
@@ -1042,7 +1083,7 @@ class TradingWidget(QtWidgets.QWidget):
         """"""
         data = cell.get_data()
 
-        self.symbol_line.setText(data.symbol)
+        self.symbol_combo.setEditText(data.symbol)
         self.exchange_combo.setCurrentIndex(
             self.exchange_combo.findText(data.exchange.value)
         )

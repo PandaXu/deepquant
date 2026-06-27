@@ -283,6 +283,7 @@ class CtpMdApi(MdApi):
     def onFrontDisconnected(self, reason: int) -> None:
         """服务器连接断开回报"""
         self.login_status = False
+        self.connect_status = False
         self.gateway.write_log(f"[MdApi] onFrontDisconnected 行情连接断开, reason={reason}")
 
     def onRspUserLogin(self, data: dict, error: dict, reqid: int, last: bool) -> None:
@@ -480,6 +481,7 @@ class CtpTdApi(TdApi):
     def onFrontDisconnected(self, reason: int) -> None:
         """服务器连接断开回报"""
         self.login_status = False
+        self.connect_status = False
         self.gateway.write_log(f"[TdApi] onFrontDisconnected 交易连接断开, reason={reason}")
 
     def onRspAuthenticate(self, data: dict, error: dict, reqid: int, last: bool) -> None:
