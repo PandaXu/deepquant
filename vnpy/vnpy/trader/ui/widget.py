@@ -740,6 +740,25 @@ def _api_get_contracts(exchange: str, product: str = "") -> list[dict]:
     return data.get("contracts", [])
 
 
+def is_contract_expired(code: str) -> bool:
+    """Check if a futures/options contract has expired based on its code.
+    Format: {product}{YYMM}[-C/P-STRIKE]
+    """
+    import re
+    now = datetime.now()
+    # Match contract month: e.g., rb2507 → 2025-07, MO2607-C-8550 → 2026-07
+    m = re.match(r'^[A-Za-z]+(\d{2})(\d{2})', code)
+    if not m:
+        return False
+    yy, mm = int(m.group(1)), int(m.group(2))
+    # Assume 2000+ year
+    year = 2000 + yy
+    # Contract expires at end of its month
+    expiry_month = datetime(year, mm, 1)
+    # Add 1 month buffer for delivery period
+    return now > expiry_month
+
+
 class TradingWidget(QtWidgets.QWidget):
     """
     General manual trading widget.
@@ -1035,8 +1054,17 @@ class TradingWidget(QtWidgets.QWidget):
                 if prod_prefix not in products_seen:
                     products_seen[prod_prefix] = _extract_name(pc["symbol"], pc["name"])
                 opt_type = f" {pc.get('option_type', '')}" if pc.get("option_type") else ""
+                # Mark expired contracts with gray indicator
+                expired = is_contract_expired(pc["symbol"])
                 display = f"{pc['symbol']} | {pc['name']}{opt_type}"
-                self.symbol_combo.addItem(display, pc["vt_symbol"])
+                if expired:
+                    display = f"⚠️ [已到期] {display}"
+                    self.symbol_combo.addItem(display, pc["vt_symbol"])
+                    # Gray out expired items (set foreground to dim)
+                    idx = self.symbol_combo.count() - 1
+                    self.symbol_combo.setItemData(idx, QtGui.QColor("#555555"), QtCore.Qt.ItemDataRole.ForegroundRole)
+                else:
+                    self.symbol_combo.addItem(display, pc["vt_symbol"])
                 count += 1
         except Exception:
             pass
