@@ -40,15 +40,11 @@ class ManagerWidget(QtWidgets.QWidget):
         refresh_button: QtWidgets.QPushButton = QtWidgets.QPushButton("刷新")
         refresh_button.clicked.connect(self.refresh_tree)
 
-        import_button: QtWidgets.QPushButton = QtWidgets.QPushButton("导入CSV")
-        import_button.clicked.connect(self.import_data)
-
         download_button: QtWidgets.QPushButton = QtWidgets.QPushButton("下载数据")
         download_button.clicked.connect(self.download_data)
 
         hbox1: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
         hbox1.addWidget(refresh_button)
-        hbox1.addWidget(import_button)
         hbox1.addWidget(download_button)
         hbox1.addStretch()
 
@@ -438,21 +434,16 @@ class DownloadDialog(QtWidgets.QDialog):
         self._load_products(ex)
 
     def _load_products(self, exchange_code: str) -> None:
-        """Fetch products from REST API in background."""
+        """Fetch products from contract_cache (in-process, no HTTP needed)."""
         from threading import Thread
         def _fetch():
             try:
-                import json, urllib.request
-                url = f"http://127.0.0.1:8888/api/contracts/products?exchange={exchange_code}"
-                req = urllib.request.Request(url)
-                req.add_header("Accept", "application/json")
-                with urllib.request.urlopen(req, timeout=5) as resp:
-                    data = json.loads(resp.read())
-                products = data.get("products", [])
-                # Update UI on main thread
+                from vnpy.trader.contract_cache import get_products
+                prods = get_products(exchange_code)
+                result = [{"prefix": k, "name": v} for k, v in prods.items()]
                 QtCore.QMetaObject.invokeMethod(
                     self, "_on_products_loaded", QtCore.Qt.ConnectionType.QueuedConnection,
-                    QtCore.Q_ARG(list, products)
+                    QtCore.Q_ARG(list, result)
                 )
             except Exception:
                 QtCore.QMetaObject.invokeMethod(
@@ -483,16 +474,20 @@ class DownloadDialog(QtWidgets.QDialog):
         from threading import Thread
         def _fetch():
             try:
-                import json, urllib.request
-                params = f"exchange={exchange_code}"
+                from vnpy.trader.contract_cache import query_contracts, get_related_products
+                from vnpy.trader.constant import Exchange
+                contracts = query_contracts(Exchange(exchange_code))
                 if product:
-                    params += f"&product={product}"
-                url = f"http://127.0.0.1:8888/api/contracts/public?{params}"
-                req = urllib.request.Request(url)
-                req.add_header("Accept", "application/json")
-                with urllib.request.urlopen(req, timeout=5) as resp:
-                    data = json.loads(resp.read())
-                contracts = data.get("contracts", [])
+                    related = {product}
+                    for rp in get_related_products(product):
+                        related.add(rp)
+                    contracts = [c for c in contracts if c['symbol'].upper()[:len(product)].upper() in related]
+                # Add option type indicators
+                import re
+                for c in contracts:
+                    m = re.match(r'^[A-Z]+[0-9]+-([CP])-', c['symbol'].upper())
+                    if m:
+                        c['option_type'] = "看涨" if m.group(1) == 'C' else "看跌"
                 QtCore.QMetaObject.invokeMethod(
                     self, "_on_contracts_loaded", QtCore.Qt.ConnectionType.QueuedConnection,
                     QtCore.Q_ARG(list, contracts)
