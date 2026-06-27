@@ -785,26 +785,22 @@ class TradingWidget(QtWidgets.QWidget):
         self.vt_symbol: str = ""
         self.price_digits: int = 0
 
+        # Preload products + contracts BEFORE UI init (blocks on HTTP ~0.5s)
+        self._preload_data_sync()
         self.init_ui()
         self.register_event()
-        # Preload products + contracts for default exchange on startup
-        self._preload_data()
 
-    def _preload_data(self) -> None:
-        """Preload products and contracts for all exchanges in background."""
-        def _load():
-            try:
-                # Preload products for all exchanges
-                for ex in ["CFFEX", "SHFE", "DCE", "CZCE", "INE", "GFEX"]:
-                    _api_get_products(ex)
-                # Preload contracts for default exchange
-                ex = self.exchange_combo.currentData() or self.exchange_combo.currentText()
-                _api_get_contracts(ex)
-                self.main_engine.write_log(f"[GUI] 启动预加载完成: 6个交易所品种 + {ex}合约")
-            except Exception as e:
-                self.main_engine.write_log(f"[GUI] 预加载失败: {e}")
-        import threading
-        threading.Thread(target=_load, daemon=True).start()
+    def _preload_data_sync(self) -> None:
+        """Preload products and contracts synchronously before UI init."""
+        try:
+            # Preload products for all exchanges (sequential, ~1-2s total)
+            for ex in ["CFFEX", "SHFE", "DCE", "CZCE", "INE", "GFEX"]:
+                _api_get_products(ex)
+            # Preload contracts for default exchange (CFFEX)
+            _api_get_contracts("CFFEX")
+            self.main_engine.write_log(f"[GUI] 启动预加载完成: 6个交易所品种 + CFFEX合约")
+        except Exception as e:
+            self.main_engine.write_log(f"[GUI] 预加载失败: {e}")
 
     def init_ui(self) -> None:
         """"""
