@@ -805,7 +805,8 @@ class TradingWidget(QtWidgets.QWidget):
 
     def init_ui(self) -> None:
         """"""
-        self.setFixedWidth(300)
+        self.setMinimumWidth(280)
+        self.setMaximumWidth(500)
 
         # Trading function area
         exchanges: list[Exchange] = self.main_engine.get_all_exchanges()
@@ -837,8 +838,9 @@ class TradingWidget(QtWidgets.QWidget):
         self.show_expired_check.stateChanged.connect(self._on_show_expired_changed)
 
         self.name_line: QtWidgets.QLabel = QtWidgets.QLabel()
-        self.name_line.setStyleSheet("color: #58a6ff; font-size: 12px; padding: 2px 4px; background: #1e1e1e; border: 1px solid #3c3c3c; border-radius: 2px;")
-        self.name_line.setMaximumHeight(20)
+        self.name_line.setStyleSheet("color: #58a6ff; font-size: 12px; padding: 3px 6px; background: #1e1e1e; border: 1px solid #3c3c3c; border-radius: 2px;")
+        self.name_line.setWordWrap(True)
+        self.name_line.setMinimumHeight(20)
 
         self.direction_combo: QtWidgets.QComboBox = QtWidgets.QComboBox()
         self.direction_combo.addItem(Direction.LONG.value)
