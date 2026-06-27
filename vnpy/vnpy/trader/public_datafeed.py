@@ -58,10 +58,13 @@ class PublicDatafeed(BaseDatafeed):
                 "hold": "open_interest",
             })
 
-            df["datetime"] = pd.to_datetime(df["datetime"])
+            df["datetime"] = pd.to_datetime(df["datetime"]).dt.tz_localize(None)
 
-            # Filter date range
-            mask = (df["datetime"] >= pd.Timestamp(start)) & (df["datetime"] <= pd.Timestamp(end))
+            # Filter date range (strip timezone for comparison with akshare naive datetime)
+            start_naive = pd.Timestamp(start).tz_localize(None)
+            end_naive = pd.Timestamp(end).tz_localize(None)
+            df["datetime"] = df["datetime"].dt.tz_localize(None)
+            mask = (df["datetime"] >= start_naive) & (df["datetime"] <= end_naive)
             df = df[mask]
 
             bars: list[BarData] = []
