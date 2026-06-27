@@ -811,14 +811,19 @@ class TradingWidget(QtWidgets.QWidget):
         # Trading function area
         exchanges: list[Exchange] = self.main_engine.get_all_exchanges()
         if not exchanges:
-            exchanges = [
-                Exchange.CFFEX, Exchange.SHFE, Exchange.CZCE,
-                Exchange.DCE, Exchange.INE, Exchange.GFEX,
-            ]
+            from ..panel_settings import get_exchanges
+            saved = get_exchanges()
+            exchanges = [Exchange(e) for e in saved if e in Exchange._value2member_map_]
         self.exchange_combo: QtWidgets.QComboBox = QtWidgets.QComboBox()
         for exchange in exchanges:
             self.exchange_combo.addItem(f"{exchange.value}({exchange.display_name})", exchange.value)
         self.exchange_combo.currentIndexChanged.connect(lambda: self._on_exchange_changed())
+
+        # Settings button for exchange/product selection
+        self.settings_btn: QtWidgets.QPushButton = QtWidgets.QPushButton("⚙")
+        self.settings_btn.setFixedWidth(30)
+        self.settings_btn.setToolTip("设置可见交易所")
+        self.settings_btn.clicked.connect(self._show_panel_settings)
 
         self.symbol_combo: QtWidgets.QComboBox = QtWidgets.QComboBox()
         self.symbol_combo.setEditable(True)
@@ -885,6 +890,7 @@ class TradingWidget(QtWidgets.QWidget):
 
         grid: QtWidgets.QGridLayout = QtWidgets.QGridLayout()
         grid.addWidget(QtWidgets.QLabel(_("交易所")), 0, 0)
+        grid.addWidget(self.settings_btn, 0, 2)
         grid.addWidget(QtWidgets.QLabel(_("品种")), 1, 0)
         grid.addWidget(self.show_expired_check, 1, 2)
         grid.addWidget(QtWidgets.QLabel(_("代码")), 2, 0)
@@ -1078,6 +1084,48 @@ class TradingWidget(QtWidgets.QWidget):
 
         import threading
         threading.Thread(target=_fetch, daemon=True).start()
+
+    def _show_panel_settings(self) -> None:
+        """Show dialog to select which exchanges to display."""
+        from ..panel_settings import get_exchanges, set_exchanges, get_exchange_names
+        saved = get_exchanges()
+        all_names = get_exchange_names()
+
+        dialog = QtWidgets.QDialog()
+        dialog.setWindowTitle("交易面板设置 - 选择可见交易所")
+        dialog.setMinimumWidth(350)
+        layout = QtWidgets.QVBoxLayout(dialog)
+
+        checks: dict[str, QtWidgets.QCheckBox] = {}
+        for code, name in all_names.items():
+            cb = QtWidgets.QCheckBox(f"{code} - {name}")
+            cb.setChecked(code in saved)
+            checks[code] = cb
+            layout.addWidget(cb)
+
+        btn_layout = QtWidgets.QHBoxLayout()
+        ok_btn = QtWidgets.QPushButton("确定")
+        cancel_btn = QtWidgets.QPushButton("取消")
+        btn_layout.addWidget(ok_btn)
+        btn_layout.addWidget(cancel_btn)
+        layout.addLayout(btn_layout)
+
+        def on_ok():
+            selected = [code for code, cb in checks.items() if cb.isChecked()]
+            if selected:
+                set_exchanges(selected)
+                # Rebuild exchange combo
+                self.exchange_combo.blockSignals(True)
+                self.exchange_combo.clear()
+                for code in selected:
+                    display = get_exchange_names().get(code, code)
+                    self.exchange_combo.addItem(f"{code}({display})", code)
+                self.exchange_combo.blockSignals(False)
+            dialog.accept()
+
+        ok_btn.clicked.connect(on_ok)
+        cancel_btn.clicked.connect(dialog.reject)
+        dialog.exec()
 
     def _on_show_expired_changed(self) -> None:
         """When show-expired checkbox toggles, re-filter the contract list."""
