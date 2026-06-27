@@ -1016,7 +1016,7 @@ class TradingWidget(QtWidgets.QWidget):
 
         req: OrderRequest = OrderRequest(
             symbol=symbol,
-            exchange=Exchange(str(self.exchange_combo.currentText())),
+            exchange=Exchange(self.exchange_combo.currentData() or str(self.exchange_combo.currentText())),
             direction=Direction(str(self.direction_combo.currentText())),
             type=OrderType(str(self.order_type_combo.currentText())),
             volume=volume,
