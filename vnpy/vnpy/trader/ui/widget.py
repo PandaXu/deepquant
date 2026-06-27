@@ -1071,7 +1071,15 @@ class TradingWidget(QtWidgets.QWidget):
         # Update name line widget and clear all labels
         contract: ContractData | None = self.main_engine.get_contract(vt_symbol)
         if not contract:
-            self.name_line.setText("")
+            # Fallback: extract name from public data combo item text
+            name_text = ""
+            if idx >= 0:
+                item = self.symbol_combo.currentText()
+                # Format: "code | name" or "code | name 看涨/看跌"
+                parts = item.split(" | ", 1)
+                if len(parts) > 1:
+                    name_text = parts[1].strip()
+            self.name_line.setText(name_text)
             gateway_name: str = self.gateway_combo.currentText()
         else:
             self.name_line.setText(contract.name)
