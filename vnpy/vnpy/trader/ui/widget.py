@@ -936,13 +936,24 @@ class TradingWidget(QtWidgets.QWidget):
             self.price_line.setText(f"{tick.last_price:.{price_digits}f}")
 
     def _on_exchange_changed(self) -> None:
-        """When exchange changes, reset all dependent fields."""
+        """When exchange changes, populate product list instantly from cache."""
         ex = self.exchange_combo.currentData() or self.exchange_combo.currentText()
         self.main_engine.write_log(f"[GUI] 交易所切换 → {ex}")
+
+        # Populate product combo from precomputed cache (instant, no recursion)
         self.symbol_filter.blockSignals(True)
         self.symbol_filter.clear()
         self.symbol_filter.addItem("全部品种", "")
+        try:
+            prods = get_products(ex)
+            for p, cn_name in prods.items():
+                label = f"{p} - {cn_name}" if cn_name else p
+                self.symbol_filter.addItem(label, p)
+        except Exception:
+            pass
         self.symbol_filter.blockSignals(False)
+
+        # Clear dependent fields
         self.symbol_combo.clear()
         self.vt_symbol = ""
         self.name_line.setText("")
