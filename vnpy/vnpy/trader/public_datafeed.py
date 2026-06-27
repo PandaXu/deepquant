@@ -30,11 +30,20 @@ class PublicDatafeed(BaseDatafeed):
         P = "[PublicDatafeed]"
         output(f"{P} 下载: {symbol}.{exchange.value} {interval.value} {start.date()}~{end.date()}")
 
+        # Skip option contracts — Sina doesn't support them
+        if '-' in symbol:
+            output(f"{P} 跳过期权合约: {symbol}")
+            return []
+
         try:
             import akshare as ak
 
             if interval == Interval.DAILY:
-                df = ak.futures_zh_daily_sina(symbol=symbol)
+                try:
+                    df = ak.futures_zh_daily_sina(symbol=symbol)
+                except Exception:
+                    output(f"{P} Sina不支持该合约: {symbol}")
+                    return []
                 col_map = {"date": "datetime", "open": "open", "high": "high",
                            "low": "low", "close": "close", "volume": "volume", "hold": "oi"}
             elif interval in (Interval.MINUTE, Interval.HOUR):
