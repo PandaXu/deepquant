@@ -4,17 +4,14 @@ Starts the trading engine and bridges events to WebSocket clients.
 """
 import asyncio
 import json
-import logging
 import threading
-import time
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, Response
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse
 
 from vnpy.event import EventEngine, Event
 from vnpy.trader.engine import MainEngine
@@ -28,16 +25,8 @@ from vnpy.trader.object import (
 )
 from vnpy.trader.constant import Direction, Exchange, Offset, OrderType
 from vnpy.trader.setting import SETTINGS
-from vnpy.trader.utility import TRADER_DIR
 
-# Fix macOS font
 SETTINGS["font.family"] = "PingFang SC"
-
-# Ensure correct MIME types for WebAssembly
-import mimetypes
-mimetypes.add_type("application/wasm", ".wasm")
-mimetypes.add_type("application/wasm", ".so")
-mimetypes.add_type("text/javascript", ".js")
 
 # Load available modules
 try:
@@ -45,7 +34,6 @@ try:
     HAS_CTP = True
 except ImportError:
     HAS_CTP = False
-    print("⚠️  CTP gateway not available")
 
 try:
     from vnpy_paperaccount import PaperAccountApp
@@ -76,19 +64,6 @@ except ImportError:
 # ---------------------------------------------------------------------------
 app = FastAPI(title="VeighNa Web Trader", version="4.4.0")
 
-# Mount static files with correct MIME types
-wasm_dist = Path(__file__).parent / "wasm-dist"
-if wasm_dist.exists():
-    app.mount("/wasm-dist", StaticFiles(directory=str(wasm_dist), html=True), name="wasm_dist")
-
-# Also serve plugins and libs at root level for Qt6 WASM dynamic loading
-plugins_dist = wasm_dist / "plugins"
-libs_dist = wasm_dist
-if plugins_dist.exists():
-    app.mount("/plugins", StaticFiles(directory=str(plugins_dist)), name="qt_plugins")
-# Mount individual .so files at root level too (Qt6 loads them as dynamic libs)
-# We'll route them through wasm-dist
-
 # Global state
 event_engine: EventEngine | None = None
 main_engine: MainEngine | None = None
@@ -98,7 +73,6 @@ _main_loop: asyncio.AbstractEventLoop | None = None
 
 def json_dumps(obj: Any) -> str:
     """Custom JSON encoder for VeighNa objects."""
-
     def convert(o: Any) -> Any:
         if hasattr(o, "__dict__"):
             result = {}
@@ -119,7 +93,6 @@ def json_dumps(obj: Any) -> str:
         elif isinstance(o, Enum):
             return o.value
         return o
-
     return json.dumps(obj, default=convert, ensure_ascii=False)
 
 
@@ -317,72 +290,6 @@ def index():
     return HTMLResponse(html_path.read_text(encoding="utf-8"))
 
 
-@app.get("/wasm")
-def wasm_index():
-    html_path = Path(__file__).parent / "wasm-dist" / "index.html"
-    return HTMLResponse(html_path.read_text(encoding="utf-8"))
-
-
-@app.get("/qt")
-def qt_wasm():
-    html_path = Path(__file__).parent / "wasm-dist" / "qt.html"
-    return HTMLResponse(html_path.read_text(encoding="utf-8"))
-
-
-@app.get("/pyodide")
-def pyodide_wasm():
-    html_path = Path(__file__).parent / "wasm-dist" / "pyodide.html"
-    return HTMLResponse(html_path.read_text(encoding="utf-8"))
-
-
-@app.get("/qt6", include_in_schema=False)
-def qt6_wasm():
-    return HTMLResponse("""<!doctype html>
-<html><head><meta charset=utf-8><title>VeighNa Qt6</title>
-<style>html,body{padding:0;margin:0;overflow:hidden;height:100vh;background:#1e1e1e}
-#screen{width:100%;height:100%}
-#status{position:fixed;top:10px;left:10px;color:#0f0;font-family:monospace;font-size:12px;z-index:99;background:rgba(0,0,0,0.8);padding:8px}</style></head><body>
-<div id="status">Loading...</div>
-<div id="screen"></div>
-<script src="/wasm-dist/veighna.js"></script>
-<script>
-var st = document.getElementById('status');
-var s = document.getElementById('screen');
-var Module = {
-    locateFile: function(path) { return '/wasm-dist/' + path; },
-    canvas: (function() { var c=document.createElement('canvas'); c.id='qt-canvas'; c.width=800; c.height=600; c.style.cssText='display:block;width:100vw;height:100vh;'; s.appendChild(c); return c; })(),
-    setStatus: function(t) { st.textContent = t; },
-    onRuntimeInitialized: function() { st.textContent = 'Qt Init!'; },
-    print: function(t) { console.log('[Qt]',t); },
-    printErr: function(t) { console.error('[Qt]',t); },
-};
-window.veighna_wasm_entry(Module).then(function() {
-    st.textContent = 'VeighNa GUI Started!';
-}).catch(function(e) {
-    st.textContent = 'Error: ' + (e.message || e);
-});
-</script>
-</body></html>""")
-
-
-# Serve WASM files with correct MIME types
-@app.get("/wasm-dist/{filename}")
-async def wasm_static(filename: str):
-    from fastapi.responses import FileResponse
-    file_path = Path(__file__).parent / "wasm-dist" / filename
-    if not file_path.exists():
-        return {"error": "not found"}
-    if filename.endswith(".wasm"):
-        media_type = "application/wasm"
-    elif filename.endswith(".js"):
-        media_type = "text/javascript"
-    elif filename.endswith(".so"):
-        media_type = "application/wasm"
-    else:
-        media_type = None
-    return FileResponse(file_path, media_type=media_type)
-
-
 # ---------------------------------------------------------------------------
 # Startup
 # ---------------------------------------------------------------------------
@@ -392,15 +299,12 @@ def start_engine() -> None:
 
     print("🚀 Starting VeighNa engine...")
     event_engine = EventEngine()
-    # MainEngine.__init__ will start the event_engine, so don't start it here
     main_engine = MainEngine(event_engine)
 
-    # Register available gateways
     if HAS_CTP:
         main_engine.add_gateway(CtpGateway)
         print("  ✅ CTP Gateway")
 
-    # Register available apps
     if HAS_PAPER:
         main_engine.add_app(PaperAccountApp)
         print("  ✅ Paper Account")
@@ -414,7 +318,6 @@ def start_engine() -> None:
         main_engine.add_app(DataManagerApp)
         print("  ✅ Data Manager")
 
-    # Register event bridge
     event_engine.register_general(bridge_event)
     main_engine.write_log("Web Trader engine started")
 
@@ -428,7 +331,6 @@ async def on_startup():
     _main_loop = asyncio.get_running_loop()
     t = threading.Thread(target=start_engine, daemon=True)
     t.start()
-    # Wait for engine to be ready
     for _ in range(50):
         if main_engine is not None:
             break

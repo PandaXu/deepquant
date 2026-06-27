@@ -1,7 +1,0 @@
-{
-  "plugins": {
-    "platforms": {
-      "qwasm": "libqwasm.so"
-    }
-  }
-}
