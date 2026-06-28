@@ -40,7 +40,7 @@ class DataSyncEngine(BaseEngine):
         # Default: 3 years lookback
         self.config.setdefault("lookback_years", 3)
         self.config.setdefault("auto_sync", True)
-        self.config.setdefault("sync_exchanges", ["CFFEX", "SHFE", "DCE", "CZCE", "INE", "GFEX"])
+        self.config.setdefault("sync_exchanges", ["CFFEX"])
         self.config.setdefault("sync_minute", True)
         self._save_config()
 
