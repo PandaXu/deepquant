@@ -99,6 +99,8 @@ class MainWindow(QtWidgets.QMainWindow):
             chart_dock.setWidget(self.chart_widget)
             self.addDockWidget(QtCore.Qt.DockWidgetArea.RightDockWidgetArea, chart_dock)
             self.tabifyDockWidget(chart_dock, tick_dock)
+            # Link to trading widget for auto-chart on contract select
+            self.trading_widget.set_chart_widget(self.chart_widget)
         except ImportError:
             pass
 

@@ -1084,6 +1084,52 @@ class TradingWidget(QtWidgets.QWidget):
         self.volume_line.setText("")
         self.clear_label_text()
 
+    def _load_chart(self, vt_symbol: str) -> None:
+        """Load historical bar data for the K-line chart."""
+        def _fetch():
+            try:
+                from vnpy.trader.database import get_database
+                from vnpy.trader.constant import Interval
+                from datetime import datetime, timedelta
+                db = get_database()
+                symbol, exchange_str = vt_symbol.rsplit(".", 1)
+                exchange = Exchange(exchange_str)
+
+                # Try minute data first, fall back to daily
+                bars = db.load_bar_data(
+                    symbol, exchange, Interval.MINUTE,
+                    datetime.now() - timedelta(days=60), datetime.now()
+                )
+                if not bars:
+                    bars = db.load_bar_data(
+                        symbol, exchange, Interval.DAILY,
+                        datetime.now() - timedelta(days=365), datetime.now()
+                    )
+                if bars and hasattr(self, 'chart_widget') and self.chart_widget:
+                    self.chart_widget.load_bars(bars, f"{vt_symbol} K线")
+                elif bars:
+                    # Try to find chart widget through parent
+                    self._push_chart_to_mainwindow(vt_symbol, bars)
+            except Exception:
+                pass
+        import threading
+        threading.Thread(target=_fetch, daemon=True).start()
+
+    def set_chart_widget(self, widget) -> None:
+        """Set the K-line chart widget reference."""
+        self.chart_widget = widget
+
+    def _push_chart_to_mainwindow(self, vt_symbol: str, bars: list) -> None:
+        """Fallback: find chart through parent window."""
+        try:
+            from PySide6.QtWidgets import QApplication
+            for w in QApplication.topLevelWidgets():
+                if hasattr(w, 'chart_widget') and w.chart_widget:
+                    w.chart_widget.load_bars(bars, f"{vt_symbol} K线")
+                    break
+        except Exception:
+            pass
+
     def _try_public_tick(self, vt_symbol: str) -> None:
         """Fetch public tick data if CTP has no cached data for this symbol."""
         def _fetch():
@@ -1307,6 +1353,9 @@ class TradingWidget(QtWidgets.QWidget):
 
         # Fallback: fetch public tick if no CTP data available
         self._try_public_tick(vt_symbol)
+
+        # Load bar data into K-line chart
+        self._load_chart(vt_symbol)
 
     def _on_depth_click(self, label: QtWidgets.QLabel) -> None:
         """Fill price field with clicked depth price."""
