@@ -167,6 +167,27 @@ class MainEngine:
         except ImportError:
             pass
 
+        # Background data sync engine — fills historical data gaps
+        try:
+            from .data_sync_engine import DataSyncEngine
+            sync_engine: DataSyncEngine = self.add_engine(DataSyncEngine)
+            if sync_engine.config.get("auto_sync"):
+                # Start sync after a short delay (let other engines init first)
+                def _start_sync(event):
+                    if not sync_engine._active:
+                        sync_engine.start_sync()
+                # Run on startup (via one-shot timer — first EVENT_TIMER fires after 1s)
+                self.event_engine.register(EVENT_TIMER, _start_sync)
+
+                # Daily re-sync at 8:00 AM
+                def _daily_sync(event):
+                    now = datetime.now()
+                    if now.hour == 8 and now.minute == 0:
+                        sync_engine.start_sync()
+                self.event_engine.register(EVENT_TIMER, _daily_sync)
+        except ImportError:
+            pass
+
         oms_engine: OmsEngine = self.add_engine(OmsEngine)
         self.get_tick: Callable[[str], TickData | None] = oms_engine.get_tick
         self.get_order: Callable[[str], OrderData | None] = oms_engine.get_order
