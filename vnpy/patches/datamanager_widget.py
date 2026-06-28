@@ -111,12 +111,9 @@ class ManagerWidget(QtWidgets.QWidget):
         )
 
         # K-line chart widget
-        try:
-            from vnpy.chart.kline_widget import KLineChartWidget
-            self.chart_widget = KLineChartWidget()
-            self.chart_widget.setMinimumHeight(250)
-        except ImportError:
-            self.chart_widget = None
+        from vnpy.chart.kline_widget import KLineChartWidget
+        self.chart_widget = KLineChartWidget()
+        self.chart_widget.setMinimumHeight(250)
 
     def refresh_tree(self) -> None:
         """"""

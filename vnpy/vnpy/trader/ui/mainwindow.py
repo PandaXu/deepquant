@@ -94,7 +94,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # K-line chart dock
         try:
             from vnpy.chart.kline_widget import KLineChartWidget
-            self.chart_widget = KLineChartWidget(event_engine)
+            self.chart_widget = KLineChartWidget(self.event_engine)
             chart_dock = QtWidgets.QDockWidget("📈 K线图")
             chart_dock.setWidget(self.chart_widget)
             self.addDockWidget(QtCore.Qt.DockWidgetArea.RightDockWidgetArea, chart_dock)
