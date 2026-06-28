@@ -172,17 +172,21 @@ class MainEngine:
             from .data_sync_engine import DataSyncEngine
             sync_engine: DataSyncEngine = self.add_engine(DataSyncEngine)
             if sync_engine.config.get("auto_sync"):
-                # Start sync after a short delay (let other engines init first)
-                def _start_sync(event):
-                    if not sync_engine._active:
-                        sync_engine.start_sync()
-                # Run on startup (via one-shot timer — first EVENT_TIMER fires after 1s)
-                self.event_engine.register(EVENT_TIMER, _start_sync)
+                # Start sync after a 3-second delay (one-shot)
+                import threading
+                def _delayed_start():
+                    import time
+                    time.sleep(3)
+                    sync_engine.start_sync()
+                threading.Thread(target=_delayed_start, daemon=True).start()
 
                 # Daily re-sync at 8:00 AM
+                _daily_done = set()
                 def _daily_sync(event):
                     now = datetime.now()
-                    if now.hour == 8 and now.minute == 0:
+                    key = now.strftime("%Y%m%d")
+                    if now.hour == 8 and now.minute == 0 and key not in _daily_done:
+                        _daily_done.add(key)
                         sync_engine.start_sync()
                 self.event_engine.register(EVENT_TIMER, _daily_sync)
         except ImportError:
