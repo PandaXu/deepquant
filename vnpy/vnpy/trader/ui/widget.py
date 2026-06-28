@@ -876,6 +876,12 @@ class TradingWidget(QtWidgets.QWidget):
         self.price_check: QtWidgets.QCheckBox = QtWidgets.QCheckBox()
         self.price_check.setToolTip(_("设置价格随行情更新"))
 
+        # Quick-close all positions button
+        self.close_all_btn: QtWidgets.QPushButton = QtWidgets.QPushButton(_("一键全平"))
+        self.close_all_btn.setStyleSheet("QPushButton { background: #d4380d; color: white; font-weight: bold; padding: 5px; border: none; }")
+        self.close_all_btn.clicked.connect(self._close_all_positions)
+        self.close_all_btn.setToolTip("市价平掉所有持仓")
+
         send_button: QtWidgets.QPushButton = QtWidgets.QPushButton(_("委托"))
         send_button.clicked.connect(self.send_order)
         self.direction_combo.currentIndexChanged.connect(lambda: send_button.setStyleSheet(
@@ -921,6 +927,7 @@ class TradingWidget(QtWidgets.QWidget):
         grid.addWidget(self.gateway_combo, 9, 1, 1, 2)
         grid.addWidget(send_button, 10, 0, 1, 3)
         grid.addWidget(cancel_button, 11, 0, 1, 3)
+        grid.addWidget(self.close_all_btn, 12, 0, 1, 3)
 
         # Market depth display area
         bid_color: str = "rgb(255,174,201)"
@@ -975,6 +982,12 @@ class TradingWidget(QtWidgets.QWidget):
         form.addRow(self.bp3_label, self.bv3_label)
         form.addRow(self.bp4_label, self.bv4_label)
         form.addRow(self.bp5_label, self.bv5_label)
+
+        # Make depth labels clickable to fill price
+        for lbl in [self.bp1_label, self.bp2_label, self.bp3_label, self.bp4_label, self.bp5_label,
+                     self.ap1_label, self.ap2_label, self.ap3_label, self.ap4_label, self.ap5_label]:
+            lbl.setCursor(QtGui.QCursor(QtCore.Qt.CursorShape.PointingHandCursor))
+            lbl.mousePressEvent = lambda ev, l=lbl: self._on_depth_click(l)
 
         # Overall layout
         vbox: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
@@ -1134,6 +1147,26 @@ class TradingWidget(QtWidgets.QWidget):
         cancel_btn.clicked.connect(dialog.reject)
         dialog.exec()
 
+    def _close_all_positions(self) -> None:
+        """Market-close all open positions."""
+        positions = self.main_engine.get_all_positions()
+        if not positions:
+            return
+        gateway = self.gateway_combo.currentText()
+        for pos in positions:
+            if pos.volume == 0:
+                continue
+            # Close in opposite direction
+            direction = Direction.SHORT if pos.direction == Direction.LONG else Direction.LONG
+            req = OrderRequest(
+                symbol=pos.symbol, exchange=pos.exchange,
+                direction=direction, type=OrderType.MARKET,
+                volume=abs(pos.volume), price=0,
+                offset=Offset.CLOSE, reference="QuickClose"
+            )
+            self.main_engine.send_order(req, pos.gateway_name or gateway)
+        self.main_engine.write_log(f"[一键全平] 已发送 {len(positions)} 个平仓委托")
+
     def _on_show_expired_changed(self) -> None:
         """When show-expired checkbox toggles, re-filter the contract list."""
         self._refresh_symbols()
@@ -1274,6 +1307,16 @@ class TradingWidget(QtWidgets.QWidget):
 
         # Fallback: fetch public tick if no CTP data available
         self._try_public_tick(vt_symbol)
+
+    def _on_depth_click(self, label: QtWidgets.QLabel) -> None:
+        """Fill price field with clicked depth price."""
+        text = label.text()
+        try:
+            price = float(text)
+            if price > 0:
+                self.price_line.setText(str(price))
+        except ValueError:
+            pass
 
     def clear_label_text(self) -> None:
         """
