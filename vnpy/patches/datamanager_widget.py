@@ -54,7 +54,15 @@ class ManagerWidget(QtWidgets.QWidget):
 
         hbox2: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
         hbox2.addWidget(self.tree)
-        hbox2.addWidget(self.table)
+
+        # Right side: chart + table
+        right_split = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
+        if self.chart_widget:
+            right_split.addWidget(self.chart_widget)
+        right_split.addWidget(self.table)
+        right_split.setStretchFactor(0, 3)
+        right_split.setStretchFactor(1, 2)
+        hbox2.addWidget(right_split)
 
         vbox: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
         vbox.addLayout(hbox1)
@@ -101,6 +109,14 @@ class ManagerWidget(QtWidgets.QWidget):
         self.table.horizontalHeader().setSectionResizeMode(
             QtWidgets.QHeaderView.ResizeMode.ResizeToContents
         )
+
+        # K-line chart widget
+        try:
+            from vnpy.chart.kline_widget import KLineChartWidget
+            self.chart_widget = KLineChartWidget()
+            self.chart_widget.setMinimumHeight(250)
+        except ImportError:
+            self.chart_widget = None
 
     def refresh_tree(self) -> None:
         """"""
@@ -167,7 +183,7 @@ class ManagerWidget(QtWidgets.QWidget):
         # Auto-preview first data item
         if overviews:
             first = overviews[0]
-            self.show_data(first.symbol, first.exchange, first.interval, first.start, first.end)
+            self.show_data(first.symbol, first.exchange, first.interval, first.start, first.end, auto=True)
         else:
             self.table.setRowCount(1)
             self.table.setItem(0, 0, DataCell("请先下载数据"))
@@ -234,13 +250,14 @@ class ManagerWidget(QtWidgets.QWidget):
                 "该文件已在其他程序中打开，请关闭相关程序后再尝试导出数据。"
             )
 
-    def show_data(self, symbol, exchange, interval, start, end) -> None:
+    def show_data(self, symbol, exchange, interval, start, end, auto=False) -> None:
         """"""
-        dialog: DateRangeDialog = DateRangeDialog(start, end)
-        n: int = dialog.exec_()
-        if n != dialog.DialogCode.Accepted:
-            return
-        start, end = dialog.get_date_range()
+        if not auto:
+            dialog: DateRangeDialog = DateRangeDialog(start, end)
+            n: int = dialog.exec_()
+            if n != dialog.DialogCode.Accepted:
+                return
+            start, end = dialog.get_date_range()
 
         bars: list[BarData] = self.engine.load_bar_data(
             symbol, exchange, interval, start, end
@@ -258,6 +275,11 @@ class ManagerWidget(QtWidgets.QWidget):
             self.table.setItem(row, 5, DataCell(str(bar.volume)))
             self.table.setItem(row, 6, DataCell(str(bar.turnover)))
             self.table.setItem(row, 7, DataCell(str(bar.open_interest)))
+
+        # Update chart
+        if self.chart_widget and bars:
+            title = f"{symbol}.{exchange.value} {interval.value}"
+            self.chart_widget.load_bars(bars, title)
 
     def delete_data(self, symbol, exchange, interval) -> None:
         """"""
