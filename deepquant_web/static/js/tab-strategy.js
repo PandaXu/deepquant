@@ -26,7 +26,7 @@ const TabStrategy = {
             </div>
             <div class="sc-actions">
               <button class="btn btn-xs btn-primary" @click="initStrategy(s)" v-if="!s.status || s.status==='STOPPED'">初始化</button>
-              <button class="btn btn-xs btn-long" @click="startStrategy(s)" v-if="s.status==='INITED'">启动</button>
+              <button class="btn btn-xs btn-success" @click="startStrategy(s)" v-if="s.status==='INITED'">启动</button>
               <button class="btn btn-xs btn-warn" @click="stopStrategy(s)" v-if="s.status==='RUNNING'">停止</button>
               <button class="btn btn-xs" @click="editStrategy(s)">编辑</button>
               <button class="btn btn-xs btn-danger" @click="removeStrategy(s)">删除</button>
@@ -55,7 +55,7 @@ const TabStrategy = {
         <!-- Results -->
         <div v-if="bt.result" class="panel-body" style="padding:8px">
           <table class="data-table">
-            <thead><tr><th>收益率</th><th class="num">夏普</th><th class="num">最大回抽</th><th class="num">交易天数</th><th class="num">成交笔数</th></tr></thead>
+            <thead><tr><th>收益率</th><th class="num">夏普</th><th class="num">最大回撤</th><th class="num">交易天数</th><th class="num">成交笔数</th></tr></thead>
             <tbody>
               <tr>
                 <td :class="(bt.result.total_return||0)>=0?'up':'down'">{{ (bt.result.total_return||0).toFixed(2) }}%</td>
@@ -110,7 +110,7 @@ const TabStrategy = {
     function editStrategy(s) { editingStrategy.value = s; newStrategy.class_name = s.class_name; newStrategy.strategy_name = s.strategy_name; newStrategy.vt_symbol = s.vt_symbol || ''; newStrategy.paramsJson = JSON.stringify(s.parameters || {}); showAddModal.value = true; }
 
     function saveStrategy() {
-      const params = JSON.parse(newStrategy.paramsJson || '{}');
+      let params = {}; try { params = JSON.parse(newStrategy.paramsJson || '{}'); } catch(e) { $toast('参数JSON格式错误', 'error'); return; }
       const payload = { class_name: newStrategy.class_name, strategy_name: newStrategy.strategy_name, vt_symbol: newStrategy.vt_symbol, parameters: params };
       $wsSend({ action: editingStrategy.value ? 'cta_strategy_edit' : 'cta_strategy_add', payload });
       showAddModal.value = false; editingStrategy.value = null;
