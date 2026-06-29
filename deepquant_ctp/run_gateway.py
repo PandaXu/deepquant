@@ -417,9 +417,7 @@ def main() -> None:
     logger.info("-" * 60)
     main_engine.connect(setting, "CTP")
 
-    # Wait for contract loading before subscribing
-    # TD API needs to query instruments and populate symbol_contract_map
-    # before ticks can be received
+    # Wait for contract loading (TD API), but also pre-populate for MD-only mode
     logger.info("等待合约数据加载 (最多 15 秒)...")
     for _ in range(30):
         time.sleep(0.5)
@@ -428,7 +426,7 @@ def main() -> None:
             logger.info(f"合约数据已就绪: {len(contracts)} 个合约")
             break
     else:
-        logger.warning("等待超时，合约数据可能尚未加载完成")
+        logger.warning("等待超时，合约数据可能尚未加载完成（TD 未登录，将使用 MD-only 模式）")
 
     # -----------------------------------------------------------------------
     # Subscribe to market data

@@ -28,6 +28,7 @@ const store = reactive({
   dataOverview: [],
   logPaused: false,
   connectedGateways: [],   // CTP connection status from server
+  activeAccount: '',       // currently connected account alias
 });
 
 // ---- WebSocket ----
@@ -210,6 +211,7 @@ async function $pollStatus() {
   try {
     const data = await $apiGet('/api/status');
     store.connectedGateways = data.gateways || [];
+    store.activeAccount = data.active_account || '';
   } catch(e) {}
 }
 setInterval($pollStatus, 5000);  // Poll every 5 seconds

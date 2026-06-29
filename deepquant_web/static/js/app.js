@@ -26,7 +26,9 @@ const App = {
     // Gateway connection status display
     const gatewayLabel = computed(() => {
       const gws = store.connectedGateways;
+      const acct = store.activeAccount;
       if (!store.wsStatus) return { dot: 'off', text: 'WS 断开' };
+      if (gws.length > 0 && acct) return { dot: 'on', text: acct + ' — ' + gws.join(', ') + ' 已连接' };
       if (gws.length > 0) return { dot: 'on', text: gws.join(', ') + ' 已连接' };
       return { dot: 'off', text: '网关未连接' };
     });

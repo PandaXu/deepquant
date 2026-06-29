@@ -322,11 +322,24 @@ class CtpMdApi(MdApi):
         if not data["UpdateTime"]:
             return
 
-        # 过滤还没有收到合约数据前的行情推送
+        # 合约查找：如果 symbol_contract_map 中没有（TD 未登录时），自动创建占位合约
         symbol: str = data["InstrumentID"]
         contract: ContractData | None = symbol_contract_map.get(symbol, None)
         if not contract:
-            return
+            # MD-only mode: guess exchange from symbol prefix
+            exchange = _guess_exchange(symbol)
+            contract = ContractData(
+                symbol=symbol,
+                exchange=exchange,
+                name=symbol,
+                product=Product.FUTURES,
+                size=1,
+                pricetick=1.0,
+                min_volume=1,
+                gateway_name=self.gateway_name,
+            )
+            symbol_contract_map[symbol] = contract
+            self.gateway.on_contract(contract)
 
         # 对大商所的交易日字段取本地日期
         if not data["ActionDay"] or contract.exchange == Exchange.DCE:
@@ -1029,6 +1042,59 @@ def _disconnect_reason_text(reason: int) -> str:
     """Return human-readable CTP disconnect reason."""
     desc = _CTP_DISCONNECT_REASONS.get(reason, "")
     return f"{desc}" if desc else f"未知原因码"
+
+
+# ---------------------------------------------------------------------------
+# Exchange guessing for MD-only mode (when TD is not connected)
+# ---------------------------------------------------------------------------
+_EXCHANGE_PREFIX: dict[str, Exchange] = {
+    # Shanghai
+    "rb": Exchange.SHFE, "wr": Exchange.SHFE, "hc": Exchange.SHFE,
+    "cu": Exchange.SHFE, "al": Exchange.SHFE, "zn": Exchange.SHFE,
+    "pb": Exchange.SHFE, "ni": Exchange.SHFE, "sn": Exchange.SHFE,
+    "au": Exchange.SHFE, "ag": Exchange.SHFE, "bu": Exchange.SHFE,
+    "ru": Exchange.SHFE, "sp": Exchange.SHFE, "fu": Exchange.SHFE,
+    "ss": Exchange.SHFE, "ao": Exchange.SHFE, "br": Exchange.SHFE,
+    # Dalian
+    "c": Exchange.DCE, "cs": Exchange.DCE, "a": Exchange.DCE,
+    "b": Exchange.DCE, "m": Exchange.DCE, "y": Exchange.DCE,
+    "p": Exchange.DCE, "l": Exchange.DCE, "v": Exchange.DCE,
+    "pp": Exchange.DCE, "j": Exchange.DCE, "jm": Exchange.DCE,
+    "i": Exchange.DCE, "jd": Exchange.DCE, "eg": Exchange.DCE,
+    "eb": Exchange.DCE, "pg": Exchange.DCE, "lh": Exchange.DCE,
+    "rr": Exchange.DCE, "fb": Exchange.DCE, "bb": Exchange.DCE,
+    # Zhengzhou
+    "CF": Exchange.CZCE, "SR": Exchange.CZCE, "TA": Exchange.CZCE,
+    "OI": Exchange.CZCE, "RI": Exchange.CZCE, "MA": Exchange.CZCE,
+    "FG": Exchange.CZCE, "ZC": Exchange.CZCE, "RM": Exchange.CZCE,
+    "RS": Exchange.CZCE, "JR": Exchange.CZCE, "LR": Exchange.CZCE,
+    "WH": Exchange.CZCE, "PM": Exchange.CZCE, "SF": Exchange.CZCE,
+    "SM": Exchange.CZCE, "UR": Exchange.CZCE, "SA": Exchange.CZCE,
+    "PF": Exchange.CZCE, "PK": Exchange.CZCE, "SH": Exchange.CZCE,
+    "AP": Exchange.CZCE, "CJ": Exchange.CZCE, "CY": Exchange.CZCE,
+    # Mid-financial
+    "IF": Exchange.CFFEX, "IC": Exchange.CFFEX, "IH": Exchange.CFFEX,
+    "IM": Exchange.CFFEX, "T": Exchange.CFFEX, "TF": Exchange.CFFEX,
+    "TS": Exchange.CFFEX, "TL": Exchange.CFFEX,
+    # Energy
+    "sc": Exchange.INE, "lu": Exchange.INE, "nr": Exchange.INE,
+    "bc": Exchange.INE,
+    # Guangzhou
+    "si": Exchange.GFEX, "lc": Exchange.GFEX,
+}
+
+
+def _guess_exchange(symbol: str) -> Exchange:
+    """Guess exchange from symbol prefix for MD-only mode."""
+    # Try exact prefix match first (e.g., "rb2510" -> "rb")
+    import re
+    m = re.match(r'^([A-Za-z]+)', symbol)
+    if m:
+        prefix = m.group(1).lower()
+        for pf, ex in _EXCHANGE_PREFIX.items():
+            if prefix == pf.lower():
+                return ex
+    return Exchange.SHFE  # default
 
 
 def adjust_price(price: float) -> float:

@@ -80,6 +80,7 @@ def root():
 event_engine: EventEngine | None = None
 main_engine: MainEngine | None = None
 ws_clients: list[WebSocket] = []
+_active_account_name: str = ""  # currently connected CTP account alias
 _main_loop: asyncio.AbstractEventLoop | None = None
 
 
@@ -279,6 +280,8 @@ async def handle_ws_message(ws: WebSocket, msg: str) -> None:
                 # CTP connection is blocking — run in thread pool
                 loop = asyncio.get_running_loop()
                 await loop.run_in_executor(None, main_engine.connect, acct["setting"], gw_name)
+                global _active_account_name
+                _active_account_name = acct["alias"]
                 main_engine.write_log(f"账户已连接: {acct['alias']} ({gw_name})")
                 await ws.send_text(json.dumps({"type": "log", "data": {"msg": f"账户已连接: {acct['alias']} ({gw_name})", "gateway_name": gw_name}}))
             else:
@@ -290,6 +293,8 @@ async def handle_ws_message(ws: WebSocket, msg: str) -> None:
             if acct:
                 gw_name = "CTP"
                 main_engine.remove_gateway(gw_name)
+                global _active_account_name
+                _active_account_name = ""
                 main_engine.write_log(f"账户已断开: {acct['alias']} ({gw_name})")
 
         # ---- App: PaperAccount ----
@@ -457,6 +462,7 @@ async def send_status(ws: WebSocket) -> None:
         "type": "status",
         "gateways": main_engine.get_all_gateway_names(),
         "exchanges": [e.value for e in main_engine.get_all_exchanges()],
+        "active_account": _active_account_name,
         "ticks": len(main_engine.get_all_ticks()) if hasattr(main_engine, "get_all_ticks") else 0,
         "orders": len(main_engine.get_all_orders()),
         "trades": len(main_engine.get_all_trades()),
