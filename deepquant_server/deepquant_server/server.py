@@ -21,16 +21,16 @@ from deepquant.trader.event import (
     EVENT_CONTRACT, EVENT_QUOTE
 )
 from deepquant.trader.object import (
-    OrderRequest, SubscribeRequest, CancelRequest
+    OrderRequest, CancelRequest
 )
 from deepquant.trader.constant import Direction, Exchange, Offset, OrderType
 from deepquant.trader.setting import SETTINGS
 
 SETTINGS["font.family"] = "PingFang SC"
 
-# Load available gateways from the gateway package
-from .gateway import CtpGateway, get_available as get_available_gateways
-HAS_CTP = CtpGateway is not None
+from .gateway_client import GatewayClient
+
+gateway_client: GatewayClient = None
 
 try:
     from vnpy_paperaccount import PaperAccountApp
@@ -223,21 +223,11 @@ async def handle_ws_message(ws: WebSocket, msg: str) -> None:
             main_engine.cancel_quote(req, payload.get("gateway", ""))
 
         elif action == "subscribe":
-            symbol = payload["symbol"]
-            exchange_str = payload["exchange"]
-            gw_name = payload.get("gateway", "")
-            req = SubscribeRequest(symbol=symbol, exchange=Exchange(exchange_str))
-            # Find gateway — prefer requested one, fall back to any connected CTP
-            gw = main_engine.get_gateway(gw_name) if gw_name else None
-            if not gw:
-                for name, g in main_engine.gateways.items():
-                    if name.startswith("CTP"):
-                        gw = g; gw_name = name; break
-            if gw:
-                gw.subscribe(req)
-                main_engine.write_log(f"行情订阅: {symbol}.{exchange_str} -> {gw_name}")
-            else:
-                main_engine.write_log(f"行情订阅失败: 无可用网关")
+            await gateway_client.subscribe(
+                symbol=payload["symbol"],
+                exchange=payload.get("exchange", ""),
+                gateway=payload.get("gateway", "")
+            )
 
         elif action == "query_account":
             gw_name = payload.get("gateway", "")
@@ -272,21 +262,11 @@ async def handle_ws_message(ws: WebSocket, msg: str) -> None:
                 await ws.send_text(json.dumps({"type": "error", "msg": "账户不存在"}))
                 return
             gw_name = acct.get("gateway", "CTP")
-            gw_class = get_available_gateways().get(gw_name)
-            if gw_class is None:
-                await ws.send_text(json.dumps({"type": "error", "msg": f"网关不可用: {gw_name}"}))
-                return
-            # Disconnect all existing gateways before connecting new one
-            existing = list(main_engine.gateways.keys())
-            for old_gw in existing:
-                if _active_account_name and _active_account_name != acct["alias"]:
-                    main_engine.write_log(f"切换账户: {_active_account_name} → {acct['alias']} ({gw_name})")
-            _active_account_name = ""
-            main_engine.add_gateway(gw_class, gw_name)
             _active_account_name = acct["alias"]
-            # Gateway connection is blocking — run in thread pool
-            loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, main_engine.connect, acct["setting"], gw_name)
+            result = await gateway_client.connect_gateway(gw_name, acct["setting"])
+            if "error" in result:
+                await ws.send_text(json.dumps({"type": "error", "msg": result["error"]}))
+                return
             main_engine.write_log(f"账户已连接: {acct['alias']} ({gw_name})")
             await ws.send_text(json.dumps({"type": "log", "data": {"msg": f"账户已连接: {acct['alias']} ({gw_name})", "gateway_name": gw_name}}))
 
@@ -295,10 +275,10 @@ async def handle_ws_message(ws: WebSocket, msg: str) -> None:
             acct = get_account(account_id)
             if acct:
                 gw_name = acct.get("gateway", "CTP")
-                # Native library may crash on remove_gateway — just update state
                 _active_account_name = ""
+                await gateway_client.disconnect_gateway(gw_name)
                 main_engine.write_log(f"账户已断开: {acct['alias']} ({gw_name})")
-                await ws.send_text(json.dumps({"type": "log", "data": {"msg": f"账户已断开: {acct['alias']}", "gateway_name": "CTP"}}))
+                await ws.send_text(json.dumps({"type": "log", "data": {"msg": f"账户已断开: {acct['alias']}", "gateway_name": gw_name}}))
 
         # ---- App: PaperAccount ----
         elif action == "get_paper_settings":
@@ -479,42 +459,29 @@ async def send_status(ws: WebSocket) -> None:
 # REST API
 # ---------------------------------------------------------------------------
 @app.get("/api/status")
-def api_status():
+async def api_status():
     if not main_engine:
         return {"status": "offline"}
     return {
         "status": "online",
         "version": "0.0.1",
-        "gateways": main_engine.get_all_gateway_names(),
+        "gateways": (await gateway_client.get_status()).get("gateways", []) if gateway_client else [],
         "exchanges": [e.value for e in main_engine.get_all_exchanges()],
         "active_account": _active_account_name,
     }
 
 
 @app.get("/api/gateways")
-def api_gateways():
-    # Always include CTP and TTS (even if native libs not installed on server)
+async def api_gateways():
     result = [
-        {"name": "CTP", "default_setting": {
-            "用户名": "", "密码": "", "经纪商代码": "",
-            "交易服务器": "", "行情服务器": "",
-            "产品名称": "", "授权编码": "",
-            "柜台环境": ["实盘", "测试"]
-        }},
-        {"name": "TTS", "default_setting": {
-            "用户名": "", "密码": "", "经纪商代码": "",
-            "交易服务器": "tcp://trading.openctp.cn:30001",
-            "行情服务器": "tcp://trading.openctp.cn:30011",
-            "产品名称": "", "授权编码": "",
-            "柜台环境": ["测试"]
-        }},
+        {"name": "CTP", "default_setting": {"用户名":"","密码":"","经纪商代码":"","交易服务器":"","行情服务器":"","产品名称":"","授权编码":"","柜台环境":["实盘","测试"]}},
+        {"name": "TTS", "default_setting": {"用户名":"","密码":"","经纪商代码":"","交易服务器":"tcp://trading.openctp.cn:30001","行情服务器":"tcp://trading.openctp.cn:30011","产品名称":"","授权编码":"","柜台环境":["测试"]}},
     ]
-    if main_engine:
-        for name in main_engine.get_all_gateway_names():
+    if gateway_client:
+        status = await gateway_client.get_status()
+        for name in status.get("gateways", []):
             if name not in {r["name"] for r in result}:
-                gw = main_engine.get_gateway(name)
-                setting = gw.get_default_setting() if gw else {}
-                result.append({"name": name, "default_setting": setting})
+                result.append({"name": name, "default_setting": {}})
     return result
 
 
@@ -607,7 +574,6 @@ def api_data():
 # ---------------------------------------------------------------------------
 from .account_store import (
     add_account, get_accounts, get_account, update_account, delete_account,
-    get_default_account,
 )
 from .strategy_service import StrategyService
 
@@ -661,8 +627,8 @@ def api_delete_gateway_account(account_id: int):
 
 
 @app.post("/api/gateway-accounts/{account_id}/connect")
-def api_connect_gateway_account(account_id: int):
-    """Connect a saved gateway account (adds gateway instance if needed)."""
+async def api_connect_gateway_account(account_id: int):
+    """Connect a saved gateway account via GatewayClient."""
     if not main_engine:
         return {"error": "engine not ready"}
     acct = get_account(account_id)
@@ -670,33 +636,30 @@ def api_connect_gateway_account(account_id: int):
         return {"error": "account not found"}
 
     gw_name = acct.get("gateway", "CTP")
-    # If already connected, return ok
-    if gw_name in main_engine.gateways:
+    if gateway_client:
+        result = await gateway_client.connect_gateway(gw_name, acct["setting"])
+        if "error" in result:
+            return {"error": result["error"]}
+        main_engine.write_log(f"账户已连接: {acct['alias']} ({gw_name})")
         return {"status": "connected", "gateway_name": gw_name}
-
-    # Add gateway instance (if not already registered)
-    if acct["gateway"] == "CTP" and CtpGateway is not None:
-        main_engine.add_gateway(CtpGateway, gw_name)
-    else:
-        return {"error": f"unsupported gateway: {acct['gateway']}"}
-
-    main_engine.connect(acct["setting"], gw_name)
-    main_engine.write_log(f"账户已连接: {acct['alias']} ({gw_name})")
-    return {"status": "connected", "gateway_name": gw_name}
+    return {"error": "gateway client not available"}
 
 
 @app.post("/api/gateway-accounts/{account_id}/disconnect")
-def api_disconnect_gateway_account(account_id: int):
-    """Disconnect and remove a gateway instance."""
+async def api_disconnect_gateway_account(account_id: int):
+    """Disconnect a gateway account via GatewayClient."""
     if not main_engine:
         return {"error": "engine not ready"}
     acct = get_account(account_id)
     if not acct:
         return {"error": "account not found"}
     gw_name = acct.get("gateway", "CTP")
-    ok = main_engine.remove_gateway(gw_name)
+    if gateway_client:
+        result = await gateway_client.disconnect_gateway(gw_name)
+        main_engine.write_log(f"账户已断开: {acct['alias']} ({gw_name})")
+        return {"disconnected": "error" not in result}
     main_engine.write_log(f"账户已断开: {acct['alias']} ({gw_name})")
-    return {"disconnected": ok}
+    return {"disconnected": True}
 
 
 # ---------------------------------------------------------------------------
@@ -835,8 +798,6 @@ def start_engine() -> None:
     main_engine = MainEngine(event_engine)
 
     # Gateways are created on-demand when connecting accounts
-    if HAS_CTP:
-        logger.info("  CTP Gateway available")
     if HAS_PAPER:
         main_engine.add_app(PaperAccountApp)
         logger.info("  Paper Account loaded")
@@ -872,18 +833,18 @@ def start_engine() -> None:
     event_engine.register_general(bridge_event)
     main_engine.write_log("Web Trader engine started")
 
-    # Auto-connect default gateway account
-    default = get_default_account()
-    if default:
-        gw_name = default.get("gateway", "CTP")
-        gw_class = get_available_gateways().get(gw_name)
-        if gw_class is not None:
-            main_engine.add_gateway(gw_class, gw_name)
-            _active_account_name = default["alias"]
-            main_engine.connect(default["setting"], gw_name)
-            logger.info(f"Auto-connected: {default['alias']} ({gw_name})")
+    # Auto-connect moved to Gateway service — Server only polls status
+    logger.info("Gateway client will handle gateway connections")
 
     logger.info(f"Engine ready — {len(main_engine.get_all_gateway_names())} gateways")
+
+
+def _on_gateway_event(data: dict):
+    """Forward Gateway WS events to Server event engine."""
+    event_type = data.get("type", "")
+    if not main_engine or not event_engine: return
+    event = Event(type=event_type, data=data.get("data", {}))
+    event_engine.put(event)
 
 
 @app.on_event("startup")
@@ -891,6 +852,9 @@ async def on_startup():
     """Start VeighNa engine when FastAPI starts."""
     global _main_loop
     _main_loop = asyncio.get_running_loop()
+    global gateway_client
+    gateway_client = GatewayClient(on_event=_on_gateway_event)
+    await gateway_client.start()
     t = threading.Thread(target=start_engine, daemon=True)
     t.start()
     for _ in range(50):
