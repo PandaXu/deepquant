@@ -482,6 +482,7 @@ def api_status():
         "version": "0.0.1",
         "gateways": main_engine.get_all_gateway_names(),
         "exchanges": [e.value for e in main_engine.get_all_exchanges()],
+        "active_account": _active_account_name,
     }
 
 
