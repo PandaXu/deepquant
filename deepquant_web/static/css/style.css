@@ -665,3 +665,45 @@ select { cursor: pointer; }
   min-height: 0;
 }
 
+/* ---- Trading Layout ---- */
+.trading-layout { display:flex; flex-direction:column; flex:1; min-height:0; overflow:hidden; }
+.trading-top { display:grid; grid-template-columns:1fr 340px; gap:6px; padding:6px; min-height:0; flex:0 0 50%; }
+.trading-chart { display:flex; flex-direction:column; min-height:0; }
+.kline-container { flex:1; min-height:200px; }
+.trading-form { overflow-y:auto; }
+.trading-bottom { display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; padding:0 6px 6px; flex:1; min-height:0; overflow:hidden; }
+.trading-bottom > .panel { overflow:hidden; display:flex; flex-direction:column; }
+.trading-bottom .panel-body { flex:1; overflow:auto; min-height:0; }
+
+/* Depth Inline */
+.depth-inline { display:flex; gap:8px; padding:6px 8px; font-size:11px; font-family:var(--font-mono); border-top:1px solid var(--border); }
+.depth-asks, .depth-bids { flex:1; }
+.depth-row { display:flex; gap:8px; padding:1px 0; cursor:pointer; }
+.depth-row:hover { background:var(--bg-hover); }
+.depth-price.ask { color:var(--ask); }
+.depth-price.bid { color:var(--bid); }
+.depth-vol { color:var(--text-dim); min-width:40px; text-align:right; }
+.depth-label { color:var(--text-muted); font-size:9px; width:20px; }
+.depth-mid { display:flex; flex-direction:column; align-items:center; justify-content:center; min-width:80px; }
+.depth-last { font-size:16px; font-weight:700; }
+.depth-chg { font-size:11px; }
+
+/* Form */
+.form-grid { display:flex; flex-direction:column; gap:4px; padding:8px; }
+.form-row { display:flex; flex-direction:column; gap:2px; }
+.form-row label { font-size:10px; color:var(--text-dim); font-weight:600; text-transform:uppercase; }
+.form-actions { display:flex; gap:4px; }
+.readonly-field { padding:6px 10px; background:var(--bg-input); border-radius:var(--radius-sm); font-size:13px; color:var(--text-dim); }
+
+/* Buttons */
+.btn-long { background:var(--red); color:#fff; flex:1; font-size:13px; font-weight:600; }
+.btn-short { background:var(--green); color:#000; flex:1; font-size:13px; font-weight:600; }
+.btn-warn { background:var(--orange); color:#000; }
+.btn-long:hover, .btn-short:hover { filter:brightness(1.1); }
+
+/* Responsive */
+@media (max-width:900px) {
+  .trading-top { grid-template-columns:1fr; flex:0 0 auto; }
+  .trading-bottom { grid-template-columns:1fr; }
+}
+
