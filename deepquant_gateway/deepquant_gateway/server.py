@@ -16,23 +16,29 @@ from deepquant.trader.event import (
 )
 from deepquant.trader.object import SubscribeRequest
 
-# Load gateway classes
-# Load gateway classes from their respective packages
-GATEWAYS = {}
+# Lazy gateway loaders — each backend must be loaded AFTER set_ctp_backend()
+_GATEWAY_LOADERS = {
+    "CTP": lambda: _load_gateway("official", "ctp_gateway", "CtpGateway"),
+    "TTS": lambda: _load_gateway("tts", "tts_gateway", "TtsGateway"),
+}
 
-try:
-    from deepquant_ctp.gateway.ctp_gateway import CtpGateway
-    if CtpGateway is not None:
-        GATEWAYS["CTP"] = CtpGateway
-except ImportError:
-    pass
+def _load_gateway(backend: str, module_name: str, class_name: str):
+    """Import a gateway class after setting the correct CTP API backend."""
+    from deepquant_ctp.api import set_ctp_backend
+    set_ctp_backend(backend)
+    import importlib
+    mod = importlib.import_module(f"deepquant_ctp.gateway.{module_name}")
+    gw_class = getattr(mod, class_name, None)
+    if gw_class is None:
+        raise RuntimeError(f"Gateway class '{class_name}' not found in deepquant_ctp.gateway.{module_name}")
+    return gw_class
 
-try:
-    from deepquant_ctp.gateway.tts_gateway import TtsGateway
-    if TtsGateway is not None:
-        GATEWAYS["TTS"] = TtsGateway
-except ImportError:
-    pass
+def _get_gateway(gateway_type: str):
+    """Get gateway class, loading it with correct backend if not yet loaded."""
+    loader = _GATEWAY_LOADERS.get(gateway_type)
+    if not loader:
+        return None
+    return loader()
 
 app = FastAPI(title="DeepQuant Gateway", version="0.0.1")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
@@ -89,10 +95,18 @@ async def connect_gateway(request: dict):
     body = request  # FastAPI already parsed as dict
     gateway_type = body.get("gateway_type", "CTP")
     setting = body.get("setting", {})
-    gw_class = GATEWAYS.get(gateway_type)
-    if not gw_class: return {"error": f"unsupported gateway: {gateway_type}"}
+
+    # Load gateway class with correct CTP API backend (official vs tts)
+    try:
+        gw_class = _get_gateway(gateway_type)
+    except Exception as e:
+        return {"error": f"Failed to load gateway '{gateway_type}': {e}"}
+    if not gw_class:
+        return {"error": f"unsupported gateway: {gateway_type}"}
+
     if gateway_type in main_engine.gateways:
         return {"status": "connected", "gateway": gateway_type}
+
     main_engine.add_gateway(gw_class, gateway_type)
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, main_engine.connect, setting, gateway_type)
