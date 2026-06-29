@@ -494,14 +494,21 @@ def api_status():
 
 @app.get("/api/gateways")
 def api_gateways():
-    # Always include CTP (even if native libs not installed on server)
+    # Always include CTP and TTS (even if native libs not installed on server)
     result = [
         {"name": "CTP", "default_setting": {
             "用户名": "", "密码": "", "经纪商代码": "",
             "交易服务器": "", "行情服务器": "",
             "产品名称": "", "授权编码": "",
             "柜台环境": ["实盘", "测试"]
-        }}
+        }},
+        {"name": "TTS", "default_setting": {
+            "用户名": "", "密码": "", "经纪商代码": "",
+            "交易服务器": "tcp://trading.openctp.cn:30001",
+            "行情服务器": "tcp://trading.openctp.cn:30011",
+            "产品名称": "", "授权编码": "",
+            "柜台环境": ["测试"]
+        }},
     ]
     if main_engine:
         for name in main_engine.get_all_gateway_names():
