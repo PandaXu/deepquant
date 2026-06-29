@@ -392,7 +392,7 @@ const TabTrading = {
       form.product = ''; form.symbol = ''; products.value = [];
       if (!form.exchange) return;
       try {
-        products.value = await $apiGet(`/api/contracts/products?exchange=${form.exchange}`) || [];
+        const data = await $apiGet(`/api/contracts/products?exchange=${form.exchange}`) || {}; products.value = Array.isArray(data) ? data : (data.products || []);
       } catch(e) { $toast('加载品种失败', 'error'); }
     }
     async function onProduct() {

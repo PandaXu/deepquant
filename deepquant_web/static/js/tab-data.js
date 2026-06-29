@@ -104,8 +104,8 @@ const TabData = {
         `contracts_${new Date().toISOString().slice(0,10)}.csv`);
     }
 
-    async function onDlExchange() { dl.product=''; dlContracts.value=[]; if(dl.exchange) { try { dlProducts.value = await $apiGet(`/api/contracts/products?exchange=${dl.exchange}`) || []; } catch(e){} } }
-    async function onDlProduct() { dl.symbol=''; if(dl.product) { try { dlContracts.value = await $apiGet(`/api/contracts/public?exchange=${dl.exchange}&product=${dl.product}`) || []; } catch(e){} } }
+    async function onDlExchange() { dl.product=''; dlContracts.value=[]; if(dl.exchange) { try { const d = await $apiGet(`/api/contracts/products?exchange=${dl.exchange}`) || {}; dlProducts.value = Array.isArray(d) ? d : (d.products || []); } catch(e){} } }
+    async function onDlProduct() { dl.symbol=''; if(dl.product) { try { const d = await $apiGet(`/api/contracts/public?exchange=${dl.exchange}&product=${dl.product}`) || {}; dlContracts.value = Array.isArray(d) ? d : (d.contracts || []); } catch(e){} } }
     function startDownload() {
       if (!dl.symbol) return $toast('请选择合约', 'error');
       dl.downloading = true; dl.progress = 0;
