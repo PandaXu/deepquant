@@ -271,32 +271,34 @@ async def handle_ws_message(ws: WebSocket, msg: str) -> None:
             if not acct:
                 await ws.send_text(json.dumps({"type": "error", "msg": "账户不存在"}))
                 return
-            gw_name = "CTP"
+            gw_name = acct.get("gateway", "CTP")
+            gw_class = get_available_gateways().get(gw_name)
+            if gw_class is None:
+                await ws.send_text(json.dumps({"type": "error", "msg": f"网关不可用: {gw_name}"}))
+                return
             if gw_name in main_engine.gateways:
                 if _active_account_name == acct["alias"]:
                     await ws.send_text(json.dumps({"type": "log", "data": {"msg": f"账户已连接: {acct['alias']}", "gateway_name": ""}}))
                     return
-                # Switching account: keep existing CTP connection, just update UI state
-                main_engine.write_log(f"切换账户: {_active_account_name} → {acct['alias']}")
+                # Switching account: disconnect old, connect new
+                main_engine.write_log(f"切换账户: {_active_account_name} → {acct['alias']} ({gw_name})")
                 _active_account_name = ""
-            if acct["gateway"] == "CTP" and CtpGateway is not None:
-                main_engine.add_gateway(CtpGateway, gw_name)
-                _active_account_name = acct["alias"]  # set immediately, before blocking connect
-                # CTP connection is blocking — run in thread pool
-                loop = asyncio.get_running_loop()
-                await loop.run_in_executor(None, main_engine.connect, acct["setting"], gw_name)
-                main_engine.write_log(f"账户已连接: {acct['alias']} ({gw_name})")
-                await ws.send_text(json.dumps({"type": "log", "data": {"msg": f"账户已连接: {acct['alias']} ({gw_name})", "gateway_name": gw_name}}))
-            else:
-                await ws.send_text(json.dumps({"type": "error", "msg": f"网关不可用: {acct.get('gateway', 'N/A')}"}))
+            main_engine.add_gateway(gw_class, gw_name)
+            _active_account_name = acct["alias"]
+            # Gateway connection is blocking — run in thread pool
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, main_engine.connect, acct["setting"], gw_name)
+            main_engine.write_log(f"账户已连接: {acct['alias']} ({gw_name})")
+            await ws.send_text(json.dumps({"type": "log", "data": {"msg": f"账户已连接: {acct['alias']} ({gw_name})", "gateway_name": gw_name}}))
 
         elif action == "disconnect_account":
             account_id = int(payload.get("account_id", 0))
             acct = get_account(account_id)
             if acct:
-                # CTP native library crashes on remove_gateway — just update state
+                gw_name = acct.get("gateway", "CTP")
+                # Native library may crash on remove_gateway — just update state
                 _active_account_name = ""
-                main_engine.write_log(f"账户已断开: {acct['alias']}")
+                main_engine.write_log(f"账户已断开: {acct['alias']} ({gw_name})")
                 await ws.send_text(json.dumps({"type": "log", "data": {"msg": f"账户已断开: {acct['alias']}", "gateway_name": "CTP"}}))
 
         # ---- App: PaperAccount ----
@@ -612,7 +614,7 @@ def api_gateway_accounts():
     """List all saved gateway accounts with connection status."""
     accounts = get_accounts()
     for a in accounts:
-        gw_name = "CTP"
+        gw_name = a.get("gateway", "CTP")
         a["gateway_name"] = gw_name
         a["connected"] = main_engine is not None and gw_name in main_engine.gateways if main_engine else False
     return accounts
@@ -661,7 +663,7 @@ def api_connect_gateway_account(account_id: int):
     if not acct:
         return {"error": "account not found"}
 
-    gw_name = "CTP"
+    gw_name = acct.get("gateway", "CTP")
     # If already connected, return ok
     if gw_name in main_engine.gateways:
         return {"status": "connected", "gateway_name": gw_name}
@@ -685,7 +687,7 @@ def api_disconnect_gateway_account(account_id: int):
     acct = get_account(account_id)
     if not acct:
         return {"error": "account not found"}
-    gw_name = "CTP"
+    gw_name = acct.get("gateway", "CTP")
     ok = main_engine.remove_gateway(gw_name)
     main_engine.write_log(f"账户已断开: {acct['alias']} ({gw_name})")
     return {"disconnected": ok}
@@ -866,13 +868,14 @@ def start_engine() -> None:
 
     # Auto-connect default gateway account
     default = get_default_account()
-    if default and default["gateway"] == "CTP" and CtpGateway is not None:
-        gw_name = "CTP"
-        main_engine.add_gateway(CtpGateway, gw_name)
-        _active_account_name = default["alias"]
-        logger.info(f"Set active_account_name={_active_account_name}")
-        main_engine.connect(default["setting"], gw_name)
-        logger.info(f"Auto-connected: {default['alias']} ({gw_name})")
+    if default:
+        gw_name = default.get("gateway", "CTP")
+        gw_class = get_available_gateways().get(gw_name)
+        if gw_class is not None:
+            main_engine.add_gateway(gw_class, gw_name)
+            _active_account_name = default["alias"]
+            main_engine.connect(default["setting"], gw_name)
+            logger.info(f"Auto-connected: {default['alias']} ({gw_name})")
 
     logger.info(f"Engine ready — {len(main_engine.get_all_gateway_names())} gateways")
 
