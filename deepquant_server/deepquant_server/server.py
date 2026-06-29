@@ -249,10 +249,13 @@ async def handle_ws_message(ws: WebSocket, msg: str) -> None:
 
         elif action == "get_gateway_accounts":
             accounts = get_accounts()
+            # Get gateway connection status from Gateway service
+            gw_status = await gateway_client.get_status() if gateway_client else {}
+            active_gateways = gw_status.get("gateways", [])
             for a in accounts:
-                gw_name = "CTP"
+                gw_name = a.get("gateway", "CTP")
                 a["gateway_name"] = gw_name
-                a["connected"] = gw_name in main_engine.gateways if main_engine else False
+                a["connected"] = gw_name in active_gateways
             await ws.send_text(json.dumps({"type": "gateway_accounts", "data": accounts}))
 
         elif action == "connect_account":
@@ -582,13 +585,21 @@ strategy_service: StrategyService | None = None
 
 
 @app.get("/api/gateway-accounts")
-def api_gateway_accounts():
+async def api_gateway_accounts():
     """List all saved gateway accounts with connection status."""
     accounts = get_accounts()
+    # Get gateway connection status from Gateway service
+    active_gateways = []
+    if gateway_client and gateway_client.is_connected:
+        try:
+            gw_status = await gateway_client.get_status()
+            active_gateways = gw_status.get("gateways", [])
+        except Exception:
+            pass
     for a in accounts:
         gw_name = a.get("gateway", "CTP")
         a["gateway_name"] = gw_name
-        a["connected"] = main_engine is not None and gw_name in main_engine.gateways if main_engine else False
+        a["connected"] = gw_name in active_gateways
     return accounts
 
 
