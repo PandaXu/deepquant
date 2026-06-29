@@ -1,0 +1,903 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DeepQuant Trader — Web</title>
+<link rel="icon" type="image/png" href="/favicon.png">
+<style>
+/* ====== Exact Qt Fusion Dark colors ====== */
+:root {
+  --bg: #1e1e1e; --bg2: #2d2d2d; --bg3: #252526;
+  --text: #d4d4d4; --text-dim: #808080;
+  --bid: #ffaec9; --ask: #a0ffa0;
+  --long: #ff4444; --short: #00aa00;
+  --header-bg: #333; --border: #3c3c3c;
+  --blue: #569cd6; --accent: #007acc;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif;
+  font-size: 12px;
+  background: var(--bg); color: var(--text);
+  height: 100vh; overflow: hidden; display: flex; flex-direction: column;
+}
+/* ====== TitleBar (exact Qt title bar) ====== */
+#titlebar {
+  height: 32px; background: var(--bg3); border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; padding: 0 12px; gap: 8px;
+}
+#titlebar .title { font-weight: 600; font-size: 13px; }
+#titlebar .ws-dot { width: 9px; height: 9px; border-radius: 50%; }
+#titlebar .ws-dot.on { background: #4ec94e; }
+#titlebar .ws-dot.off { background: #666; }
+#titlebar .clock { margin-left: auto; color: var(--text-dim); font-size: 11px; }
+
+/* ====== Menu Bar (exact QMenuBar) ====== */
+#menubar {
+  height: 26px; background: var(--bg3); border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; padding: 0 4px;
+}
+#menubar .menu-item { position: relative; }
+#menubar .menu-btn {
+  padding: 2px 12px; background: none; border: none; color: var(--text);
+  font-size: 12px; cursor: pointer; border-radius: 4px;
+}
+#menubar .menu-btn:hover { background: var(--accent); }
+/* Dropdown */
+.menu-dropdown {
+  display: none; position: absolute; top: 100%; left: 0; z-index: 1001;
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 4px;
+  min-width: 140px; padding: 2px 0;
+}
+.menu-item:hover .menu-dropdown, .menu-dropdown.show { display: block; }
+.menu-dropdown .mi {
+  padding: 4px 12px; font-size: 12px; cursor: pointer; white-space: nowrap;
+}
+.menu-dropdown .mi:hover { background: var(--accent); }
+.menu-dropdown .mi.sep { border-top: 1px solid var(--border); margin: 2px 0; padding: 0; cursor: default; }
+.menu-dropdown .mi.sep:hover { background: none; }
+
+/* ====== Status Bar (exact QStatusBar) ====== */
+#statusbar {
+  height: 22px; background: var(--bg3); border-top: 1px solid var(--border);
+  display: flex; align-items: center; padding: 0 8px; font-size: 11px; color: var(--text-dim);
+}
+
+/* ====== Toolbar (exact QToolBar) ====== */
+#toolbar {
+  display: flex; align-items: center; gap: 6px; padding: 2px 6px;
+  background: var(--bg3); border-bottom: 1px solid var(--border);
+}
+#toolbar button {
+  padding: 3px 10px; background: var(--bg2); border: 1px solid var(--border);
+  color: var(--text); font-size: 11px; cursor: pointer; border-radius: 3px;
+}
+#toolbar button:hover { border-color: var(--accent); }
+
+/* ====== Main Dock Layout (exact Qt dock positions) ====== */
+#main {
+  flex: 1; display: grid;
+  grid-template-columns: 300px 1fr 1fr;
+  grid-template-rows: 1fr 1fr 200px;
+  gap: 1px; background: var(--border); overflow: hidden;
+}
+.dock-panel {
+  background: var(--bg2); overflow: hidden; display: flex; flex-direction: column;
+}
+.dock-panel .panel-title {
+  padding: 2px 8px; font-size: 11px; font-weight: 600; color: var(--text-dim);
+  text-transform: uppercase; letter-spacing: 1px;
+  background: var(--bg3); border-bottom: 1px solid var(--border);
+  display: flex; justify-content: space-between; align-items: center;
+  min-height: 22px;
+}
+.dock-panel .panel-content { flex: 1; overflow: auto; }
+
+/* Layout: exact Qt dock positions */
+#panel-trade { grid-column: 1; grid-row: 1 / 4; }
+#panel-tick { grid-column: 2; grid-row: 1 / 3; }
+#panel-order { grid-column: 3; grid-row: 1 / 3; }
+#panel-trade-mon { grid-column: 2; grid-row: 3; }
+#panel-log { grid-column: 3; grid-row: 3; }
+#panel-acc-pos { grid-column: 2; grid-row: 3; display: none; }
+
+/* === Trading Widget (exact Qt TradingWidget) === */
+.trading-form { padding: 6px; font-size: 12px; }
+.trading-form .row { display: flex; margin-bottom: 2px; align-items: center; }
+.trading-form .row label { width: 45px; color: var(--text-dim); font-size: 11px; flex-shrink: 0; }
+.trading-form input, .trading-form select, .trading-form button {
+  flex: 1; padding: 2px 6px; border: 1px solid var(--border);
+  background: var(--bg3); color: var(--text); font-size: 12px;
+  border-radius: 2px; outline: none; min-height: 22px;
+}
+.trading-form input:focus, .trading-form select:focus { border-color: var(--accent); }
+.trading-form input[readonly] { color: var(--text-dim); }
+.trading-form button {
+  cursor: pointer; font-weight: 600; border: none; padding: 4px;
+}
+.btn-buy { background: #c42b1c !important; color: #fff !important; }
+.btn-sell { background: #0b6016 !important; color: #fff !important; }
+.btn-cancel { background: var(--bg3) !important; border: 1px solid var(--border) !important; color: var(--text-dim) !important; }
+.price-check { margin-left: 4px; width: auto !important; flex: 0 !important; min-width: 14px !important; }
+
+/* === Market depth (exact Qt depth panel) === */
+.depth-panel { padding: 6px; border-top: 1px solid var(--border); }
+.depth-row { display: flex; justify-content: space-between; padding: 1px 4px; font-family: 'Consolas', monospace; font-size: 12px; }
+.depth-row.bid { color: var(--bid); }
+.depth-row.ask { color: var(--ask); }
+.depth-row.mid { border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 3px 4px; margin: 2px 0; }
+
+/* === Tables (exact Qt QTableWidget) === */
+.table-wrap { flex: 1; overflow: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: auto; }
+thead { position: sticky; top: 0; z-index: 2; }
+thead th {
+  background: var(--header-bg); padding: 2px 6px; text-align: center;
+  font-weight: 600; font-size: 11px; color: var(--text); border-bottom: 1px solid var(--border);
+  white-space: nowrap; cursor: pointer; user-select: none;
+}
+thead th:hover { background: #444; }
+tbody td {
+  padding: 1px 6px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.03);
+  white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+/* Exact Qt alternating row colors */
+tbody tr:nth-child(even) { background: rgba(255,255,255,0.02); }
+tbody tr:hover { background: rgba(0,122,204,0.15); }
+
+/* Color cells — exact Qt mapping */
+.c-bid { color: var(--bid) !important; }
+.c-ask { color: var(--ask) !important; }
+.c-long, .dir-LONG, .dir-多 { color: var(--long) !important; }
+.c-short, .dir-SHORT, .dir-空 { color: var(--short) !important; }
+.pnl-pos { color: var(--long) !important; }
+.pnl-neg { color: var(--short) !important; }
+
+/* === Log panel (exact Qt LogMonitor) === */
+#log-content { font-family: 'Consolas', 'Courier New', monospace; font-size: 12px; padding: 2px; }
+.log-entry { padding: 1px 4px; border-bottom: 1px solid rgba(255,255,255,0.015); display: flex; gap: 8px; }
+.log-entry .ts { color: #569cd6; white-space: nowrap; }
+.log-entry .gw { color: var(--text-dim); white-space: nowrap; min-width: 55px; }
+
+/* === Right-click context menu (exact Qt) === */
+.ctx-menu {
+  display: none; position: fixed; z-index: 2000;
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 4px;
+  min-width: 120px; padding: 2px 0;
+}
+.ctx-menu.show { display: block; }
+.ctx-menu .mi {
+  padding: 4px 16px; font-size: 12px; cursor: pointer;
+}
+.ctx-menu .mi:hover { background: var(--accent); }
+
+/* === Tab bar (exact QTabBar) === */
+.tab-bar { display: flex; background: var(--bg3); border-bottom: 1px solid var(--border); }
+.tab-bar button {
+  padding: 2px 12px; background: none; border: none; color: var(--text-dim);
+  font-size: 11px; cursor: pointer; border-bottom: 2px solid transparent;
+}
+.tab-bar button.active { color: var(--text); border-bottom-color: var(--accent); }
+.tab-content { flex: 1; overflow: hidden; display: none; }
+.tab-content.active { display: flex; flex-direction: column; }
+
+/* === Modal Dialogs (exact Qt QDialog) === */
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 999; justify-content: center; align-items: center; }
+.modal-overlay.show { display: flex; }
+.modal {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 4px;
+  padding: 16px; min-width: 360px; max-width: 500px;
+}
+.modal h2 { font-size: 14px; margin-bottom: 12px; color: var(--text); font-weight: 600; }
+.modal .row { display: flex; margin-bottom: 6px; align-items: center; }
+.modal .row label { width: 100px; font-size: 11px; color: var(--text-dim); text-align: right; padding-right: 8px; }
+.modal input, .modal select { flex: 1; padding: 3px 6px; border: 1px solid var(--border); background: var(--bg3); color: var(--text); border-radius: 2px; font-size: 12px; }
+.modal .btn-row { margin-top: 12px; display: flex; gap: 8px; justify-content: flex-end; }
+.modal button { padding: 4px 16px; border-radius: 2px; cursor: pointer; font-size: 12px; border: 1px solid var(--border); }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg2); }
+::-webkit-scrollbar-thumb { background: #555; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<!-- Title Bar -->
+<div id="titlebar">
+  <span class="ws-dot off" id="ws-dot"></span>
+  <span class="title">VeighNa Trader 社区版 — 4.4.0  [<span id="trader-dir">~/.vntrader</span>]</span>
+  <span id="gw-tag" style="color:var(--blue);font-size:11px;margin-left:8px"></span>
+  <span class="clock" id="clock"></span>
+</div>
+
+<!-- Menu Bar (exact Qt menus) -->
+<div id="menubar">
+  <!-- 系统 menu -->
+  <div class="menu-item">
+    <button class="menu-btn">系统</button>
+    <div class="menu-dropdown" id="menu-system"></div>
+  </div>
+  <!-- 功能 menu -->
+  <div class="menu-item">
+    <button class="menu-btn">功能</button>
+    <div class="menu-dropdown" id="menu-apps"></div>
+  </div>
+  <!-- 帮助 menu -->
+  <div class="menu-item">
+    <button class="menu-btn">帮助</button>
+    <div class="menu-dropdown">
+      <div class="mi" onclick="open_contract_manager()">🔍 查询合约</div>
+      <div class="mi" onclick="restore_window()">🪟 还原窗口</div>
+      <div class="mi" onclick="send_test_email()">📧 测试邮件</div>
+      <div class="mi" onclick="open_forum()">🌐 社区论坛</div>
+      <div class="mi sep"></div>
+      <div class="mi" onclick="open_about()">ℹ️ 关于</div>
+    </div>
+  </div>
+  <!-- 配置 & 微信 buttons -->
+  <button class="menu-btn" onclick="edit_global_setting()" style="margin-left:4px">配置</button>
+  <button class="menu-btn" onclick="open_wechat()">微信</button>
+</div>
+
+<!-- Main Dock Layout -->
+<div id="main">
+  <!-- Left: TradingWidget -->
+  <div class="dock-panel" id="panel-trade">
+    <div class="panel-title">📝 交易</div>
+    <div class="panel-content">
+      <div class="trading-form">
+        <div class="row"><label>交易所</label><select id="tf-exchange"></select></div>
+        <div class="row"><label>代码</label><input id="tf-symbol" placeholder="输入合约代码回车订阅" onkeydown="if(event.key==='Enter')set_vt_symbol()"></div>
+        <div class="row"><label>名称</label><input id="tf-name" readonly></div>
+        <div class="row"><label>方向</label><select id="tf-direction"><option value="LONG">多</option><option value="SHORT">空</option></select></div>
+        <div class="row"><label>开平</label><select id="tf-offset"><option value="OPEN">开</option><option value="CLOSE">平</option><option value="CLOSETODAY">平今</option><option value="CLOSEYESTERDAY">平昨</option></select></div>
+        <div class="row"><label>类型</label><select id="tf-ordertype"><option value="LIMIT">限价</option><option value="MARKET">市价</option><option value="FAK">FAK</option><option value="FOK">FOK</option></select></div>
+        <div class="row">
+          <label>价格</label><input id="tf-price" type="number" step="any" min="0" placeholder="0">
+          <input type="checkbox" id="tf-price-check" class="price-check" title="设置价格随行情更新">
+        </div>
+        <div class="row"><label>数量</label><input id="tf-volume" type="number" step="any" min="0" value="1"></div>
+        <div class="row"><label>接口</label><select id="tf-gateway"></select></div>
+        <div class="row" style="gap:3px;margin-top:4px">
+          <button class="btn-sell" onclick="send_order('SHORT')" style="flex:1">空</button>
+          <button class="btn-buy" onclick="send_order('LONG')" style="flex:1">多</button>
+        </div>
+        <div class="row" style="margin-top:2px">
+          <button class="btn-cancel" onclick="cancel_all()" style="flex:1">全撤</button>
+        </div>
+      </div>
+
+      <!-- 5-level market depth -->
+      <div class="depth-panel" id="depth-panel">
+        <div class="depth-row ask"><span id="dap5">--</span><span id="dav5">--</span></div>
+        <div class="depth-row ask"><span id="dap4">--</span><span id="dav4">--</span></div>
+        <div class="depth-row ask"><span id="dap3">--</span><span id="dav3">--</span></div>
+        <div class="depth-row ask"><span id="dap2">--</span><span id="dav2">--</span></div>
+        <div class="depth-row ask"><span id="dap1">--</span><span id="dav1">--</span></div>
+        <div class="depth-row mid"><span id="dlp" style="font-weight:700;font-size:14px">最新</span><span id="dret">涨跌幅</span></div>
+        <div class="depth-row bid"><span id="dbp1">--</span><span id="dbv1">--</span></div>
+        <div class="depth-row bid"><span id="dbp2">--</span><span id="dbv2">--</span></div>
+        <div class="depth-row bid"><span id="dbp3">--</span><span id="dbv3">--</span></div>
+        <div class="depth-row bid"><span id="dbp4">--</span><span id="dbv4">--</span></div>
+        <div class="depth-row bid"><span id="dbp5">--</span><span id="dbv5">--</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right top: TickMonitor -->
+  <div class="dock-panel" id="panel-tick">
+    <div class="panel-title">📈 行情 <span style="font-size:10px" id="tick-count">0</span></div>
+    <div class="panel-content"><div class="table-wrap"><table>
+      <thead><tr id="hdr-tick"></tr></thead>
+      <tbody id="tick-body" ondblclick="on_tick_dblclick(event)"></tbody>
+    </table></div></div>
+  </div>
+
+  <!-- Right: OrderMonitor tabbed with ActiveOrderMonitor -->
+  <div class="dock-panel" id="panel-order">
+    <div class="tab-bar">
+      <button class="active" data-tab="active-orders">活动</button>
+      <button data-tab="all-orders">委托</button>
+    </div>
+    <div class="tab-content active" id="tab-active-orders"><div class="table-wrap"><table>
+      <thead><tr id="hdr-active-order"></tr></thead>
+      <tbody id="active-order-body" ondblclick="on_order_dblclick(event)"></tbody>
+    </table></div></div>
+    <div class="tab-content" id="tab-all-orders"><div class="table-wrap"><table>
+      <thead><tr id="hdr-order"></tr></thead>
+      <tbody id="order-body" ondblclick="on_order_dblclick(event)"></tbody>
+    </table></div></div>
+  </div>
+
+  <!-- Bottom left: TradeMonitor -->
+  <div class="dock-panel" id="panel-trade-mon">
+    <div class="panel-title">💰 成交 <span style="font-size:10px" id="trade-count">0</span></div>
+    <div class="panel-content"><div class="table-wrap"><table>
+      <thead><tr id="hdr-trade"></tr></thead>
+      <tbody id="trade-body"></tbody>
+    </table></div></div>
+  </div>
+
+  <!-- Bottom center: LogMonitor -->
+  <div class="dock-panel" id="panel-log">
+    <div class="panel-title">📜 日志 <span style="font-size:10px" id="log-count">0</span></div>
+    <div class="panel-content" id="log-content"></div>
+  </div>
+
+  <!-- Bottom: Account + Position (tabbed) -->
+  <div class="dock-panel" style="grid-column:3;grid-row:3" id="panel-acc-pos-bottom">
+    <div class="tab-bar">
+      <button class="active" data-tab="acc-tab">资金</button>
+      <button data-tab="pos-tab">持仓</button>
+    </div>
+    <div class="tab-content active" id="tab-acc-tab"><div class="table-wrap"><table>
+      <thead><tr id="hdr-account"></tr></thead>
+      <tbody id="account-body"></tbody>
+    </table></div></div>
+    <div class="tab-content" id="tab-pos-tab"><div class="table-wrap"><table>
+      <thead><tr id="hdr-position"></tr></thead>
+      <tbody id="position-body" ondblclick="on_position_dblclick(event)"></tbody>
+    </table></div></div>
+  </div>
+</div>
+
+<!-- Status Bar -->
+<div id="statusbar">
+  <span id="status-msg">就绪</span>
+  <span style="margin-left:auto" id="status-clock"></span>
+</div>
+
+<!-- Context Menu -->
+<div class="ctx-menu" id="ctx-menu">
+  <div class="mi" onclick="resize_columns()">调整列宽</div>
+  <div class="mi" onclick="save_csv()">保存数据</div>
+</div>
+
+<!-- Connect Dialog -->
+<div class="modal-overlay" id="modal-connect">
+  <div class="modal">
+    <h2 id="modal-conn-title">🔌 连接网关</h2>
+    <div id="connect-fields"></div>
+    <div class="btn-row">
+      <button style="background:var(--bg3);color:var(--text)" onclick="close_modal('modal-connect')">取消</button>
+      <button style="background:var(--accent);color:#fff;border:none" onclick="connect_gateway()">连接</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// Exact Qt GUI replication
+// ============================================================
+
+// ---- Column definitions ----
+const MONITORS = {
+  tick: {
+    headers: ['symbol','exchange','name','last_price','volume','open_price','high_price','low_price','bid_price_1','bid_volume_1','ask_price_1','ask_volume_1','datetime','gateway_name'],
+    labels: ['代码','交易所','名称','最新价','成交量','开盘价','最高价','最低价','买1价','买1量','卖1价','卖1量','时间','接口'],
+    data_key: 'vt_symbol',
+    cls: c => (['bid_price_1','bid_volume_1'].includes(c)?'c-bid':['ask_price_1','ask_volume_1'].includes(c)?'c-ask':'')
+  },
+  order: {
+    headers: ['orderid','reference','symbol','exchange','type','direction','offset','price','volume','traded','status','datetime','gateway_name'],
+    labels: ['委托号','来源','代码','交易所','类型','方向','开平','价格','总数量','已成交','状态','时间','接口'],
+    data_key: 'vt_orderid',
+    cls: c => (c==='direction'?'dir':'')
+  },
+  trade: {
+    headers: ['tradeid','orderid','symbol','exchange','direction','offset','price','volume','datetime','gateway_name'],
+    labels: ['成交号','委托号','代码','交易所','方向','开平','价格','数量','时间','接口'],
+    data_key: '',
+    cls: c => (c==='direction'?'dir':'')
+  },
+  position: {
+    headers: ['symbol','exchange','direction','volume','yd_volume','frozen','price','pnl','gateway_name'],
+    labels: ['代码','交易所','方向','数量','昨仓','冻结','均价','盈亏','接口'],
+    data_key: 'vt_positionid',
+    cls: c => (c==='direction'?'dir':c==='pnl'?'pnl':'')
+  },
+  account: {
+    headers: ['accountid','balance','frozen','available','gateway_name'],
+    labels: ['账号','余额','冻结','可用','接口'],
+    data_key: 'vt_accountid',
+    cls: c => ''
+  }
+};
+
+// ---- Data stores ----
+const store = { tick: new Map(), order: new Map(), trade: new Map(), position: new Map(), account: new Map() };
+const log_entries = [];
+let MAX_LOG = 500;
+
+// ---- WebSocket ----
+let ws = null;
+let vt_symbol = '', price_digits = 0;
+
+function ws_connect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+  ws.onopen = () => {
+    document.getElementById('ws-dot').className = 'ws-dot on';
+    document.getElementById('status-msg').textContent = '已连接';
+    ws_send({action:'get_status',payload:{}});
+  };
+  ws.onmessage = e => handle_msg(JSON.parse(e.data));
+  ws.onclose = () => { document.getElementById('ws-dot').className = 'ws-dot off'; document.getElementById('status-msg').textContent = '已断开'; setTimeout(ws_connect, 2000); };
+}
+function ws_send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
+
+// ---- Message handler ----
+function handle_msg(m) {
+  const t = m.type, d = m.data;
+  if (!d) return;
+
+  if (t.startsWith('eTick.')) {
+    store.tick.set(d.vt_symbol, d);
+    if (d.vt_symbol === vt_symbol) update_depth(d);
+  } else if (t.startsWith('eOrder.')) {
+    store.order.set(d.vt_orderid, d);
+  } else if (t.startsWith('eTrade.')) {
+    store.trade.set(d.vt_tradeid || d.tradeid, d);
+  } else if (t.startsWith('ePosition.')) {
+    store.position.set(d.vt_positionid, d);
+  } else if (t.startsWith('eAccount.')) {
+    store.account.set(d.vt_accountid, d);
+  } else if (t === 'eLog') {
+    log_entries.unshift(d); if (log_entries.length > MAX_LOG) log_entries.pop();
+    render_log();
+  }
+  schedule_render();
+}
+
+let _rt = null;
+function schedule_render() { if (!_rt) _rt = setTimeout(() => { _rt = null; render_all(); }, 150); }
+
+// ---- Rendering ----
+function render_all() {
+  render_table('tick', store.tick);
+  render_table('trade', store.trade);
+  render_table('position', store.position);
+  render_table('account', store.account);
+  render_table('order', store.order);
+
+  // Active orders subset
+  const active = new Map();
+  store.order.forEach((v, k) => {
+    const s = v.status || '';
+    if (['SUBMITTING','NOTTRADED','PARTTRADED','提交中','未成交','部分成交'].includes(s)) active.set(k, v);
+  });
+  render_table_body('active-order-body', active, MONITORS.order);
+
+  render_log();
+  update_counts();
+}
+
+function render_table(name, dataMap) {
+  const mon = MONITORS[name];
+  if (!mon) return;
+  render_table_body(name + '-body', dataMap, mon);
+}
+
+function render_table_body(bodyId, dataMap, mon) {
+  const tbody = document.getElementById(bodyId);
+  if (!tbody) return;
+  const rows = Array.from(dataMap.values()).reverse();
+  tbody.innerHTML = rows.map((r, ri) => {
+    return `<tr data-row="${ri}">` + mon.headers.map(h => {
+      let v = r[h];
+      if (v === undefined || v === null) v = '';
+      if (h === 'datetime' && v) { try { v = new Date(v).toLocaleTimeString('zh-CN', {hour12: false}); } catch(e) {} }
+      if (typeof v === 'number') v = v.toFixed(Math.abs(v) < 10 ? 4 : 2);
+      let cls = mon.cls(h);
+      if (cls === 'dir') cls = (v === 'SHORT' || v === '空') ? 'c-short' : 'c-long';
+      if (cls === 'pnl') { const n = parseFloat(v); cls = (!isNaN(n) && n < 0) ? 'pnl-neg' : 'pnl-pos'; }
+      return `<td class="${cls}" data-key="${h}">${v}</td>`;
+    }).join('') + '</tr>';
+  }).join('');
+}
+
+function render_log() {
+  const el = document.getElementById('log-content');
+  if (!el) return;
+  el.innerHTML = log_entries.slice(0, 200).map(l => {
+    let ts = (l.time || ''); if (ts.length > 12) ts = ts.slice(11, 19);
+    return `<div class="log-entry"><span class="ts">${ts}</span><span class="gw">[${l.gateway_name||''}]</span><span>${l.msg||''}</span></div>`;
+  }).join('');
+}
+
+function update_counts() {
+  document.getElementById('tick-count').textContent = store.tick.size;
+  document.getElementById('trade-count').textContent = store.trade.size;
+  document.getElementById('log-count').textContent = log_entries.length;
+}
+
+// ---- Contract data via REST API ----
+let productCache = {};  // {exchange: [{prefix, name}]}
+
+async function loadProducts(exchange) {
+  if (!exchange) return [];
+  if (productCache[exchange]) return productCache[exchange];
+  try {
+    const r = await fetch(`/api/contracts/products?exchange=${exchange}`);
+    const data = await r.json();
+    productCache[exchange] = data.products || [];
+    return productCache[exchange];
+  } catch(e) { console.error(e); return []; }
+}
+
+async function loadContracts(exchange, product) {
+  try {
+    const params = new URLSearchParams({exchange});
+    if (product) params.set('product', product);
+    const r = await fetch(`/api/contracts/public?${params}`);
+    const data = await r.json();
+    return data.contracts || [];
+  } catch(e) { console.error(e); return []; }
+}
+
+// ---- Init table headers ----
+function init_headers() {
+  for (const [name, mon] of Object.entries(MONITORS)) {
+    ['hdr-' + name, 'hdr-active-order'].forEach(hid => {
+      const hdr = document.getElementById(hid);
+      if (hdr && (name === 'order' || hid === 'hdr-' + name)) {
+        hdr.innerHTML = mon.labels.map(l => `<th>${l}</th>`).join('');
+      }
+    });
+  }
+}
+
+// ---- Trading ----
+function send_order(dir) {
+  const symbol = document.getElementById('tf-symbol').value.trim();
+  if (!symbol) return alert('请输入合约代码');
+  const vol = parseFloat(document.getElementById('tf-volume').value);
+  if (!vol || vol <= 0) return alert('请输入委托数量');
+
+  ws_send({
+    action: 'send_order',
+    payload: {
+      symbol: symbol,
+      exchange: document.getElementById('tf-exchange').value,
+      direction: dir,
+      offset: document.getElementById('tf-offset').value,
+      price: parseFloat(document.getElementById('tf-price').value) || 0,
+      volume: vol,
+      order_type: document.getElementById('tf-ordertype').value,
+      gateway: document.getElementById('tf-gateway').value,
+      reference: 'ManualTrading'
+    }
+  });
+}
+
+function cancel_all() {
+  store.order.forEach(ord => {
+    const s = ord.status || '';
+    if (['SUBMITTING','NOTTRADED','PARTTRADED','提交中','未成交','部分成交'].includes(s)) {
+      ws_send({ action: 'cancel_order', payload: { orderid: ord.orderid, symbol: ord.symbol, exchange: ord.exchange, gateway: ord.gateway_name } });
+    }
+  });
+}
+
+function set_vt_symbol() {
+  const symbol = document.getElementById('tf-symbol').value.trim();
+  const exchange = document.getElementById('tf-exchange').value;
+  if (!symbol) return;
+  vt_symbol = `${symbol}.${exchange}`;
+  clear_depth();
+  document.getElementById('tf-name').value = '';
+  document.getElementById('tf-price').value = '';
+  document.getElementById('tf-volume').value = '1';
+  ws_send({ action: 'subscribe', payload: { symbol: symbol, exchange: exchange } });
+}
+
+// ---- Double-click: cancel order (exact Qt behavior) ----
+function on_order_dblclick(e) {
+  const td = e.target.closest('td');
+  const tr = e.target.closest('tr');
+  if (!td || !tr) return;
+  const keyCol = td.dataset.key;
+  // Only cancel if clicked on orderid column
+  const rowIdx = parseInt(tr.dataset.row);
+  const rows = Array.from(store.order.values()).reverse();
+  const order = rows[rowIdx];
+  if (order) {
+    const req = { orderid: order.orderid, symbol: order.symbol, exchange: order.exchange };
+    ws_send({ action: 'cancel_order', payload: { ...req, gateway: order.gateway_name } });
+  }
+}
+
+// ---- Double-click: fill trading form from tick/position (exact Qt behavior) ----
+function on_tick_dblclick(e) {
+  const tr = e.target.closest('tr');
+  if (!tr) return;
+  const rowIdx = parseInt(tr.dataset.row);
+  const rows = Array.from(store.tick.values()).reverse();
+  const data = rows[rowIdx];
+  if (data) {
+    update_trading_form_with_cell(data);
+  }
+}
+
+function on_position_dblclick(e) {
+  const tr = e.target.closest('tr');
+  if (!tr) return;
+  const rowIdx = parseInt(tr.dataset.row);
+  const rows = Array.from(store.position.values()).reverse();
+  const data = rows[rowIdx];
+  if (data) {
+    update_trading_form_with_cell(data);
+    // Qt behavior: set direction to opposite, offset to CLOSE, volume to abs(position)
+    document.getElementById('tf-direction').value = data.direction === 'SHORT' || data.direction === '空' ? 'LONG' : 'SHORT';
+    document.getElementById('tf-offset').value = 'CLOSE';
+    document.getElementById('tf-volume').value = Math.abs(parseFloat(data.volume) || 0).toString();
+    set_vt_symbol();
+  }
+}
+
+function update_trading_form_with_cell(data) {
+  document.getElementById('tf-symbol').value = data.symbol || '';
+  const ex = document.getElementById('tf-exchange');
+  if (data.exchange) {
+    for (let i = 0; i < ex.options.length; i++) {
+      if (ex.options[i].value === data.exchange) { ex.selectedIndex = i; break; }
+    }
+  }
+  set_vt_symbol();
+}
+
+// ---- 5-level Depth ----
+function update_depth(d) {
+  const dg = price_digits;
+  const fmt = v => (v != null && v !== 0) ? v.toFixed(dg) : '--';
+
+  document.getElementById('dap5').textContent = fmt(d.ask_price_5);
+  document.getElementById('dav5').textContent = d.ask_volume_5 || '--';
+  document.getElementById('dap4').textContent = fmt(d.ask_price_4);
+  document.getElementById('dav4').textContent = d.ask_volume_4 || '--';
+  document.getElementById('dap3').textContent = fmt(d.ask_price_3);
+  document.getElementById('dav3').textContent = d.ask_volume_3 || '--';
+  document.getElementById('dap2').textContent = fmt(d.ask_price_2);
+  document.getElementById('dav2').textContent = d.ask_volume_2 || '--';
+  document.getElementById('dap1').textContent = fmt(d.ask_price_1);
+  document.getElementById('dav1').textContent = d.ask_volume_1 || '--';
+
+  const lp = d.last_price || 0;
+  document.getElementById('dlp').textContent = fmt(lp);
+  let ret = '';
+  if (d.pre_close && d.pre_close > 0) {
+    const r = (lp / d.pre_close - 1) * 100;
+    ret = `${r >= 0 ? '+' : ''}${r.toFixed(2)}%`;
+  }
+  document.getElementById('dret').textContent = ret || '涨跌幅';
+
+  document.getElementById('dbp1').textContent = fmt(d.bid_price_1);
+  document.getElementById('dbv1').textContent = d.bid_volume_1 || '--';
+  document.getElementById('dbp2').textContent = fmt(d.bid_price_2);
+  document.getElementById('dbv2').textContent = d.bid_volume_2 || '--';
+  document.getElementById('dbp3').textContent = fmt(d.bid_price_3);
+  document.getElementById('dbv3').textContent = d.bid_volume_3 || '--';
+  document.getElementById('dbp4').textContent = fmt(d.bid_price_4);
+  document.getElementById('dbv4').textContent = d.bid_volume_4 || '--';
+  document.getElementById('dbp5').textContent = fmt(d.bid_price_5);
+  document.getElementById('dbv5').textContent = d.bid_volume_5 || '--';
+
+  if (d.bid_price_2) {
+    // 2-5 levels available, already rendered above
+  }
+
+  if (document.getElementById('tf-price-check').checked) {
+    document.getElementById('tf-price').value = lp.toFixed(dg);
+  }
+}
+
+function clear_depth() {
+  for (const id of ['dap5','dap4','dap3','dap2','dap1','dav5','dav4','dav3','dav2','dav1',
+                    'dbp1','dbp2','dbp3','dbp4','dbp5','dbv1','dbv2','dbv3','dbv4','dbv5']) {
+    document.getElementById(id).textContent = '--';
+  }
+  document.getElementById('dlp').textContent = '最新';
+  document.getElementById('dret').textContent = '涨跌幅';
+}
+
+// ---- Connect Dialog (exact Qt ConnectDialog) ----
+let gateway_configs = {};
+
+async function show_connect_dialog(gateway_name) {
+  try {
+    const r = await fetch('/api/gateways');
+    const gws = await r.json();
+    if (!gws.length) return;
+
+    const gwName = gateway_name || gws[0].name;
+    document.getElementById('modal-conn-title').textContent = `🔌 连接${gwName}`;
+
+    const fields = document.getElementById('connect-fields');
+    const gw = gws.find(g => g.name === gwName) || gws[0];
+    gateway_configs = gw.default_setting || {};
+
+    fields.innerHTML = '';
+    for (const [k, v] of Object.entries(gateway_configs)) {
+      if (Array.isArray(v)) {
+        fields.innerHTML += `<div class="row"><label>${k} &lt;list&gt;</label><select id="cf-${k}">${v.map(x => `<option>${x}</option>`).join('')}</select></div>`;
+      } else {
+        const tp = typeof v === 'number' ? 'number' : 'text';
+        const pw = k.includes('密码') ? ' type="password"' : ` type="${tp}"`;
+        fields.innerHTML += `<div class="row"><label>${k} &lt;${typeof v}&gt;</label><input id="cf-${k}"${pw} value="${v}"></div>`;
+      }
+    }
+
+    document.getElementById('modal-connect').classList.add('show');
+  } catch(e) { console.error(e); }
+}
+
+function connect_gateway() {
+  const setting = {};
+  document.querySelectorAll('#connect-fields input, #connect-fields select').forEach(inp => {
+    const key = inp.id.replace('cf-', '');
+    setting[key] = inp.value;
+  });
+  const gwName = document.getElementById('modal-conn-title').textContent.replace('🔌 连接', '');
+  ws_send({ action: 'connect_gateway', payload: { gateway: gwName, setting: setting } });
+  close_modal('modal-connect');
+}
+
+function close_modal(id) { document.getElementById(id).classList.remove('show'); }
+
+// ---- Menu actions (exact Qt menus) ----
+function open_contract_manager() { show_contract_dialog(); }
+function resize_columns() { document.querySelectorAll('table').forEach(t => { t.style.tableLayout = 'auto'; }); }
+function save_csv() {
+  const rows = []; const tbody = document.querySelector('.tab-content.active tbody') || document.querySelector('tbody');
+  if (!tbody) return alert('无数据');
+  tbody.querySelectorAll('tr').forEach(tr => { const cols = []; tr.querySelectorAll('td').forEach(td => cols.push(td.textContent)); rows.push(cols.join(',')); });
+  const csv = rows.join('\n'); const blob = new Blob([csv], {type:'text/csv'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'data.csv'; a.click();
+}
+function send_test_email() { ws_send({ action: 'get_status', payload: {} }); document.getElementById('status-msg').textContent = '测试邮件已发送'; }
+function open_forum() { window.open('https://www.vnpy.com/forum/', '_blank'); }
+function open_about() { show_about_dialog(); }
+function edit_global_setting() { show_settings_dialog(); }
+function open_wechat() { alert('微信通知绑定 (WechatDialog)\n请在桌面版中使用微信扫码绑定'); }
+function restore_window() { location.reload(); }
+function open_app_widget(name) { window.open('/app?name=' + encodeURIComponent(name), '_blank'); }
+
+async function show_contract_dialog() {
+  const overlay = document.createElement('div'); overlay.className = 'modal-overlay show';
+  overlay.innerHTML = `<div class="modal" style="min-width:900px;max-width:95vw">
+    <h2>🔍 查询合约</h2>
+    <div class="row"><input id="ct-filter" placeholder="输入合约代码或者交易所，留空则查询所有合约" style="flex:1"><button style="background:var(--accent);color:#fff;border:none" id="ct-query">查询</button></div>
+    <div style="max-height:500px;overflow:auto"><table><thead><tr><th>本地代码</th><th>代码</th><th>交易所</th><th>名称</th><th>产品</th><th>乘数</th><th>价格跳动</th><th>最小量</th><th>接口</th></tr></thead><tbody id="ct-body"><tr><td colspan="9" style="color:var(--dim)">点击查询加载合约数据</td></tr></tbody></table></div>
+    <div class="btn-row"><button onclick="this.closest('.modal-overlay').remove()" style="background:var(--bg3);color:var(--text)">关闭</button></div></div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  document.getElementById('ct-query').onclick = async () => {
+    const f = document.getElementById('ct-filter').value;
+    const r = await fetch('/api/contracts?filter=' + encodeURIComponent(f));
+    const data = await r.json();
+    document.getElementById('ct-body').innerHTML = data.length ? data.map(c =>
+      `<tr><td>${c.vt_symbol}</td><td>${c.symbol}</td><td>${c.exchange}</td><td>${c.name}</td><td>${c.product}</td><td>${c.size}</td><td>${c.pricetick}</td><td>${c.min_volume}</td><td>${c.gateway_name}</td></tr>`
+    ).join('') : '<tr><td colspan="9" style="color:var(--dim)">无匹配合约</td></tr>';
+  };
+}
+
+async function show_settings_dialog() {
+  const r = await fetch('/api/settings'); const settings = await r.json();
+  const overlay = document.createElement('div'); overlay.className = 'modal-overlay show';
+  overlay.innerHTML = `<div class="modal" style="min-width:700px;max-width:90vw;max-height:80vh;overflow:auto">
+    <h2>⚙️ 全局配置</h2>
+    <div id="gs-form">${Object.entries(settings).map(([k,v]) => `<div class="row"><label>${k} &lt;${typeof v}&gt;</label><input id="gs-${k}" value="${v}"></div>`).join('')}</div>
+    <div class="btn-row">
+      <button onclick="this.closest('.modal-overlay').remove()" style="background:var(--bg3);color:var(--text)">取消</button>
+      <button id="gs-save" style="background:var(--accent);color:#fff;border:none">确定</button></div></div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  document.getElementById('gs-save').onclick = async () => {
+    const data = {}; Object.keys(settings).forEach(k => { const el = document.getElementById('gs-'+k); if(el){ const v = el.value; data[k] = typeof settings[k] === 'boolean' ? (v==='True'||v==='true') : typeof settings[k] === 'number' ? parseFloat(v)||0 : v; }});
+    await fetch('/api/settings', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
+    overlay.remove(); alert('全局配置的修改需要重启后才会生效！');
+  };
+}
+
+async function show_about_dialog() {
+  const r = await fetch('/api/about'); const info = await r.json();
+  const overlay = document.createElement('div'); overlay.className = 'modal-overlay show';
+  overlay.innerHTML = `<div class="modal" style="min-width:450px;text-align:center">
+    <h2>关于 VeighNa Trader</h2>
+    <p style="color:var(--text);margin:12px 0">By Traders, For Traders.</p>
+    <p style="color:var(--dim);font-size:11px">Created by VeighNa Technology</p>
+    <table style="margin:16px auto;width:auto"><tr><td style="color:var(--dim);text-align:right">VeighNa</td><td>${info.deepquant}</td></tr><tr><td style="color:var(--dim);text-align:right">Python</td><td>${info.python}</td></tr><tr><td style="color:var(--dim);text-align:right">Platform</td><td>${info.platform}</td></tr><tr><td style="color:var(--dim);text-align:right">PySide6</td><td>${info.pyside6}</td></tr><tr><td style="color:var(--dim);text-align:right">NumPy</td><td>${info.numpy}</td></tr><tr><td style="color:var(--dim);text-align:right">pandas</td><td>${info.pandas}</td></tr></table>
+    <p style="font-size:11px;margin:8px 0">License: MIT | <a href="https://www.vnpy.com" target="_blank">www.vnpy.com</a> | <a href="https://github.com/vnpy/vnpy" target="_blank">GitHub</a></p>
+    <button onclick="this.closest('.modal-overlay').remove()" style="background:var(--accent);color:#fff;border:none;margin-top:8px">关闭</button></div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+}
+
+function refresh_status() { ws_send({ action: 'get_status', payload: {} }); }
+
+// ---- Right-click context menu (exact Qt) ----
+document.addEventListener('contextmenu', function(e) {
+  const table = e.target.closest('table');
+  if (table) {
+    e.preventDefault();
+    const menu = document.getElementById('ctx-menu');
+    menu.style.top = e.clientY + 'px';
+    menu.style.left = e.clientX + 'px';
+    menu.classList.add('show');
+  }
+});
+document.addEventListener('click', function() { document.getElementById('ctx-menu').classList.remove('show'); });
+
+// ---- Tab switching ----
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.tab-bar').forEach(bar => {
+    bar.querySelectorAll('button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        bar.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const parent = bar.closest('.dock-panel');
+        if (parent) {
+          parent.querySelectorAll('.tab-content').forEach(tc => tc.classList.remove('active'));
+          const target = document.getElementById('tab-' + btn.dataset.tab);
+          if (target) target.classList.add('active');
+        }
+      });
+    });
+  });
+
+  // Close dropdowns on outside click
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.menu-item')) {
+      document.querySelectorAll('.menu-dropdown.show').forEach(d => d.classList.remove('show'));
+    }
+  });
+});
+
+// ---- Init ----
+async function init() {
+  init_headers();
+  ws_connect();
+
+  try {
+    // Load apps into 功能 menu
+    const ar = await fetch('/api/apps');
+    const apps = await ar.json();
+    let am = '';
+    apps.forEach(a => { am += `<div class="mi" onclick="open_app_widget('${a.name}')">📦 ${a.display}</div>`; });
+    document.getElementById('menu-apps').innerHTML = am || '<div class="mi" style="color:var(--text-dim)">无已注册App</div>';
+
+    const r = await fetch('/api/status');
+    const s = await r.json();
+    if (s.exchanges) {
+      document.getElementById('tf-exchange').innerHTML = s.exchanges.map(e => `<option>${e}</option>`).join('');
+    }
+
+    // Populate system menu with gateway connect items
+    const gr = await fetch('/api/gateways');
+    const gws = await gr.json();
+    let sys_menu = '';
+    gws.forEach(g => {
+      sys_menu += `<div class="mi" onclick="show_connect_dialog('${g.name}')">🔌 连接${g.name}</div>`;
+    });
+    sys_menu += '<div class="mi sep"></div>';
+    sys_menu += '<div class="mi" onclick="window.close()">退出</div>';
+    document.getElementById('menu-system').innerHTML = sys_menu;
+
+    // Populate gateway combo in trading form
+    if (gws.length > 0) {
+      document.getElementById('tf-gateway').innerHTML = gws.map(g => `<option>${g.name}</option>`).join('');
+    }
+  } catch(e) { console.error(e); }
+
+  setInterval(() => {
+    document.getElementById('clock').textContent = new Date().toLocaleTimeString('zh-CN', {hour12: false});
+    document.getElementById('status-clock').textContent = new Date().toLocaleTimeString('zh-CN', {hour12: false});
+  }, 1000);
+}
+
+init();
+</script>
+</body>
+</html>

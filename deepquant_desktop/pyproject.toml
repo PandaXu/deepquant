@@ -1,0 +1,39 @@
+[project]
+name = "deepquant_desktop"
+version = "0.0.1"
+description = "DeepQuant Desktop — Qt-based trading GUI."
+readme = "README.md"
+license = {text = "MIT"}
+authors = [{name = "DeepQuant Community"}]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Office/Business :: Financial :: Investment",
+    "License :: OSI Approved :: MIT License",
+    "Natural Language :: Chinese (Simplified)",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "deepquant>=4.0.0",
+    "PySide6>=6.5.0",
+    "qdarkstyle",
+    "pyqtgraph",
+    "qrcode",
+    "tzlocal",
+    "loguru",
+]
+
+[project.urls]
+"Homepage" = "https://www.vnpy.com"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["deepquant_desktop"]

@@ -1,14 +1,14 @@
-# VeighNa (vnpy) — 量化交易框架
+# VeighNa (deepquant) — 量化交易框架
 
-基于 [VeighNa](https://github.com/vnpy/vnpy) v4.4.0 的量化交易平台，新增 **Web GUI**、**WebAssembly (WASM)**、**macOS Apple Silicon CTP 适配**。
+基于 [VeighNa](https://github.com/deepquant/deepquant) v4.4.0 的量化交易平台，新增 **Web GUI**、**WebAssembly (WASM)**、**macOS Apple Silicon CTP 适配**。
 
 ## 项目结构
 
 ```
 vn.py/
-├── vnpy/                           # VeighNa 核心框架
-│   ├── vnpy/event/engine.py        #   事件驱动引擎
-│   ├── vnpy/trader/                #   交易核心
+├── deepquant/                           # VeighNa 核心框架
+│   ├── deepquant/event/engine.py        #   事件驱动引擎
+│   ├── deepquant/trader/                #   交易核心
 │   │   ├── engine.py               #   MainEngine / OmsEngine / Email / Wechat
 │   │   ├── gateway.py              #   BaseGateway 抽象
 │   │   ├── object.py               #   Tick/Order/Trade/Position/Account 数据对象
@@ -16,13 +16,13 @@ vn.py/
 │   │   ├── utility.py              #   BarGenerator / ArrayManager (TA-Lib)
 │   │   ├── optimize.py             #   参数优化 (穷举/遗传算法 DEAP)
 │   │   └── ui/                     #   Qt 桌面界面 (mainwindow/widget)
-│   ├── vnpy/alpha/                 #   Alpha 研究平台
+│   ├── deepquant/alpha/                 #   Alpha 研究平台
 │   │   ├── lab.py                  #   AlphaLab 研究实验室
 │   │   ├── dataset/                #   数据集 (Alpha101/158 因子, 截面/时序函数)
 │   │   ├── model/                  #   模型 (LightGBM/MLP/Lasso)
 │   │   └── strategy/               #   策略模板 + 回测引擎
-│   ├── vnpy/rpc/                   #   ZeroMQ RPC 分布式服务
-│   ├── vnpy/chart/                 #   K 线图表 (Qt)
+│   ├── deepquant/rpc/                   #   ZeroMQ RPC 分布式服务
+│   ├── deepquant/chart/                 #   K 线图表 (Qt)
 │   │
 │   ├── web/                        # 🆕 Web 版本
 │   │   ├── server.py               #   FastAPI 后端 + WebSocket 事件桥接
@@ -45,13 +45,13 @@ vn.py/
 │   │   └── mac_run.py              #   macOS GUI 启动脚本
 │   └── tests/
 │
-├── vnpy_ctp/                       # CTP 期货网关 (Apple Silicon 适配)
-│   ├── vnpy_ctp/gateway/ctp_gateway.py  # Python Gateway 实现
-│   ├── vnpy_ctp/api/vnctp/         #   C++ pybind11 绑定层
+├── deepquant_ctp/                       # CTP 期货网关 (Apple Silicon 适配)
+│   ├── deepquant_ctp/gateway/ctp_gateway.py  # Python Gateway 实现
+│   ├── deepquant_ctp/api/vnctp/         #   C++ pybind11 绑定层
 │   └── meson.build                 #   Meson 构建 (已适配 macOS)
 │
 ├── architecture.html               # 核心框架架构分析
-└── vnpy_ctp_analysis.html          # CTP 网关代码逻辑分析
+└── deepquant_ctp_analysis.html          # CTP 网关代码逻辑分析
 ```
 
 ## 快速开始
@@ -65,7 +65,7 @@ vn.py/
 ### 安装
 
 ```bash
-cd vnpy
+cd deepquant
 python3.12 -m venv .venv
 source .venv/bin/activate
 
@@ -73,10 +73,10 @@ source .venv/bin/activate
 pip install -e ".[alpha,dev]"
 
 # 安装 CTP 网关（macOS 需从本地源码编译）
-pip install ../vnpy_ctp/
+pip install ../deepquant_ctp/
 
 # 安装 App 模块
-pip install vnpy-ctastrategy vnpy-ctabacktester vnpy-datamanager vnpy-paperaccount
+pip install deepquant-ctastrategy deepquant-ctabacktester deepquant-datamanager deepquant-paperaccount
 
 # Web 依赖
 pip install fastapi uvicorn websockets
@@ -205,7 +205,7 @@ CTP 6.7.11.4 的 macOS SDK 版本较旧 (缺少 9 个 API 函数)，已做以下
 - **头文件混合**: Linux `ThostFtdcUserApiStruct.h` + macOS `ThostFtdcTraderApi.h`
 - **11 处 C++ 源码补丁**: 用 `#ifndef __APPLE__` 保护不支持的 API
 - **meson.build 修复**: macOS 使用 `-framework` 链接方式
-- 详细分析: [vnpy_ctp_analysis.html](vnpy_ctp_analysis.html)
+- 详细分析: [deepquant_ctp_analysis.html](deepquant_ctp_analysis.html)
 
 ## 架构总览
 

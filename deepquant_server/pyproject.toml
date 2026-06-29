@@ -1,0 +1,51 @@
+[project]
+name = "deepquant_server"
+version = "0.0.1"
+description = "Web Trader for VeighNa quantitative trading framework."
+readme = "README.md"
+license = {text = "MIT"}
+authors = [{name = "VeighNa Community", email = "dev@vnpy.com"}]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Office/Business :: Financial :: Investment",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "License :: OSI Approved :: MIT License",
+    "Natural Language :: Chinese (Simplified)",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "deepquant>=4.0.0",
+    "fastapi>=0.100.0",
+    "uvicorn>=0.20.0",
+]
+keywords = ["quant", "quantitative", "investment", "trading", "web", "fastapi"]
+
+[project.optional-dependencies]
+ctp = ["vnpy_ctp"]
+paper = ["vnpy_paperaccount"]
+cta = ["vnpy_ctastrategy"]
+backtester = ["vnpy_ctabacktester"]
+datamanager = ["vnpy_datamanager"]
+all = ["vnpy_ctp", "vnpy_paperaccount", "vnpy_ctastrategy", "vnpy_ctabacktester", "vnpy_datamanager"]
+
+[project.urls]
+"Homepage" = "https://www.vnpy.com"
+"Documentation" = "https://www.vnpy.com/docs"
+"Source" = "https://github.com/vnpy/vnpy/"
+"Forum" = "https://www.vnpy.com/forum"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["deepquant_server"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"static" = "deepquant_server/static"

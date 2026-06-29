@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html><head><meta charset=utf-8>
+<style>html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#1e1e1e}#chart{width:100%;height:100%}</style>
+<script src="echarts.min.js"></script>
+</head><body>
+<div id="chart"></div>
+<script>
+var chart = echarts.init(document.getElementById('chart'), 'dark');
+var kdata=[], vdata=[], dates=[];
+
+chart.setOption({
+  backgroundColor: '#1e1e1e', animation: true,
+  tooltip: { trigger: 'axis' },
+  grid: { left: 60, right: 40, top: 30, bottom: 40 },
+  xAxis: { type: 'category', data: [], axisLabel: { fontSize: 10 } },
+  yAxis: [
+    { type: 'value', scale: true, splitLine: { lineStyle: { color: '#333' } } },
+    { type: 'value', scale: true, splitLine: { show: false }, axisLabel: { show: false },
+      min: 0, max: function(v) { return v.max * 5; } }
+  ],
+  dataZoom: [{ type: 'inside' }, { type: 'slider', bottom: 5, height: 20 }],
+  series: [
+    { name: 'K', type: 'candlestick', data: [],
+      itemStyle: { color: '#ef5350', color0: '#26a69a', borderColor: '#ef5350', borderColor0: '#26a69a' } },
+    { name: 'VOL', type: 'bar', data: [], yAxisIndex: 1,
+      itemStyle: { color: function(p) { return p.data[1]>=p.data[0] ? '#ef5350' : '#26a69a'; } } }
+  ]
+});
+
+function clearChart() {
+  kdata=[]; vdata=[]; dates=[];
+  chart.setOption({
+    title: { text: '', left: 'center', textStyle: { fontSize: 13, color: '#aaa' } },
+    xAxis: { data: [] },
+    series: [{ data: [] }, { data: [] }]
+  });
+}
+
+function updateBarChart(title, bars) {
+  kdata=[]; vdata=[]; dates=[];
+  bars.forEach(function(b) {
+    dates.push(b.dt);
+    kdata.push([b.op, b.cl, b.lo, b.hi]);
+    vdata.push([b.op, b.cl, b.v||0]);
+  });
+  chart.setOption({
+    title: { text: title, left: 'center', textStyle: { fontSize: 13, color: '#aaa' } },
+    xAxis: { data: dates },
+    series: [{ data: kdata }, { data: vdata }]
+  });
+}
+
+function addTick(t) {
+  if (dates.length===0) { kdata=[[t.lp,t.lp,t.lp,t.lp]]; vdata=[[t.lp,t.lp,t.v||0]]; dates=[t.dt]; }
+  else {
+    var last=kdata[kdata.length-1];
+    if (t.dt===dates[dates.length-1]) {
+      last[1]=t.lp; if (t.hi>last[3]) last[3]=t.hi; if (t.lo<last[2]) last[2]=t.lo;
+      last[0]=t.op||last[0]; vdata[vdata.length-1]=[last[0],t.lp,(vdata[vdata.length-1][2]||0)+(t.v||0)];
+    } else {
+      dates.push(t.dt);
+      kdata.push([t.op||t.lp, t.lp, t.lo||t.lp, t.hi||t.lp]);
+      vdata.push([t.op||t.lp, t.lp, t.v||0]);
+    }
+  }
+  if (kdata.length > 500) { kdata.shift(); vdata.shift(); dates.shift(); }
+  chart.setOption({
+    title: { text: '实时行情', left: 'center', textStyle: { fontSize: 13, color: '#aaa' } },
+    xAxis: { data: dates },
+    series: [{ data: kdata }, { data: vdata }]
+  });
+}
+</script></body></html>
