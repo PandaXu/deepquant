@@ -276,13 +276,12 @@ async def handle_ws_message(ws: WebSocket, msg: str) -> None:
             if gw_class is None:
                 await ws.send_text(json.dumps({"type": "error", "msg": f"网关不可用: {gw_name}"}))
                 return
-            if gw_name in main_engine.gateways:
-                if _active_account_name == acct["alias"]:
-                    await ws.send_text(json.dumps({"type": "log", "data": {"msg": f"账户已连接: {acct['alias']}", "gateway_name": ""}}))
-                    return
-                # Switching account: disconnect old, connect new
-                main_engine.write_log(f"切换账户: {_active_account_name} → {acct['alias']} ({gw_name})")
-                _active_account_name = ""
+            # Disconnect all existing gateways before connecting new one
+            existing = list(main_engine.gateways.keys())
+            for old_gw in existing:
+                if _active_account_name and _active_account_name != acct["alias"]:
+                    main_engine.write_log(f"切换账户: {_active_account_name} → {acct['alias']} ({gw_name})")
+            _active_account_name = ""
             main_engine.add_gateway(gw_class, gw_name)
             _active_account_name = acct["alias"]
             # Gateway connection is blocking — run in thread pool
