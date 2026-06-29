@@ -173,10 +173,11 @@ const TabSettings = {
 
     onMounted(async () => {
       loadConfig();
-      // Load gateways via REST API immediately (store both names and objects)
+      // Load accounts first (fast, local DB) — gateway list is slower (HTTP to Gateway service)
+      await $loadGatewayAccounts();
+      // Load gateways in background, may timeout if Gateway service is down
       window._gatewayObjects = window._gatewayObjects || {};
       try { const data = await $apiGet('/api/gateways'); if (Array.isArray(data)) { store.gateways = data.map(g => { window._gatewayObjects[g.name] = g; return g.name; }); } } catch(e) {}
-      await $loadGatewayAccounts();
     });
 
     return { gw, cfg, exchanges, accountList, loadConfig, saveConfig, onGatewayChange,

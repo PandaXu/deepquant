@@ -481,10 +481,13 @@ async def api_gateways():
         {"name": "TTS", "default_setting": {"用户名":"","密码":"","经纪商代码":"","交易服务器":"tcp://trading.openctp.cn:30001","行情服务器":"tcp://trading.openctp.cn:30011","产品名称":"","授权编码":"","柜台环境":["测试"]}},
     ]
     if gateway_client:
-        status = await gateway_client.get_status()
-        for name in status.get("gateways", []):
-            if name not in {r["name"] for r in result}:
-                result.append({"name": name, "default_setting": {}})
+        try:
+            status = await asyncio.wait_for(gateway_client.get_status(), timeout=3.0)
+            for name in status.get("gateways", []):
+                if name not in {r["name"] for r in result}:
+                    result.append({"name": name, "default_setting": {}})
+        except (asyncio.TimeoutError, Exception):
+            pass  # Gateway not available — return defaults only
     return result
 
 
