@@ -866,6 +866,7 @@ def start_engine() -> None:
         gw_name = "CTP"
         main_engine.add_gateway(CtpGateway, gw_name)
         _active_account_name = default["alias"]
+        logger.info(f"Set active_account_name={_active_account_name}")
         main_engine.connect(default["setting"], gw_name)
         logger.info(f"Auto-connected: {default['alias']} ({gw_name})")
 
