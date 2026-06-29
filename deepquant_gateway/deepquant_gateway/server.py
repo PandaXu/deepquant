@@ -24,8 +24,14 @@ _GATEWAY_LOADERS = {
 
 def _load_gateway(backend: str, module_name: str, class_name: str):
     """Import a gateway class, loading the correct CTP API backend first."""
-    from deepquant_ctp.api import load_backend
-    load_backend(backend)  # ensure correct .so is loaded before gateway import
+    import deepquant_ctp.api as api_mod
+    # Load the backend-specific .so files
+    be = api_mod.load_backend(backend)
+    # Swap module-level MdApi/TdApi so gateway's `from ..api import MdApi` uses the right backend
+    api_mod.MdApi = be["MdApi"]
+    api_mod.TdApi = be["TdApi"]
+    logger.info(f"Switched CTP API to '{backend}': MdApi={be['MdApi']} TdApi={be['TdApi']}")
+
     import importlib
     mod = importlib.import_module(f"deepquant_ctp.gateway.{module_name}")
     gw_class = getattr(mod, class_name, None)
