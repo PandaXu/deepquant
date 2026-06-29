@@ -219,23 +219,39 @@ class CtpGateway(BaseGateway):
         if not hasattr(self, '_last_md_address') or not self._last_md_address:
             self.write_log("[CtpGateway] 无历史行情地址，跳过重连")
             return
-        self.write_log(f"[CtpGateway] 🔄 自动重连行情接口 {self._last_md_address}")
-        # Create new MdApi instance to avoid crash from reusing old one
-        import time as _time
-        _time.sleep(1)  # brief pause to let old connection fully close
-        self.md_api = MdApi(self)
-        self.md_api.connect(self._last_md_address, self._last_userid, self._last_password, self._last_brokerid, self._last_production)
+        # Prevent reentrant reconnect loops
+        if getattr(self, '_reconnecting_md', False):
+            return
+        self._reconnecting_md = True
+        try:
+            self.write_log(f"[CtpGateway] 🔄 自动重连行情接口 {self._last_md_address}")
+            import time as _time
+            _time.sleep(2)
+            self.md_api = CtpMdApi(self)
+            self.md_api.connect(self._last_md_address, self._last_userid, self._last_password, self._last_brokerid, self._last_production)
+        except Exception as e:
+            self.write_log(f"[CtpGateway] 行情重连失败: {e}")
+        finally:
+            self._reconnecting_md = False
 
     def reconnect_td(self) -> None:
         """Auto-reconnect trading after disconnect."""
         if not hasattr(self, '_last_td_address') or not self._last_td_address:
             self.write_log("[CtpGateway] 无历史交易地址，跳过重连")
             return
-        self.write_log(f"[CtpGateway] 🔄 自动重连交易接口 {self._last_td_address}")
-        import time as _time
-        _time.sleep(1)
-        self.td_api = TdApi(self)
-        self.td_api.connect(self._last_td_address, self._last_userid, self._last_password, self._last_brokerid, self._last_auth_code, self._last_appid, self._last_production)
+        if getattr(self, '_reconnecting_td', False):
+            return
+        self._reconnecting_td = True
+        try:
+            self.write_log(f"[CtpGateway] 🔄 自动重连交易接口 {self._last_td_address}")
+            import time as _time
+            _time.sleep(2)
+            self.td_api = CtpTdApi(self)
+            self.td_api.connect(self._last_td_address, self._last_userid, self._last_password, self._last_brokerid, self._last_auth_code, self._last_appid, self._last_production)
+        except Exception as e:
+            self.write_log(f"[CtpGateway] 交易重连失败: {e}")
+        finally:
+            self._reconnecting_td = False
 
     def send_order(self, req: OrderRequest) -> str:
         """委托下单"""
