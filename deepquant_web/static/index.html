@@ -14,104 +14,60 @@
   <!-- Header -->
   <header id="header">
     <div class="logo">Deep<span>Quant</span> Trader</div>
-    <div class="ws-status">
+    <div class="ws-status" style="display:flex;align-items:center;gap:6px">
       <div class="ws-dot" :class="$s.wsStatus ? 'on' : 'off'"></div>
-      <span>{{ $s.wsStatus ? '已连接' : '未连接' }}</span>
-      <button class="btn btn-xs" @click="wsReconnect" title="重新连接">↻</button>
-    </div>
-    <div class="ws-actions">
-      <a href="/apps.html?app=PaperAccount" class="btn btn-sm">账户管理</a>
-      <a href="/apps.html?app=CtaStrategy" class="btn btn-sm">策略管理</a>
-      <button class="btn btn-sm btn-primary" @click="showAccountModal = true">账户详情</button>
+      <span style="font-size:11px">{{ $s.wsStatus ? '已连接' : '未连接' }}</span>
+      <button class="btn btn-xs" @click="$wsConnect()" title="重新连接">↻</button>
     </div>
     <div id="clock" class="clock">--:--:--</div>
   </header>
 
-  <!-- Navbar -->
-  <nav id="navbar">
-    <button class="nav-btn active">交易面板</button>
-    <div style="margin-left:auto;display:flex;gap:4px">
-      <button class="btn btn-sm btn-danger" @click="cancelAll">全部撤单</button>
-      <button class="btn btn-sm" @click="refreshSub">刷新订阅</button>
+  <!-- Tab Bar -->
+  <nav id="tab-bar">
+    <button v-for="t in tabs" :key="t.id" class="tab-btn"
+      :class="{ active: activeTab === t.id }" @click="activeTab = t.id">
+      {{ t.icon }} {{ t.label }}
+    </button>
+    <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
+      <span style="font-size:10px;color:var(--text-dim)">
+        订单{{ orderCount }} · 持仓{{ posCount }} · 行情{{ tickCount }}
+      </span>
     </div>
   </nav>
 
-  <!-- Ticker Strip -->
-  <ticker-strip :items="tickList" @pick="onPickTick"></ticker-strip>
-
-  <!-- Trade Form -->
-  <trade-form ref="tfRef" @order="onOrder"></trade-form>
-
-  <!-- Main Grid -->
-  <div id="main">
-    <!-- Top-Left: Tick Table -->
-    <section class="panel">
-      <div class="panel-header">
-        <span class="panel-title">📈 行情 Tick</span>
-        <span class="panel-badge">{{ tickList.length }}</span>
-      </div>
-      <div class="panel-body">
-        <tick-table :items="tickList" @pick="onPickTick"></tick-table>
-      </div>
-    </section>
-
-    <!-- Top-Right: Depth Chart -->
-    <section class="panel">
-      <div class="panel-header">
-        <span class="panel-title">📊 深度图</span>
-        <span class="panel-badge">{{ depthSymbol || '—' }}</span>
-      </div>
-      <depth-chart ref="depthChart" :symbol="depthSymbol"></depth-chart>
-    </section>
-
-    <!-- Bottom-Left: Orders + Trades -->
-    <section class="panel">
-      <div class="panel-header">
-        <span class="panel-title">📋 委托 / 成交</span>
-        <div style="display:flex;gap:4px">
-          <span class="panel-badge">{{ orderList.length }}</span>
-          <span style="font-size:10px;color:var(--text-dim)">委托</span>
-          <span class="panel-badge">{{ tradeList.length }}</span>
-          <span style="font-size:10px;color:var(--text-dim)">成交</span>
-        </div>
-      </div>
-      <div class="panel-body" style="display:flex;flex-direction:column;overflow:hidden">
-        <div style="flex:1;overflow:auto">
-          <div style="font-size:10px;color:var(--text-dim);padding:4px 12px;font-weight:600">委托</div>
-          <order-table :items="orderList" @cancel="onCancelOrder"></order-table>
-          <div style="font-size:10px;color:var(--text-dim);padding:4px 12px;font-weight:600;margin-top:4px">成交</div>
-          <trade-table :items="tradeList"></trade-table>
-        </div>
-      </div>
-    </section>
-
-    <!-- Bottom-Right: Positions + Account + Logs -->
-    <section class="panel">
-      <div class="panel-header">
-        <span class="panel-title">💼 持仓 & 账户 & 日志</span>
-      </div>
-      <div class="panel-body" style="display:flex;flex-direction:column;overflow:hidden">
-        <account-summary :account="firstAccount"></account-summary>
-        <div style="flex:1;overflow:auto;min-height:0">
-          <div style="font-size:10px;color:var(--text-dim);padding:4px 12px;font-weight:600">持仓</div>
-          <position-table :items="positionList"></position-table>
-          <div style="font-size:10px;color:var(--text-dim);padding:4px 12px;font-weight:600;margin-top:4px">日志</div>
-          <log-panel :items="$s.log" style="max-height:200px;overflow:auto"></log-panel>
-        </div>
-      </div>
-    </section>
+  <!-- Tab Content -->
+  <!-- Tab 1: 行情交易 -->
+  <div v-show="activeTab === 'trading'" class="tab-content" id="tab-trading">
+    <tab-trading ref="tabTrading"></tab-trading>
   </div>
 
-  <!-- Status Bar -->
-  <status-bar :order-count="orderList.length" :trade-count="tradeList.length"
-    :pos-count="positionList.length" :tick-count="tickList.length"></status-bar>
+  <!-- Tab 2: 数据管理 -->
+  <div v-show="activeTab === 'data'" class="tab-content" id="tab-data">
+    <tab-data></tab-data>
+  </div>
 
-  <!-- Account Modal -->
-  <account-modal :visible="showAccountModal" :accounts="accountList"
-    @close="showAccountModal = false" @delete="delAccount"></account-modal>
+  <!-- Tab 3: 策略 -->
+  <div v-show="activeTab === 'strategy'" class="tab-content" id="tab-strategy">
+    <tab-strategy></tab-strategy>
+  </div>
+
+  <!-- Tab 4: 日志 -->
+  <div v-show="activeTab === 'log'" class="tab-content" id="tab-log">
+    <tab-log></tab-log>
+  </div>
+
+  <!-- Tab 5: 设置 -->
+  <div v-show="activeTab === 'settings'" class="tab-content" id="tab-settings">
+    <tab-settings></tab-settings>
+  </div>
 </div>
 
 <script src="/js/store.js"></script>
-<script src="/js/index-app.js"></script>
+<script src="/js/tab-trading.js"></script>
+<script src="/js/tab-data.js"></script>
+<script src="/js/tab-strategy.js"></script>
+<script src="/js/tab-log.js"></script>
+<script src="/js/tab-settings.js"></script>
+<script src="/js/app.js"></script>
 </body>
 </html>
