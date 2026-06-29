@@ -165,7 +165,7 @@ async def websocket_endpoint(ws: WebSocket) -> None:
 
 async def handle_ws_message(ws: WebSocket, msg: str) -> None:
     """Handle incoming WebSocket commands from the frontend."""
-    global main_engine, event_engine
+    global main_engine, event_engine, _active_account_name
     if not main_engine or not event_engine:
         await ws.send_text(json.dumps({"type": "error", "msg": "Engine not ready"}))
         return
@@ -276,7 +276,6 @@ async def handle_ws_message(ws: WebSocket, msg: str) -> None:
                 await ws.send_text(json.dumps({"type": "log", "data": {"msg": f"账户已连接: {acct['alias']}", "gateway_name": ""}}))
                 return
             if acct["gateway"] == "CTP" and CtpGateway is not None:
-                global _active_account_name
                 main_engine.add_gateway(CtpGateway, gw_name)
                 # CTP connection is blocking — run in thread pool
                 loop = asyncio.get_running_loop()
@@ -293,7 +292,6 @@ async def handle_ws_message(ws: WebSocket, msg: str) -> None:
             if acct:
                 gw_name = "CTP"
                 main_engine.remove_gateway(gw_name)
-                global _active_account_name
                 _active_account_name = ""
                 main_engine.write_log(f"账户已断开: {acct['alias']} ({gw_name})")
 
