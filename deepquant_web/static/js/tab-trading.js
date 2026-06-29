@@ -1,5 +1,5 @@
 // ===== Tab 1: 行情交易 =====
-const { ref, reactive, computed, watch, onMounted, nextTick } = Vue;
+const { ref, reactive, computed, watch, onMounted, onUnmounted, nextTick } = Vue;
 
 const TabTrading = {
   template: `
@@ -270,7 +270,6 @@ const TabTrading = {
     ];
     const products = ref([]);
     const contracts = ref([]);
-    const contractCache = reactive({});
     const posSortKey = ref('');
     const posSortDir = ref(1);
 
@@ -331,7 +330,6 @@ const TabTrading = {
     }
 
     // ---- K-Line Chart ----
-    let echartsRoot = null;
     function initChart() {
       if (!klineEl.value) return;
       chartInstance = echarts.init(klineEl.value, 'dark');
@@ -478,10 +476,13 @@ const TabTrading = {
     onMounted(() => {
       nextTick(() => { initChart(); });
     });
+    onUnmounted(() => {
+      if (chartInstance) { chartInstance.dispose(); chartInstance = null; }
+    });
 
     return {
       klineEl, chartSymbol, chartInterval, depthTick, showExpired, autoPrice, orderFilter,
-      form, exchanges, products, contractCache, posSortKey, posSortDir,
+      form, exchanges, products, posSortKey, posSortDir,
       tickList, orderList, tradeList, posList, accountList, contractName,
       filteredContracts, filteredOrders, canOrder,
       statusText, isActiveOrder, chgCls, chgText, pnlCls, sortPos,
