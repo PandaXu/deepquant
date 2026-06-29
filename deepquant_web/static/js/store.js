@@ -27,6 +27,7 @@ const store = reactive({
   btClasses: [],
   dataOverview: [],
   logPaused: false,
+  connectedGateways: [],   // CTP connection status from server
 });
 
 // ---- WebSocket ----
@@ -204,7 +205,16 @@ setInterval(() => {
   if (el) el.textContent = new Date().toLocaleTimeString('zh-CN', { hour12: false });
 }, 1000);
 
+// ---- Periodic server status poll (gateway connection state) ----
+async function $pollStatus() {
+  try {
+    const data = await $apiGet('/api/status');
+    store.connectedGateways = data.gateways || [];
+  } catch(e) {}
+}
+setInterval($pollStatus, 5000);  // Poll every 5 seconds
+
 // ---- Init WS on load ----
 if (typeof window !== 'undefined') {
-  window.addEventListener('DOMContentLoaded', () => $wsConnect());
+  window.addEventListener('DOMContentLoaded', () => { $wsConnect(); $pollStatus(); });
 }

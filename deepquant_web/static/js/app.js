@@ -23,10 +23,18 @@ const App = {
       set: (v) => { store.logPaused = v; }
     });
 
+    // Gateway connection status display
+    const gatewayLabel = computed(() => {
+      const gws = store.connectedGateways;
+      if (!store.wsStatus) return { dot: 'off', text: 'WS 断开' };
+      if (gws.length > 0) return { dot: 'on', text: gws.join(', ') + ' 已连接' };
+      return { dot: 'off', text: '网关未连接' };
+    });
+
     // Auto-pause log when not on log tab, resume when entering
     watch(activeTab, (tab) => { store.logPaused = tab !== 'log'; });
 
-    return { tabs, activeTab, orderCount, tickCount, posCount, tradeCount, logPaused, store, wsConnect: $wsConnect };
+    return { tabs, activeTab, orderCount, tickCount, posCount, tradeCount, logPaused, store, wsConnect: $wsConnect, gatewayLabel };
   },
 };
 

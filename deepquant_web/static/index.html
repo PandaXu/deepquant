@@ -15,8 +15,8 @@
   <header id="header">
     <div class="logo">Deep<span>Quant</span> Trader</div>
     <div class="ws-status" style="display:flex;align-items:center;gap:6px">
-      <div class="ws-dot" :class="store.wsStatus ? 'on' : 'off'"></div>
-      <span style="font-size:11px">{{ store.wsStatus ? '已连接' : '未连接' }}</span>
+      <div class="ws-dot" :class="gatewayLabel.dot"></div>
+      <span style="font-size:11px">{{ gatewayLabel.text }}</span>
       <button class="btn btn-xs" @click="wsConnect()" title="重新连接">↻</button>
     </div>
     <div id="clock" class="clock">--:--:--</div>
