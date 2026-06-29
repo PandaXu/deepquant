@@ -22,21 +22,21 @@ const TabTrading = {
             <div class="depth-asks">
               <div v-for="i in 5" :key="'a'+i" class="depth-row"
                 @click="fillPrice(depthTick['ask_price_'+i])">
-                <span class="depth-price ask">{{ $fmtPrice(depthTick['ask_price_'+i]) }}</span>
-                <span class="depth-vol">{{ $fmtVol(depthTick['ask_volume_'+i]) }}</span>
+                <span class="depth-price ask">{{ fmtPrice(depthTick['ask_price_'+i]) }}</span>
+                <span class="depth-vol">{{ fmtVol(depthTick['ask_volume_'+i]) }}</span>
                 <span class="depth-label">卖{{ i }}</span>
               </div>
             </div>
             <div class="depth-mid">
-              <span class="depth-last" :class="chgCls(depthTick)">{{ $fmtPrice(depthTick.last_price) }}</span>
+              <span class="depth-last" :class="chgCls(depthTick)">{{ fmtPrice(depthTick.last_price) }}</span>
               <span class="depth-chg" :class="chgCls(depthTick)">{{ chgText(depthTick) }}</span>
             </div>
             <div class="depth-bids">
               <div v-for="i in 5" :key="'b'+i" class="depth-row"
                 @click="fillPrice(depthTick['bid_price_'+i])">
                 <span class="depth-label">买{{ i }}</span>
-                <span class="depth-vol">{{ $fmtVol(depthTick['bid_volume_'+i]) }}</span>
-                <span class="depth-price bid">{{ $fmtPrice(depthTick['bid_price_'+i]) }}</span>
+                <span class="depth-vol">{{ fmtVol(depthTick['bid_volume_'+i]) }}</span>
+                <span class="depth-price bid">{{ fmtPrice(depthTick['bid_price_'+i]) }}</span>
               </div>
             </div>
           </div>
@@ -140,7 +140,7 @@ const TabTrading = {
       <div class="ticker-strip" v-if="tickList.length">
         <div v-for="t in tickList" :key="t.vt_symbol" class="ticker-item" @click="onPickTick(t)">
           <span class="sym">{{ t.vt_symbol.split('.')[0] }}</span>
-          <span class="price" :class="chgCls(t)">{{ $fmtPrice(t.last_price) }}</span>
+          <span class="price" :class="chgCls(t)">{{ fmtPrice(t.last_price) }}</span>
           <span class="chg" :class="chgCls(t)">{{ chgText(t) }}</span>
         </div>
       </div>
@@ -170,8 +170,8 @@ const TabTrading = {
                   <td :class="p.direction === 'LONG' ? 'up' : 'down'">{{ p.direction === 'LONG' ? '多' : '空' }}</td>
                   <td class="num">{{ p.volume }}</td>
                   <td class="num">{{ p.yd_volume || 0 }}</td>
-                  <td class="num">{{ $fmtPrice(p.price) }}</td>
-                  <td class="num" :class="pnlCls(p)">{{ $fmtPrice(p.position_profit || p.pnl) }}</td>
+                  <td class="num">{{ fmtPrice(p.price) }}</td>
+                  <td class="num" :class="pnlCls(p)">{{ fmtPrice(p.position_profit || p.pnl) }}</td>
                   <td><button class="btn btn-xs btn-danger" @click="closePos(p)">平仓</button></td>
                 </tr>
                 <tr v-if="posList.length === 0"><td colspan="7" class="empty">暂无持仓</td></tr>
@@ -202,11 +202,11 @@ const TabTrading = {
                   <td>{{ (o.orderid || '').toString().slice(-8) }}</td>
                   <td>{{ o.vt_symbol }}</td>
                   <td :class="o.direction === 'LONG' ? 'up' : 'down'">{{ o.direction === 'LONG' ? '多' : '空' }}/{{ o.offset }}</td>
-                  <td class="num">{{ $fmtPrice(o.price) }}</td>
+                  <td class="num">{{ fmtPrice(o.price) }}</td>
                   <td class="num">{{ o.volume }}</td>
                   <td class="num">{{ o.traded }}</td>
                   <td>{{ statusText(o.status) }}</td>
-                  <td class="num">{{ $timeStr(o.order_time || o.create_time) }}</td>
+                  <td class="num">{{ timeStr(o.order_time || o.create_time) }}</td>
                   <td><button v-if="isActiveOrder(o)" class="btn btn-xs btn-danger" @click="cancelOrder(o)">撤单</button></td>
                 </tr>
                 <tr v-if="filteredOrders.length === 0"><td colspan="9" class="empty">暂无订单</td></tr>
@@ -222,9 +222,9 @@ const TabTrading = {
                   <td>{{ (t.tradeid || '').toString().slice(-8) }}</td>
                   <td>{{ t.vt_symbol }}</td>
                   <td :class="t.direction === 'LONG' ? 'up' : 'down'">{{ t.direction === 'LONG' ? '多' : '空' }}</td>
-                  <td class="num">{{ $fmtPrice(t.price) }}</td>
+                  <td class="num">{{ fmtPrice(t.price) }}</td>
                   <td class="num">{{ t.volume }}</td>
-                  <td class="num">{{ $timeStr(t.trade_time || t.time) }}</td>
+                  <td class="num">{{ timeStr(t.trade_time || t.time) }}</td>
                 </tr>
                 <tr v-if="tradeList.length === 0"><td colspan="6" class="empty">暂无成交</td></tr>
               </tbody>
@@ -240,9 +240,9 @@ const TabTrading = {
               <tbody>
                 <tr v-for="a in accountList" :key="a.vt_accountid">
                   <td>{{ a.vt_accountid }}</td>
-                  <td class="num">{{ $fmtPrice(a.balance) }}</td>
-                  <td class="num">{{ $fmtPrice(a.frozen) }}</td>
-                  <td class="num">{{ $fmtPrice(a.available) }}</td>
+                  <td class="num">{{ fmtPrice(a.balance) }}</td>
+                  <td class="num">{{ fmtPrice(a.frozen) }}</td>
+                  <td class="num">{{ fmtPrice(a.available) }}</td>
                   <td>{{ a.gateway_name }}</td>
                 </tr>
                 <tr v-if="accountList.length === 0"><td colspan="5" class="empty">暂无账户</td></tr>

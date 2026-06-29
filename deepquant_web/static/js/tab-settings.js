@@ -7,7 +7,7 @@ const TabSettings = {
       <div class="panel">
         <div class="panel-header"><span class="panel-title">🔌 网关连接</span></div>
         <div class="panel-body" style="padding:8px;display:flex;flex-direction:column;gap:8px">
-          <div class="form-row"><label>网关</label><select v-model="gw.gateway" @change="onGatewayChange" class="input"><option value="">选择网关</option><option v-for="g in store.gateways" :value="g">{{ g }}</option></select></div>
+          <div class="form-row"><label>网关</label><select v-model="gw.gateway" @change="onGatewayChange" class="input"><option value="">选择网关</option><option v-for="g in store.gateways" :value="g.name">{{ g.name }}</option></select></div>
           <div v-if="gw.gateway" class="form-grid">
             <div v-for="(v, k) in gw.settings" :key="k" class="form-row">
               <label>{{ k }}</label>
@@ -47,8 +47,8 @@ const TabSettings = {
             <thead><tr><th>账户ID</th><th class="num">余额</th><th class="num">冻结</th><th class="num">可用</th><th>网关</th></tr></thead>
             <tbody>
               <tr v-for="a in accountList" :key="a.vt_accountid">
-                <td>{{ a.vt_accountid }}</td><td class="num">{{ $fmtPrice(a.balance) }}</td>
-                <td class="num">{{ $fmtPrice(a.frozen) }}</td><td class="num">{{ $fmtPrice(a.available) }}</td>
+                <td>{{ a.vt_accountid }}</td><td class="num">{{ fmtPrice(a.balance) }}</td>
+                <td class="num">{{ fmtPrice(a.frozen) }}</td><td class="num">{{ fmtPrice(a.available) }}</td>
                 <td>{{ a.gateway_name }}</td>
               </tr>
               <tr v-if="accountList.length === 0"><td colspan="5" class="empty">暂无账户</td></tr>
@@ -107,10 +107,11 @@ const TabSettings = {
     async function onGatewayChange() {
       gw.settings = {};
       if (!gw.gateway) return;
-      try {
-        const setting = await $apiGet(`/api/gateway-settings?gateway=${gw.gateway}`);
-        gw.settings = setting || {};
-      } catch(e){ $toast('加载网关设置失败', 'error'); }
+      // Use default_setting from gateway list fetched via WebSocket
+      const g = store.gateways.find(g => g.name === gw.gateway);
+      if (g && g.default_setting) {
+        gw.settings = JSON.parse(JSON.stringify(g.default_setting)); // deep clone
+      }
     }
     function connectGateway() {
       if (!gw.gateway) return;
@@ -145,6 +146,6 @@ const TabSettings = {
     });
 
     return { gw, cfg, exchanges, accountList, loadConfig, saveConfig, onGatewayChange,
-      connectGateway, disconnectGateway, loadAccount, deleteAccount, saveCurrentAccount, store };
+      connectGateway, disconnectGateway, loadAccount, deleteAccount, saveCurrentAccount, store, fmtPrice: $fmtPrice, fmtVol: $fmtVol };
   }
 };
