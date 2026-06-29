@@ -707,3 +707,8 @@ select { cursor: pointer; }
   .trading-bottom { grid-template-columns:1fr; }
 }
 
+/* Progress bar */
+.progress-bar { height:16px; background:var(--bg-input); border-radius:8px; position:relative; overflow:hidden; }
+.progress-fill { height:100%; background:var(--accent); border-radius:8px; transition:width .3s; }
+.progress-bar span { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:var(--text); font-weight:600; }
+
