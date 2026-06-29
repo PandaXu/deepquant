@@ -342,7 +342,7 @@ const TabTrading = {
           { name:'K线', type:'candlestick', xAxisIndex:0, yAxisIndex:0,
             itemStyle:{color:'#ef4444',color0:'#22c55e',borderColor:'#ef4444',borderColor0:'#22c55e'} },
           { name:'成交量', type:'bar', xAxisIndex:1, yAxisIndex:1,
-            itemStyle:{color:params=>params.data[1]>params.data[2]?'#ef4444':'#22c55e'} }
+            itemStyle:{color:params=>params.data[2]>0?'#22c55e':'#ef4444'} }
         ],
         tooltip: { trigger:'axis' },
         dataZoom: [{ type:'inside', xAxisIndex:[0,1] }, { type:'slider', xAxisIndex:[0,1], bottom:'2%' }],
@@ -383,7 +383,7 @@ const TabTrading = {
         series: [
           { data: [...lastData.slice(0, -1), [last[0], last[1], newClose, newLow, newHigh]] },
           { data: [...chartInstance.getOption().series[1].data.slice(0, -1),
-            [last[0], (last[5]||0) + (tick.volume||0) - (last[5]||0) > 0 ? tick.volume||0 : 0]] }
+            [last[0], (last[5]||0) + (tick.volume||0), tick.last_price <= last[1] ? 1 : -1]] }
         ]
       });
     }

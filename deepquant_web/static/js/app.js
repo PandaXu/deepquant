@@ -1,5 +1,5 @@
 // ===== DeepQuant App — Bootstrap =====
-const { createApp, ref, computed, onMounted } = Vue;
+const { createApp, ref, computed, watch } = Vue;
 
 const App = {
   setup() {
@@ -23,6 +23,9 @@ const App = {
       get: () => $s.logPaused,
       set: (v) => { $s.logPaused = v; }
     });
+
+    // Auto-pause log when not on log tab, resume when entering
+    watch(activeTab, (tab) => { $s.logPaused = tab !== 'log'; });
 
     return { tabs, activeTab, orderCount, tickCount, posCount, tradeCount, logPaused, $s };
   },
