@@ -276,9 +276,13 @@ async def handle_ws_message(ws: WebSocket, msg: str) -> None:
                 if _active_account_name == acct["alias"]:
                     await ws.send_text(json.dumps({"type": "log", "data": {"msg": f"账户已连接: {acct['alias']}", "gateway_name": ""}}))
                     return
-                # Switching account: disconnect old, connect new
+                # Switching account: disconnect old (in main thread, CTP not thread-safe)
                 main_engine.write_log(f"切换账户: {_active_account_name} → {acct['alias']}")
-                main_engine.remove_gateway(gw_name)
+                try:
+                    main_engine.remove_gateway(gw_name)
+                except Exception as e:
+                    logger.error(f"Gateway removal during switch (non-fatal): {e}")
+                _active_account_name = ""
             if acct["gateway"] == "CTP" and CtpGateway is not None:
                 main_engine.add_gateway(CtpGateway, gw_name)
                 _active_account_name = acct["alias"]  # set immediately, before blocking connect
@@ -295,10 +299,13 @@ async def handle_ws_message(ws: WebSocket, msg: str) -> None:
             acct = get_account(account_id)
             if acct:
                 gw_name = "CTP"
-                # Run in thread pool to avoid blocking event loop
-                loop = asyncio.get_running_loop()
-                await loop.run_in_executor(None, main_engine.remove_gateway, gw_name)
                 _active_account_name = ""
+                # CTP native code is NOT thread-safe — must run in main thread
+                # with exception protection to prevent server crash
+                try:
+                    main_engine.remove_gateway(gw_name)
+                except Exception as e:
+                    logger.error(f"Gateway removal error (non-fatal): {e}")
                 main_engine.write_log(f"账户已断开: {acct['alias']} ({gw_name})")
                 await ws.send_text(json.dumps({"type": "log", "data": {"msg": f"账户已断开: {acct['alias']}", "gateway_name": gw_name}}))
 
