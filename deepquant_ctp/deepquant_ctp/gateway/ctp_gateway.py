@@ -337,10 +337,6 @@ class CtpMdApi(MdApi):
         desc = _disconnect_reason_text(reason)
         self.gateway.write_log(f"[MdApi] ❌ 行情连接断开! reason={reason} (0x{reason:04X}) → {desc}")
         self.gateway.write_log(f"[MdApi]    connect_status={self.connect_status} login_status={self.login_status}")
-        # Auto-reconnect after 5 seconds
-        from threading import Timer
-        self.gateway.write_log(f"[MdApi] → 5秒后自动重连行情...")
-        Timer(5.0, self.gateway.reconnect_md).start()
 
     def onRspUserLogin(self, data: dict, error: dict, reqid: int, last: bool) -> None:
         """用户登录请求回报"""
@@ -567,10 +563,6 @@ class CtpTdApi(TdApi):
         desc = _disconnect_reason_text(reason)
         self.gateway.write_log(f"[TdApi] ❌ 交易连接断开! reason={reason} (0x{reason:04X}) → {desc}")
         self.gateway.write_log(f"[TdApi]    connect_status={self.connect_status} login_status={self.login_status} auth_status={self.auth_status}")
-        # Auto-reconnect after 5 seconds
-        from threading import Timer
-        self.gateway.write_log(f"[TdApi] → 5秒后自动重连交易...")
-        Timer(5.0, self.gateway.reconnect_td).start()
 
     def onRspAuthenticate(self, data: dict, error: dict, reqid: int, last: bool) -> None:
         """用户授权验证回报"""
