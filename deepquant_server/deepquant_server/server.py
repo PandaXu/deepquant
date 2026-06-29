@@ -31,7 +31,6 @@ SETTINGS["font.family"] = "PingFang SC"
 # Load available gateways from the gateway package
 from .gateway import CtpGateway, get_available as get_available_gateways
 HAS_CTP = CtpGateway is not None
-print(f"[SERVER_MODULE] CtpGateway={CtpGateway} HAS_CTP={HAS_CTP}", flush=True)
 
 try:
     from vnpy_paperaccount import PaperAccountApp
@@ -61,7 +60,6 @@ except ImportError:
 # Web app
 # ---------------------------------------------------------------------------
 app = FastAPI(title="DeepQuant Server", version="0.0.1")
-print("[SERVER_MODULE] server.py loaded", flush=True)
 
 # Allow all origins for development (web frontend on different port)
 app.add_middleware(
@@ -155,14 +153,12 @@ async def websocket_endpoint(ws: WebSocket) -> None:
     try:
         while True:
             msg = await ws.receive_text()
-            print(f"[WS_RECV] raw msg: {msg[:200]}", flush=True)
             await handle_ws_message(ws, msg)
     except WebSocketDisconnect:
         _remove_client(ws)
         logger.info(f"WebSocket client disconnected ({len(ws_clients)} total)")
     except Exception as e:
-        print(f"[WS_ERR] {type(e).__name__}: {e}", flush=True)
-        import traceback; traceback.print_exc()
+        logger.error(f"WebSocket error: {type(e).__name__}: {e}")
         _remove_client(ws)
 
 
@@ -177,7 +173,6 @@ async def handle_ws_message(ws: WebSocket, msg: str) -> None:
         cmd = json.loads(msg)
         action = cmd.get("action", "")
         payload = cmd.get("payload", {})
-        print(f"[WS_DEBUG] received action={action} payload_keys={list(payload.keys()) if isinstance(payload, dict) else 'N/A'}", flush=True)
 
         if action == "get_status":
             await send_status(ws)
@@ -270,29 +265,24 @@ async def handle_ws_message(ws: WebSocket, msg: str) -> None:
             await ws.send_text(json.dumps({"type": "gateway_accounts", "data": accounts}))
 
         elif action == "connect_account":
-            print(f"[WS_DEBUG] connect_account payload={payload}", flush=True)
             account_id = int(payload.get("account_id", 0))
             acct = get_account(account_id)
-            print(f"[WS_DEBUG] account_id={account_id} acct_found={acct is not None} gateway={acct.get('gateway') if acct else 'N/A'} setting_keys={list(acct.get('setting', {}).keys()) if acct else 'N/A'}", flush=True)
             if not acct:
                 await ws.send_text(json.dumps({"type": "error", "msg": "账户不存在"}))
                 return
             gw_name = "CTP"
             if gw_name in main_engine.gateways:
                 await ws.send_text(json.dumps({"type": "log", "data": {"msg": f"账户已连接: {acct['alias']}", "gateway_name": ""}}))
-                print(f"[WS_DEBUG] gateway already connected", flush=True)
                 return
             if acct["gateway"] == "CTP" and CtpGateway is not None:
-                print(f"[WS_DEBUG] adding gateway and connecting...", flush=True)
                 main_engine.add_gateway(CtpGateway, gw_name)
                 # CTP connection is blocking — run in thread pool
-                import concurrent.futures
                 loop = asyncio.get_running_loop()
                 await loop.run_in_executor(None, main_engine.connect, acct["setting"], gw_name)
                 main_engine.write_log(f"账户已连接: {acct['alias']} ({gw_name})")
                 await ws.send_text(json.dumps({"type": "log", "data": {"msg": f"账户已连接: {acct['alias']} ({gw_name})", "gateway_name": gw_name}}))
             else:
-                print(f"[WS_DEBUG] SKIP: gateway={acct.get('gateway')} CtpGateway_is_None={CtpGateway is None}", flush=True)
+                await ws.send_text(json.dumps({"type": "error", "msg": f"网关不可用: {acct.get('gateway', 'N/A')}"}))
 
         elif action == "disconnect_account":
             account_id = int(payload.get("account_id", 0))
@@ -780,7 +770,6 @@ async def api_public_contracts(exchange: str = "", product: str = ""):
 @app.get("/api/contracts/products")
 async def api_contract_products(exchange: str = ""):
     """Get available product prefixes for an exchange."""
-    print(f"[API_ENTER] /products called exchange={exchange}", flush=True)
     from deepquant.trader.contract_cache import get_cache, query_contracts
     from deepquant.trader.constant import Exchange
     import re
@@ -791,9 +780,6 @@ async def api_contract_products(exchange: str = ""):
     try:
         ex = Exchange(exchange)
         contracts = query_contracts(ex)
-        print(f"[API_DEBUG] /products exchange={exchange} exchange_obj={ex} contract_count={len(contracts)}", flush=True)
-        if contracts:
-            print(f"[API_DEBUG] /products first contract={contracts[0]}", flush=True)
         products: dict[str, str] = {}
         for c in contracts:
             m = re.match(r'^([A-Za-z]+)', c['symbol'])
@@ -804,11 +790,9 @@ async def api_contract_products(exchange: str = ""):
                     name = re.sub(r'(看涨|看跌)$', '', name).strip()
                     products[p] = name
         result = [{"prefix": k, "name": v} for k, v in sorted(products.items())]
-        print(f"[API_DEBUG] /products result_count={len(result)}", flush=True)
         return {"products": result}
     except Exception as e:
-        print(f"[API_DEBUG] /products ERROR: {type(e).__name__}: {e}", flush=True)
-        import traceback; traceback.print_exc()
+        logger.error(f"[/api/contracts/products] error: {type(e).__name__}: {e}")
         return {"products": []}
 
 
@@ -834,7 +818,6 @@ def start_engine() -> None:
     main_engine = MainEngine(event_engine)
 
     # Gateways are created on-demand when connecting accounts
-    print(f"[SERVER_DEBUG] HAS_CTP={HAS_CTP} CtpGateway={CtpGateway}", flush=True)
     if HAS_CTP:
         logger.info("  CTP Gateway available")
     if HAS_PAPER:
