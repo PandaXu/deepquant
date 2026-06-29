@@ -117,13 +117,13 @@ const TabSettings = {
       if (!gw.gateway) return;
       if (!store.wsStatus) { $toast('WebSocket未连接，正在重连...', 'warn'); return; }
       if (!gw.settings || Object.keys(gw.settings).length === 0) { $toast('请先选择网关或加载账户', 'error'); return; }
-      $wsSend({ action: 'connect_gateway', payload: { gateway_name: gw.gateway, setting: gw.settings } });
+      $wsSend({ action: 'connect_gateway', payload: { gateway: gw.gateway, setting: gw.settings } });
       $toast(`正在连接 ${gw.gateway}...`, 'info');
     }
     function disconnectGateway() {
       if (!gw.gateway) return;
       if (!store.wsStatus) { $toast('WebSocket未连接', 'warn'); return; }
-      $wsSend({ action: 'disconnect_gateway', payload: { gateway_name: gw.gateway } });
+      $wsSend({ action: 'disconnect_gateway', payload: { gateway: gw.gateway } });
       $toast(`已断开 ${gw.gateway}`, 'info');
     }
     function loadAccount(a) {
