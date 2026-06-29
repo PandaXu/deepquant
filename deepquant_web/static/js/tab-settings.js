@@ -7,7 +7,7 @@ const TabSettings = {
       <div class="panel">
         <div class="panel-header"><span class="panel-title">🔌 网关连接</span></div>
         <div class="panel-body" style="padding:8px;display:flex;flex-direction:column;gap:8px">
-          <div class="form-row"><label>网关</label><select v-model="gw.gateway" @change="onGatewayChange" class="input"><option value="">选择网关</option><option v-for="g in store.gateways" :value="g.name">{{ g.name }}</option></select></div>
+          <div class="form-row"><label>网关</label><select v-model="gw.gateway" @change="onGatewayChange" class="input"><option value="">选择网关</option><option v-for="g in store.gateways" :value="g">{{ g }}</option></select></div>
           <div v-if="gw.gateway" class="form-grid">
             <div v-for="(v, k) in gw.settings" :key="k" class="form-row">
               <label>{{ k }}</label>
@@ -107,8 +107,8 @@ const TabSettings = {
     async function onGatewayChange() {
       gw.settings = {};
       if (!gw.gateway) return;
-      // Use default_setting from gateway list fetched via WebSocket
-      const g = store.gateways.find(g => g.name === gw.gateway);
+      // Use default_setting from gateway object stored in _gatewayObjects
+      const g = window._gatewayObjects ? window._gatewayObjects[gw.gateway] : null;
       if (g && g.default_setting) {
         gw.settings = JSON.parse(JSON.stringify(g.default_setting)); // deep clone
       }
@@ -141,7 +141,9 @@ const TabSettings = {
 
     onMounted(async () => {
       loadConfig();
-      $wsSend({ action: 'get_gateways' });
+      // Load gateways via REST API immediately (store both names and objects)
+      window._gatewayObjects = window._gatewayObjects || {};
+      try { const data = await $apiGet('/api/gateways'); if (Array.isArray(data)) { store.gateways = data.map(g => { window._gatewayObjects[g.name] = g; return g.name; }); } } catch(e) {}
       await $loadGatewayAccounts();
     });
 
