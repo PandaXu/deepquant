@@ -81,6 +81,7 @@ event_engine: EventEngine | None = None
 main_engine: MainEngine | None = None
 ws_clients: list[WebSocket] = []
 _active_account_name: str = ""  # currently connected CTP account alias
+_cached_gateways: list[str] = []  # polled from Gateway service in background
 _main_loop: asyncio.AbstractEventLoop | None = None
 
 
@@ -249,9 +250,8 @@ async def handle_ws_message(ws: WebSocket, msg: str) -> None:
 
         elif action == "get_gateway_accounts":
             accounts = get_accounts()
-            # Get gateway connection status from Gateway service
-            gw_status = await gateway_client.get_status() if gateway_client else {}
-            active_gateways = gw_status.get("gateways", [])
+            # Use cached gateway status (never blocks)
+            active_gateways = _cached_gateways
             for a in accounts:
                 gw_name = a.get("gateway", "CTP")
                 a["gateway_name"] = gw_name
@@ -462,33 +462,25 @@ async def send_status(ws: WebSocket) -> None:
 # REST API
 # ---------------------------------------------------------------------------
 @app.get("/api/status")
-async def api_status():
+def api_status():
     if not main_engine:
         return {"status": "offline"}
     return {
         "status": "online",
         "version": "0.0.1",
-        "gateways": (await gateway_client.get_status()).get("gateways", []) if gateway_client else [],
+        "gateways": _cached_gateways,
         "exchanges": [e.value for e in main_engine.get_all_exchanges()],
         "active_account": _active_account_name,
     }
 
 
 @app.get("/api/gateways")
-async def api_gateways():
-    result = [
+def api_gateways():
+    # Return static list immediately — never blocks on Gateway service
+    return [
         {"name": "CTP", "default_setting": {"用户名":"","密码":"","经纪商代码":"","交易服务器":"","行情服务器":"","产品名称":"","授权编码":"","柜台环境":["实盘","测试"]}},
         {"name": "TTS", "default_setting": {"用户名":"","密码":"","经纪商代码":"","交易服务器":"tcp://trading.openctp.cn:30001","行情服务器":"tcp://trading.openctp.cn:30011","产品名称":"","授权编码":"","柜台环境":["测试"]}},
     ]
-    if gateway_client:
-        try:
-            status = await asyncio.wait_for(gateway_client.get_status(), timeout=3.0)
-            for name in status.get("gateways", []):
-                if name not in {r["name"] for r in result}:
-                    result.append({"name": name, "default_setting": {}})
-        except (asyncio.TimeoutError, Exception):
-            pass  # Gateway not available — return defaults only
-    return result
 
 
 @app.get("/api/apps")
@@ -869,6 +861,17 @@ async def on_startup():
     global gateway_client
     gateway_client = GatewayClient(on_event=_on_gateway_event)
     await gateway_client.start()
+    # Background: poll Gateway status every 10s, never block
+    async def _poll_gw_status():
+        global _cached_gateways
+        while True:
+            try:
+                status = await asyncio.wait_for(gateway_client.get_status(), timeout=3.0)
+                _cached_gateways = status.get("gateways", [])
+            except Exception:
+                pass  # Gateway unreachable — keep last known value
+            await asyncio.sleep(10)
+    asyncio.create_task(_poll_gw_status())
     t = threading.Thread(target=start_engine, daemon=True)
     t.start()
     for _ in range(50):
