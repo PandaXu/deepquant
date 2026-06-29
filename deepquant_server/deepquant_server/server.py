@@ -295,9 +295,12 @@ async def handle_ws_message(ws: WebSocket, msg: str) -> None:
             acct = get_account(account_id)
             if acct:
                 gw_name = "CTP"
-                main_engine.remove_gateway(gw_name)
+                # Run in thread pool to avoid blocking event loop
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, main_engine.remove_gateway, gw_name)
                 _active_account_name = ""
                 main_engine.write_log(f"账户已断开: {acct['alias']} ({gw_name})")
+                await ws.send_text(json.dumps({"type": "log", "data": {"msg": f"账户已断开: {acct['alias']}", "gateway_name": gw_name}}))
 
         # ---- App: PaperAccount ----
         elif action == "get_paper_settings":
