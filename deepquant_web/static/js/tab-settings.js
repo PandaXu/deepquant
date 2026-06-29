@@ -22,17 +22,19 @@ const TabSettings = {
           <div style="margin-top:8px">
             <div style="font-size:11px;font-weight:600;color:var(--text-dim);margin-bottom:4px">已存账户</div>
             <table class="data-table">
-              <thead><tr><th>别名</th><th>网关</th><th>用户名</th><th>操作</th></tr></thead>
+              <thead><tr><th></th><th>别名</th><th>网关</th><th>用户名</th><th>操作</th></tr></thead>
               <tbody>
-                <tr v-for="a in store.gatewayAccounts" :key="a.id || a.alias">
+                <tr v-for="a in store.gatewayAccounts" :key="a.id || a.alias" :class="{ 'row-active': store.activeAccount === a.alias }">
+                  <td><span class="ws-dot" :class="store.activeAccount === a.alias ? 'on' : 'off'" style="display:inline-block"></span></td>
                   <td>{{ a.alias }}</td><td>{{ a.gateway }}</td><td>{{ a.username || '—' }}</td>
                   <td>
-                    <button class="btn btn-xs btn-primary" @click="connectAccount(a)">连接</button>
+                    <button v-if="store.activeAccount === a.alias" class="btn btn-xs btn-warn" @click="disconnectAccount(a)">断开</button>
+                    <button v-else class="btn btn-xs btn-primary" @click="connectAccount(a)">连接</button>
                     <button class="btn btn-xs" @click="loadAccount(a)">加载</button>
                     <button class="btn btn-xs btn-danger" @click="deleteAccount(a)">删除</button>
                   </td>
                 </tr>
-                <tr v-if="!store.gatewayAccounts || store.gatewayAccounts.length === 0"><td colspan="4" class="empty">无已存账户</td></tr>
+                <tr v-if="!store.gatewayAccounts || store.gatewayAccounts.length === 0"><td colspan="5" class="empty">无已存账户</td></tr>
               </tbody>
             </table>
             <button class="btn btn-sm" @click="saveCurrentAccount" style="margin-top:4px" :disabled="!gw.gateway">保存当前账户</button>
@@ -135,6 +137,12 @@ const TabSettings = {
       try { gw.settings = JSON.parse(a.setting_json || '{}'); } catch(e){ gw.settings = {}; }
       connectGateway();
     }
+    function disconnectAccount(a) {
+      $wsSend({ action: 'disconnect_account', payload: { account_id: a.id } });
+      loadedAccountId.value = null;
+      store.activeAccount = '';
+      $toast(`已断开 ${a.alias}`, 'info');
+    }
     function disconnectGateway() {
       if (!gw.gateway) return;
       if (!store.wsStatus) { $toast('WebSocket未连接', 'warn'); return; }
@@ -172,6 +180,6 @@ const TabSettings = {
     });
 
     return { gw, cfg, exchanges, accountList, loadConfig, saveConfig, onGatewayChange,
-      connectGateway, connectAccount, disconnectGateway, loadAccount, deleteAccount, saveCurrentAccount, store, fmtPrice: $fmtPrice, fmtVol: $fmtVol };
+      connectGateway, connectAccount, disconnectAccount, disconnectGateway, loadAccount, deleteAccount, saveCurrentAccount, store, fmtPrice: $fmtPrice, fmtVol: $fmtVol };
   }
 };

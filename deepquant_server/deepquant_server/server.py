@@ -273,8 +273,12 @@ async def handle_ws_message(ws: WebSocket, msg: str) -> None:
                 return
             gw_name = "CTP"
             if gw_name in main_engine.gateways:
-                await ws.send_text(json.dumps({"type": "log", "data": {"msg": f"账户已连接: {acct['alias']}", "gateway_name": ""}}))
-                return
+                if _active_account_name == acct["alias"]:
+                    await ws.send_text(json.dumps({"type": "log", "data": {"msg": f"账户已连接: {acct['alias']}", "gateway_name": ""}}))
+                    return
+                # Switching account: disconnect old, connect new
+                main_engine.write_log(f"切换账户: {_active_account_name} → {acct['alias']}")
+                main_engine.remove_gateway(gw_name)
             if acct["gateway"] == "CTP" and CtpGateway is not None:
                 main_engine.add_gateway(CtpGateway, gw_name)
                 _active_account_name = acct["alias"]  # set immediately, before blocking connect
