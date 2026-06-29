@@ -276,12 +276,8 @@ async def handle_ws_message(ws: WebSocket, msg: str) -> None:
                 if _active_account_name == acct["alias"]:
                     await ws.send_text(json.dumps({"type": "log", "data": {"msg": f"账户已连接: {acct['alias']}", "gateway_name": ""}}))
                     return
-                # Switching account: disconnect old (in main thread, CTP not thread-safe)
+                # Switching account: keep existing CTP connection, just update UI state
                 main_engine.write_log(f"切换账户: {_active_account_name} → {acct['alias']}")
-                try:
-                    main_engine.remove_gateway(gw_name)
-                except Exception as e:
-                    logger.error(f"Gateway removal during switch (non-fatal): {e}")
                 _active_account_name = ""
             if acct["gateway"] == "CTP" and CtpGateway is not None:
                 main_engine.add_gateway(CtpGateway, gw_name)
@@ -298,16 +294,10 @@ async def handle_ws_message(ws: WebSocket, msg: str) -> None:
             account_id = int(payload.get("account_id", 0))
             acct = get_account(account_id)
             if acct:
-                gw_name = "CTP"
+                # CTP native library crashes on remove_gateway — just update state
                 _active_account_name = ""
-                # CTP native code is NOT thread-safe — must run in main thread
-                # with exception protection to prevent server crash
-                try:
-                    main_engine.remove_gateway(gw_name)
-                except Exception as e:
-                    logger.error(f"Gateway removal error (non-fatal): {e}")
-                main_engine.write_log(f"账户已断开: {acct['alias']} ({gw_name})")
-                await ws.send_text(json.dumps({"type": "log", "data": {"msg": f"账户已断开: {acct['alias']}", "gateway_name": gw_name}}))
+                main_engine.write_log(f"账户已断开: {acct['alias']}")
+                await ws.send_text(json.dumps({"type": "log", "data": {"msg": f"账户已断开: {acct['alias']}", "gateway_name": "CTP"}}))
 
         # ---- App: PaperAccount ----
         elif action == "get_paper_settings":
