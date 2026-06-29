@@ -27,6 +27,7 @@ const TabSettings = {
                 <tr v-for="a in store.gatewayAccounts" :key="a.id || a.alias">
                   <td>{{ a.alias }}</td><td>{{ a.gateway }}</td><td>{{ a.username || '—' }}</td>
                   <td>
+                    <button class="btn btn-xs btn-primary" @click="connectAccount(a)">连接</button>
                     <button class="btn btn-xs" @click="loadAccount(a)">加载</button>
                     <button class="btn btn-xs btn-danger" @click="deleteAccount(a)">删除</button>
                   </td>
@@ -113,20 +114,40 @@ const TabSettings = {
         gw.settings = JSON.parse(JSON.stringify(g.default_setting)); // deep clone
       }
     }
+    const loadedAccountId = ref(null);
+
     function connectGateway() {
       if (!gw.gateway) return;
       if (!store.wsStatus) { $toast('WebSocket未连接，正在重连...', 'warn'); return; }
-      if (!gw.settings || Object.keys(gw.settings).length === 0) { $toast('请先选择网关或加载账户', 'error'); return; }
-      $wsSend({ action: 'connect_gateway', payload: { gateway: gw.gateway, setting: gw.settings } });
-      $toast(`正在连接 ${gw.gateway}...`, 'info');
+      if (loadedAccountId.value) {
+        // Use connect_account which properly adds the gateway engine
+        $wsSend({ action: 'connect_account', payload: { account_id: loadedAccountId.value } });
+        $toast('正在连接已存账户...', 'info');
+      } else {
+        if (!gw.settings || Object.keys(gw.settings).length === 0) { $toast('请先选择网关或加载账户', 'error'); return; }
+        $wsSend({ action: 'connect_gateway', payload: { gateway: gw.gateway, setting: gw.settings } });
+        $toast(`正在连接 ${gw.gateway}...`, 'info');
+      }
+    }
+    function connectAccount(a) {
+      loadedAccountId.value = a.id;
+      gw.gateway = a.gateway;
+      try { gw.settings = JSON.parse(a.setting_json || '{}'); } catch(e){ gw.settings = {}; }
+      connectGateway();
     }
     function disconnectGateway() {
       if (!gw.gateway) return;
       if (!store.wsStatus) { $toast('WebSocket未连接', 'warn'); return; }
-      $wsSend({ action: 'disconnect_gateway', payload: { gateway: gw.gateway } });
+      if (loadedAccountId.value) {
+        $wsSend({ action: 'disconnect_account', payload: { account_id: loadedAccountId.value } });
+        loadedAccountId.value = null;
+      } else {
+        $wsSend({ action: 'disconnect_gateway', payload: { gateway: gw.gateway } });
+      }
       $toast(`已断开 ${gw.gateway}`, 'info');
     }
     function loadAccount(a) {
+      loadedAccountId.value = a.id;
       gw.gateway = a.gateway;
       try { gw.settings = JSON.parse(a.setting_json || '{}'); } catch(e){ gw.settings = {}; }
     }
@@ -151,6 +172,6 @@ const TabSettings = {
     });
 
     return { gw, cfg, exchanges, accountList, loadConfig, saveConfig, onGatewayChange,
-      connectGateway, disconnectGateway, loadAccount, deleteAccount, saveCurrentAccount, store, fmtPrice: $fmtPrice, fmtVol: $fmtVol };
+      connectGateway, connectAccount, disconnectGateway, loadAccount, deleteAccount, saveCurrentAccount, store, fmtPrice: $fmtPrice, fmtVol: $fmtVol };
   }
 };
