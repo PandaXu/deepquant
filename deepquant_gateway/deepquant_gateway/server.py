@@ -81,8 +81,7 @@ def get_status():
 
 @app.post("/connect")
 async def connect_gateway(request: dict):
-    body = await request if isinstance(request, dict) else request
-    if isinstance(body, str): body = json.loads(body)
+    body = request  # FastAPI already parsed as dict
     gateway_type = body.get("gateway_type", "CTP")
     setting = body.get("setting", {})
     gw_class = GATEWAYS.get(gateway_type)
