@@ -31,6 +31,7 @@ SETTINGS["font.family"] = "PingFang SC"
 # Load available gateways from the gateway package
 from .gateway import CtpGateway, get_available as get_available_gateways
 HAS_CTP = CtpGateway is not None
+print(f"[SERVER_MODULE] CtpGateway={CtpGateway} HAS_CTP={HAS_CTP}", flush=True)
 
 try:
     from vnpy_paperaccount import PaperAccountApp
@@ -154,11 +155,14 @@ async def websocket_endpoint(ws: WebSocket) -> None:
     try:
         while True:
             msg = await ws.receive_text()
+            print(f"[WS_RECV] raw msg: {msg[:200]}", flush=True)
             await handle_ws_message(ws, msg)
     except WebSocketDisconnect:
         _remove_client(ws)
         logger.info(f"WebSocket client disconnected ({len(ws_clients)} total)")
-    except Exception:
+    except Exception as e:
+        print(f"[WS_ERR] {type(e).__name__}: {e}", flush=True)
+        import traceback; traceback.print_exc()
         _remove_client(ws)
 
 
@@ -173,6 +177,7 @@ async def handle_ws_message(ws: WebSocket, msg: str) -> None:
         cmd = json.loads(msg)
         action = cmd.get("action", "")
         payload = cmd.get("payload", {})
+        print(f"[WS_DEBUG] received action={action} payload_keys={list(payload.keys()) if isinstance(payload, dict) else 'N/A'}", flush=True)
 
         if action == "get_status":
             await send_status(ws)
@@ -181,7 +186,10 @@ async def handle_ws_message(ws: WebSocket, msg: str) -> None:
             gateway_name = payload.get("gateway", "")
             setting = payload.get("setting", {})
             if gateway_name:
-                main_engine.connect(setting, gateway_name)
+                # CTP connection is blocking — run in thread to avoid blocking event loop
+                import concurrent.futures
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, main_engine.connect, setting, gateway_name)
                 main_engine.write_log(f"Web: 连接 {gateway_name}")
 
         elif action == "send_order":
@@ -262,19 +270,29 @@ async def handle_ws_message(ws: WebSocket, msg: str) -> None:
             await ws.send_text(json.dumps({"type": "gateway_accounts", "data": accounts}))
 
         elif action == "connect_account":
+            print(f"[WS_DEBUG] connect_account payload={payload}", flush=True)
             account_id = int(payload.get("account_id", 0))
             acct = get_account(account_id)
+            print(f"[WS_DEBUG] account_id={account_id} acct_found={acct is not None} gateway={acct.get('gateway') if acct else 'N/A'} setting_keys={list(acct.get('setting', {}).keys()) if acct else 'N/A'}", flush=True)
             if not acct:
                 await ws.send_text(json.dumps({"type": "error", "msg": "账户不存在"}))
                 return
             gw_name = "CTP"
             if gw_name in main_engine.gateways:
                 await ws.send_text(json.dumps({"type": "log", "data": {"msg": f"账户已连接: {acct['alias']}", "gateway_name": ""}}))
+                print(f"[WS_DEBUG] gateway already connected", flush=True)
                 return
             if acct["gateway"] == "CTP" and CtpGateway is not None:
+                print(f"[WS_DEBUG] adding gateway and connecting...", flush=True)
                 main_engine.add_gateway(CtpGateway, gw_name)
-                main_engine.connect(acct["setting"], gw_name)
+                # CTP connection is blocking — run in thread pool
+                import concurrent.futures
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, main_engine.connect, acct["setting"], gw_name)
                 main_engine.write_log(f"账户已连接: {acct['alias']} ({gw_name})")
+                await ws.send_text(json.dumps({"type": "log", "data": {"msg": f"账户已连接: {acct['alias']} ({gw_name})", "gateway_name": gw_name}}))
+            else:
+                print(f"[WS_DEBUG] SKIP: gateway={acct.get('gateway')} CtpGateway_is_None={CtpGateway is None}", flush=True)
 
         elif action == "disconnect_account":
             account_id = int(payload.get("account_id", 0))
@@ -816,6 +834,7 @@ def start_engine() -> None:
     main_engine = MainEngine(event_engine)
 
     # Gateways are created on-demand when connecting accounts
+    print(f"[SERVER_DEBUG] HAS_CTP={HAS_CTP} CtpGateway={CtpGateway}", flush=True)
     if HAS_CTP:
         logger.info("  CTP Gateway available")
     if HAS_PAPER:
