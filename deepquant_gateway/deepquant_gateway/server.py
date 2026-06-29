@@ -17,17 +17,22 @@ from deepquant.trader.event import (
 from deepquant.trader.object import SubscribeRequest
 
 # Load gateway classes
+# Load gateway classes from their respective packages
+GATEWAYS = {}
+
 try:
     from deepquant_ctp.gateway.ctp_gateway import CtpGateway
-    HAS_CTP = True
+    if CtpGateway is not None:
+        GATEWAYS["CTP"] = CtpGateway
 except ImportError:
-    CtpGateway = None
-    HAS_CTP = False
+    pass
 
-GATEWAYS = {}
-if CtpGateway:
-    GATEWAYS["CTP"] = CtpGateway
-    GATEWAYS["TTS"] = CtpGateway  # TTS uses same CTP protocol
+try:
+    from deepquant_ctp.gateway.tts_gateway import TtsGateway
+    if TtsGateway is not None:
+        GATEWAYS["TTS"] = TtsGateway
+except ImportError:
+    pass
 
 app = FastAPI(title="DeepQuant Gateway", version="0.0.1")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])

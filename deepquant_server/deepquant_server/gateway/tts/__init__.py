@@ -1,14 +1,15 @@
-"""TTS gateway — CTP-compatible simulation (OpenCTP / Tick Trading System)."""
+"""TTS gateway — Tick Trading System (CTP-compatible simulation)."""
 
 TtsGateway = None  # type: ignore[assignment]
 
-# TTS uses the same CTP protocol — reuse CtpGateway class
+# Try the dedicated TtsGateway class first
 try:
-    from deepquant_ctp.gateway.ctp_gateway import CtpGateway as _Ctp  # noqa: F401
-    TtsGateway = _Ctp
+    from deepquant_ctp.gateway.tts_gateway import TtsGateway as _Tts  # noqa: F401
+    TtsGateway = _Tts
 except ImportError:
+    # Fallback: try vnpy_tts package
     try:
-        from vnpy_ctp import CtpGateway as _Ctp  # noqa: F401
-        TtsGateway = _Ctp
+        from vnpy_tts import TtsGateway as _Tts  # noqa: F401
+        TtsGateway = _Tts
     except ImportError:
         pass
