@@ -145,6 +145,45 @@ const TabTrading = {
         </div>
       </div>
 
+      <!-- Tick Table -->
+      <div class="panel" style="flex:0 0 auto; max-height:200px; margin:0 6px" v-if="tickList.length">
+        <div class="panel-header">
+          <span class="panel-title">📈 行情 Tick</span>
+          <span class="panel-badge">{{ tickList.length }}</span>
+          <button class="btn btn-xs" @click="exportTicks" style="margin-left:auto">CSV</button>
+        </div>
+        <div class="panel-body" style="overflow:auto; max-height:160px">
+          <table class="data-table">
+            <thead><tr>
+              <th @click="sortTick('vt_symbol')">合约</th>
+              <th class="num" @click="sortTick('last_price')">最新价</th>
+              <th class="num" @click="sortTick('volume')">成交量</th>
+              <th class="num" @click="sortTick('open_price')">开盘</th>
+              <th class="num" @click="sortTick('high_price')">最高</th>
+              <th class="num" @click="sortTick('low_price')">最低</th>
+              <th class="num">买一价</th><th class="num">买一量</th>
+              <th class="num">卖一价</th><th class="num">卖一量</th>
+              <th class="num">时间</th>
+            </tr></thead>
+            <tbody>
+              <tr v-for="t in sortedTickList" :key="t.vt_symbol" @click="onPickTick(t)" style="cursor:pointer">
+                <td>{{ t.vt_symbol }}</td>
+                <td class="num" :class="chgCls(t)">{{ fmtPrice(t.last_price) }}</td>
+                <td class="num">{{ fmtVol(t.volume) }}</td>
+                <td class="num">{{ fmtPrice(t.open_price) }}</td>
+                <td class="num">{{ fmtPrice(t.high_price) }}</td>
+                <td class="num">{{ fmtPrice(t.low_price) }}</td>
+                <td class="num bid">{{ fmtPrice(t.bid_price_1) }}</td>
+                <td class="num">{{ t.bid_volume_1 }}</td>
+                <td class="num ask">{{ fmtPrice(t.ask_price_1) }}</td>
+                <td class="num">{{ t.ask_volume_1 }}</td>
+                <td class="num" style="font-size:10px">{{ timeStr(t.datetime || t.time) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <!-- Bottom Tables -->
       <div class="trading-bottom">
         <!-- Position Table -->
@@ -474,18 +513,41 @@ const TabTrading = {
     onMounted(() => {
       nextTick(() => { initChart(); });
     });
+    // ---- Tick sorting ----
+    const tickSortKey = ref('');
+    const tickSortDir = ref(1);
+    const sortedTickList = computed(() => {
+      let arr = Object.values(store.tick);
+      if (tickSortKey.value) {
+        arr = [...arr].sort((a, b) => {
+          const va = a[tickSortKey.value] || 0, vb = b[tickSortKey.value] || 0;
+          return (va > vb ? 1 : -1) * tickSortDir.value;
+        });
+      }
+      return arr;
+    });
+    function sortTick(key) {
+      if (tickSortKey.value === key) { tickSortDir.value *= -1; }
+      else { tickSortKey.value = key; tickSortDir.value = 1; }
+    }
+    function exportTicks() {
+      $exportCSV(['合约','最新价','成交量','开盘','最高','最低','买一价','买一量','卖一价','卖一量','时间'],
+        sortedTickList.value.map(t => [t.vt_symbol, t.last_price, t.volume, t.open_price, t.high_price, t.low_price, t.bid_price_1, t.bid_volume_1, t.ask_price_1, t.ask_volume_1, t.datetime || t.time]),
+        'ticks_' + new Date().toISOString().slice(0,10) + '.csv');
+    }
+
     onUnmounted(() => {
       if (chartInstance) { chartInstance.dispose(); chartInstance = null; }
     });
 
     return {
       klineEl, chartSymbol, chartInterval, depthTick, showExpired, autoPrice, orderFilter,
-      form, exchanges, products, posSortKey, posSortDir,
-      tickList, orderList, tradeList, posList, accountList, contractName,
+      form, exchanges, products, posSortKey, posSortDir, tickSortKey, tickSortDir,
+      tickList, sortedTickList, orderList, tradeList, posList, accountList, contractName,
       filteredContracts, filteredOrders, canOrder,
-      statusText, isActiveOrder, chgCls, chgText, pnlCls, sortPos,
+      statusText, isActiveOrder, chgCls, chgText, pnlCls, sortPos, sortTick,
       loadChart, fillPrice, onPickTick, onExchange, onProduct, onSymbol,
-      placeOrder, cancelOrder, cancelAll, closeAll, closePos, exportOrders,
+      placeOrder, cancelOrder, cancelAll, closeAll, closePos, exportOrders, exportTicks,
       store, fmtPrice: $fmtPrice, fmtVol: $fmtVol, timeStr: $timeStr,
     };
   }
