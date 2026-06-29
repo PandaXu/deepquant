@@ -715,6 +715,8 @@ select { cursor: pointer; }
 .form-row label { font-size:10px; color:var(--text-dim); font-weight:600; text-transform:uppercase; }
 .form-actions { display:flex; gap:4px; }
 .readonly-field { padding:6px 10px; background:var(--bg-input); border-radius:var(--radius-sm); font-size:13px; color:var(--text-dim); }
+.checkbox-label { display:inline-flex; align-items:center; gap:4px; font-size:12px; cursor:pointer; }
+.checkbox-label input { margin:0; }
 
 /* Buttons */
 .btn-long { background:var(--red); color:#fff; flex:1; font-size:13px; font-weight:600; }
