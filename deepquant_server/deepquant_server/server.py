@@ -864,7 +864,9 @@ def start_engine() -> None:
     default = get_default_account()
     if default and default["gateway"] == "CTP" and CtpGateway is not None:
         gw_name = "CTP"
+        global _active_account_name
         main_engine.add_gateway(CtpGateway, gw_name)
+        _active_account_name = default["alias"]
         main_engine.connect(default["setting"], gw_name)
         logger.info(f"Auto-connected: {default['alias']} ({gw_name})")
 
