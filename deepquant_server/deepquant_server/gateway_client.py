@@ -19,11 +19,16 @@ class GatewayClient:
 
     async def start(self):
         self._session = aiohttp.ClientSession()
-        asyncio.create_task(self._ws_connect_loop())
+        self._ws_task = asyncio.create_task(self._ws_connect_loop())
 
     async def stop(self):
+        if hasattr(self, '_ws_task') and self._ws_task:
+            self._ws_task.cancel()
+            try: await self._ws_task
+            except asyncio.CancelledError: pass
         if self._ws: await self._ws.close()
         if self._session: await self._session.close()
+        self._connected = False
 
     async def _ws_connect_loop(self):
         while True:
