@@ -57,7 +57,7 @@ const TabTrading = {
               <label>品种</label>
               <select v-model="form.product" @change="onProduct" class="input" :disabled="!form.exchange">
                 <option value="">选择品种</option>
-                <option v-for="p in products" :value="p" :key="p">{{ p }}</option>
+                <option v-for="p in products" :value="p.prefix" :key="p.prefix">{{ p.prefix }} — {{ p.name }}</option>
               </select>
             </div>
             <div class="form-row">
@@ -399,8 +399,7 @@ const TabTrading = {
       form.symbol = '';
       if (!form.product) return;
       try {
-        const raw = await $apiGet(`/api/contracts?exchange=${form.exchange}&product=${form.product}`) || [];
-        contracts.value = raw.map(c => ({...c, expired: isExpired(c.symbol || c.vt_symbol || '') }));
+        const raw = await $apiGet(`/api/contracts/public?exchange=${form.exchange}&product=${form.product}`) || {}; const list = Array.isArray(raw) ? raw : (raw.contracts || []); contracts.value = list.map(c => ({...c, expired: isExpired(c.symbol || c.vt_symbol || '') }));
       } catch(e) { $toast('加载合约失败', 'error'); }
     }
     function onSymbol() {

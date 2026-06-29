@@ -2,12 +2,12 @@
 
 CtpGateway = None  # type: ignore[assignment]
 
-# Try the installed deepquant_ctp package first
+# Try importing from the local deepquant_ctp project
 try:
-    from deepquant_ctp import CtpGateway as _Ctp  # noqa: F401
+    from deepquant_ctp.gateway.ctp_gateway import CtpGateway as _Ctp  # noqa: F401
     CtpGateway = _Ctp
 except ImportError:
-    # Fallback: try loading from local source (development mode)
+    # Fallback: try the legacy vnpy_ctp package
     try:
         from vnpy_ctp import CtpGateway as _Ctp  # noqa: F401
         CtpGateway = _Ctp

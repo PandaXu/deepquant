@@ -60,6 +60,7 @@ except ImportError:
 # Web app
 # ---------------------------------------------------------------------------
 app = FastAPI(title="DeepQuant Server", version="0.0.1")
+print("[SERVER_MODULE] server.py loaded", flush=True)
 
 # Allow all origins for development (web frontend on different port)
 app.add_middleware(
@@ -761,6 +762,7 @@ async def api_public_contracts(exchange: str = "", product: str = ""):
 @app.get("/api/contracts/products")
 async def api_contract_products(exchange: str = ""):
     """Get available product prefixes for an exchange."""
+    print(f"[API_ENTER] /products called exchange={exchange}", flush=True)
     from deepquant.trader.contract_cache import get_cache, query_contracts
     from deepquant.trader.constant import Exchange
     import re
@@ -771,19 +773,24 @@ async def api_contract_products(exchange: str = ""):
     try:
         ex = Exchange(exchange)
         contracts = query_contracts(ex)
+        print(f"[API_DEBUG] /products exchange={exchange} exchange_obj={ex} contract_count={len(contracts)}", flush=True)
+        if contracts:
+            print(f"[API_DEBUG] /products first contract={contracts[0]}", flush=True)
         products: dict[str, str] = {}
         for c in contracts:
             m = re.match(r'^([A-Za-z]+)', c['symbol'])
             if m:
                 p = m.group(1).upper()
                 if p not in products:
-                    # Extract Chinese name from contract name
                     name = re.sub(r'\d+$', '', c['name']).strip()
                     name = re.sub(r'(看涨|看跌)$', '', name).strip()
                     products[p] = name
         result = [{"prefix": k, "name": v} for k, v in sorted(products.items())]
+        print(f"[API_DEBUG] /products result_count={len(result)}", flush=True)
         return {"products": result}
-    except ValueError:
+    except Exception as e:
+        print(f"[API_DEBUG] /products ERROR: {type(e).__name__}: {e}", flush=True)
+        import traceback; traceback.print_exc()
         return {"products": []}
 
 

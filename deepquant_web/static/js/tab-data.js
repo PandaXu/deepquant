@@ -41,7 +41,7 @@ const TabData = {
         <div class="panel-header"><span class="panel-title">⬇️ 历史数据下载</span></div>
         <div style="display:flex;gap:8px;padding:8px;flex-wrap:wrap;align-items:end">
           <div class="form-row"><label>交易所</label><select v-model="dl.exchange" @change="onDlExchange" class="input"><option value="">选择</option><option v-for="e in exchanges" :value="e.value">{{ e.name }}</option></select></div>
-          <div class="form-row"><label>品种</label><select v-model="dl.product" @change="onDlProduct" class="input"><option value="">选择</option><option v-for="p in dlProducts" :value="p">{{ p }}</option></select></div>
+          <div class="form-row"><label>品种</label><select v-model="dl.product" @change="onDlProduct" class="input"><option value="">选择</option><option v-for="p in dlProducts" :value="p.prefix">{{ p.prefix }} — {{ p.name }}</option></select></div>
           <div class="form-row"><label>合约</label><select v-model="dl.symbol" class="input"><option value="">选择</option><option v-for="c in dlContracts" :value="c.vt_symbol">{{ c.symbol }}</option></select></div>
           <div class="form-row"><label>周期</label><select v-model="dl.interval" class="input"><option>1m</option><option>5m</option><option>15m</option><option>30m</option><option>1h</option><option>d</option><option>w</option></select></div>
           <div class="form-row"><label>起始日</label><input v-model="dl.start" class="input" type="date"></div>

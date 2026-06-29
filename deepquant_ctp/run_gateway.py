@@ -9,13 +9,25 @@ Usage:
     python run_gateway.py --account 3
     python run_gateway.py --account SimNow --symbols rb2501.SHFE
     python run_gateway.py --list-accounts
+    python run_gateway.py --backend tts --account 5 --symbols rb2501.SHFE
     python run_gateway.py -h
 """
+import os
 import signal
 import sys
 import threading
 import time
 from datetime import datetime
+
+# ---------------------------------------------------------------------------
+# Backend selection — must happen BEFORE any deepquant_ctp import
+# ---------------------------------------------------------------------------
+for i, arg in enumerate(sys.argv):
+    if arg == "--backend" and i + 1 < len(sys.argv):
+        val = sys.argv[i + 1].lower()
+        if val in ("official", "tts"):
+            os.environ["DEEPQUANT_CTP_BACKEND"] = val
+        break
 
 from loguru import logger
 
@@ -59,6 +71,7 @@ USAGE = """\
   --symbols <列表>          逗号分隔的订阅合约 (如 rb2501.SHFE,ag2501.SHFE)
   --list-accounts           列出所有已保存账户并退出
   --debug                   打印详尽握手日志 (等同 --log-level TRACE)
+  --backend <official|tts>  CTP API 后端选择: official(官方CTP) / tts(OpenCTP兼容)
   --log-level <级别>        日志级别: TRACE/DEBUG/INFO/WARNING/ERROR (默认 INFO)
   -h, --help                显示此帮助信息
 
@@ -78,6 +91,7 @@ def parse_args(argv: list[str]) -> dict:
         "list_accounts": False,
         "log_level": "INFO",
         "debug": False,
+        "backend": "",
         "help": False,
     }
     i = 0
@@ -110,6 +124,13 @@ def parse_args(argv: list[str]) -> dict:
             opts["debug"] = True
             opts["log_level"] = "TRACE"
             i += 1
+        elif arg == "--backend":
+            if i + 1 < len(argv):
+                opts["backend"] = argv[i + 1].lower()
+                i += 2
+            else:
+                logger.error("--backend 需要参数: official 或 tts")
+                sys.exit(1)
         elif arg == "--log-level":
             if i + 1 < len(argv):
                 opts["log_level"] = argv[i + 1].upper()
@@ -385,7 +406,8 @@ def main() -> None:
 
     # Print CTP API version info
     try:
-        from deepquant_ctp.api import MdApi, TdApi
+        from deepquant_ctp.api import MdApi, TdApi, get_backend, available_backends
+        logger.info(f"CTP API 后端: {get_backend()} (可用: {available_backends()})")
         logger.info(f"CTP API 库: MdApi={MdApi}, TdApi={TdApi}")
     except Exception:
         pass
