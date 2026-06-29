@@ -277,10 +277,10 @@ async def handle_ws_message(ws: WebSocket, msg: str) -> None:
                 return
             if acct["gateway"] == "CTP" and CtpGateway is not None:
                 main_engine.add_gateway(CtpGateway, gw_name)
+                _active_account_name = acct["alias"]  # set immediately, before blocking connect
                 # CTP connection is blocking — run in thread pool
                 loop = asyncio.get_running_loop()
                 await loop.run_in_executor(None, main_engine.connect, acct["setting"], gw_name)
-                _active_account_name = acct["alias"]
                 main_engine.write_log(f"账户已连接: {acct['alias']} ({gw_name})")
                 await ws.send_text(json.dumps({"type": "log", "data": {"msg": f"账户已连接: {acct['alias']} ({gw_name})", "gateway_name": gw_name}}))
             else:
