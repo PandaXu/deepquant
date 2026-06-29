@@ -806,7 +806,7 @@ async def api_contract_products(exchange: str = ""):
 # ---------------------------------------------------------------------------
 def start_engine() -> None:
     """Initialize VeighNa trading engine (runs in background thread)."""
-    global event_engine, main_engine
+    global event_engine, main_engine, _active_account_name
 
     # Configure loguru file output
     from pathlib import Path
@@ -864,7 +864,6 @@ def start_engine() -> None:
     default = get_default_account()
     if default and default["gateway"] == "CTP" and CtpGateway is not None:
         gw_name = "CTP"
-        global _active_account_name
         main_engine.add_gateway(CtpGateway, gw_name)
         _active_account_name = default["alias"]
         main_engine.connect(default["setting"], gw_name)
