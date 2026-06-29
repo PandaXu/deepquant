@@ -1,5 +1,4 @@
 // ===== DeepQuant App — Bootstrap =====
-const { createApp, ref, computed, watch } = Vue;
 
 const App = {
   setup() {
@@ -13,21 +12,21 @@ const App = {
     const activeTab = ref('trading');
 
     // Computed counts for status bar
-    const orderCount = computed(() => Object.keys($s.order).length);
-    const tickCount = computed(() => Object.keys($s.tick).length);
-    const posCount = computed(() => Object.keys($s.position).length);
-    const tradeCount = computed(() => Object.keys($s.trade).length);
+    const orderCount = computed(() => Object.keys(store.order).length);
+    const tickCount = computed(() => Object.keys(store.tick).length);
+    const posCount = computed(() => Object.keys(store.position).length);
+    const tradeCount = computed(() => Object.keys(store.trade).length);
 
     // Collapse log when leaving log tab
     const logPaused = computed({
-      get: () => $s.logPaused,
-      set: (v) => { $s.logPaused = v; }
+      get: () => store.logPaused,
+      set: (v) => { store.logPaused = v; }
     });
 
     // Auto-pause log when not on log tab, resume when entering
-    watch(activeTab, (tab) => { $s.logPaused = tab !== 'log'; });
+    watch(activeTab, (tab) => { store.logPaused = tab !== 'log'; });
 
-    return { tabs, activeTab, orderCount, tickCount, posCount, tradeCount, logPaused, $s };
+    return { tabs, activeTab, orderCount, tickCount, posCount, tradeCount, logPaused, store, wsConnect: $wsConnect };
   },
 };
 

@@ -1,5 +1,4 @@
 // ===== Tab 1: 行情交易 =====
-const { ref, reactive, computed, watch, onMounted, onUnmounted, nextTick } = Vue;
 
 const TabTrading = {
   template: `
@@ -119,7 +118,7 @@ const TabTrading = {
             <div class="form-row">
               <label>网关</label>
               <select v-model="form.gateway" class="input">
-                <option v-for="gw in $s.gateways" :value="gw" :key="gw">{{ gw }}</option>
+                <option v-for="gw in store.gateways" :value="gw" :key="gw">{{ gw }}</option>
                 <option value="">自动</option>
               </select>
             </div>
@@ -274,13 +273,13 @@ const TabTrading = {
     const posSortDir = ref(1);
 
     // ---- Computed ----
-    const tickList = computed(() => Object.values($s.tick));
-    const orderList = computed(() => Object.values($s.order).sort((a, b) =>
+    const tickList = computed(() => Object.values(store.tick));
+    const orderList = computed(() => Object.values(store.order).sort((a, b) =>
       (b.order_time || b.create_time || 0) - (a.order_time || a.create_time || 0)));
-    const tradeList = computed(() => Object.values($s.trade).sort((a, b) =>
+    const tradeList = computed(() => Object.values(store.trade).sort((a, b) =>
       (b.trade_time || b.time || 0) - (a.trade_time || a.time || 0)));
     const posList = computed(() => {
-      let arr = Object.values($s.position);
+      let arr = Object.values(store.position);
       if (posSortKey.value) {
         arr = [...arr].sort((a, b) => {
           const va = a[posSortKey.value] || 0, vb = b[posSortKey.value] || 0;
@@ -289,7 +288,7 @@ const TabTrading = {
       }
       return arr;
     });
-    const accountList = computed(() => Object.values($s.account));
+    const accountList = computed(() => Object.values(store.account));
     const contractName = computed(() => {
       const c = contracts.value.find(c => c.vt_symbol === form.symbol);
       return c ? c.name : '';
@@ -435,10 +434,10 @@ const TabTrading = {
       $wsSend({ action: 'cancel_order', payload: { orderid: order.orderid || order.vt_orderid, symbol: order.symbol, exchange: order.exchange, gateway: order.gateway_name || '' } });
     }
     function cancelAll() {
-      Object.values($s.order).forEach(o => { if (isActiveOrder(o)) cancelOrder(o); });
+      Object.values(store.order).forEach(o => { if (isActiveOrder(o)) cancelOrder(o); });
     }
     function closeAll() {
-      Object.values($s.position).forEach(p => {
+      Object.values(store.position).forEach(p => {
         const parts = (p.vt_symbol || '').split('.');
         const oppDir = p.direction === 'LONG' ? 'SHORT' : 'LONG';
         $wsSend({
@@ -465,8 +464,8 @@ const TabTrading = {
     }
 
     // ---- Watch tick for chart/depth updates ----
-    watch(() => $s.tick, () => {
-      const ticks = Object.values($s.tick);
+    watch(() => store.tick, () => {
+      const ticks = Object.values(store.tick);
       if (ticks.length && chartSymbol.value) {
         const t = ticks.find(t => t.vt_symbol === chartSymbol.value);
         if (t) { depthTick.value = t; addTickToChart(t); }
@@ -488,6 +487,7 @@ const TabTrading = {
       statusText, isActiveOrder, chgCls, chgText, pnlCls, sortPos,
       loadChart, fillPrice, onPickTick, onExchange, onProduct, onSymbol,
       placeOrder, cancelOrder, cancelAll, closeAll, closePos, exportOrders,
+      store, fmtPrice: $fmtPrice, fmtVol: $fmtVol, timeStr: $timeStr,
     };
   }
 };

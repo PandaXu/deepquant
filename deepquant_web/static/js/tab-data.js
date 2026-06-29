@@ -1,5 +1,4 @@
 // ===== Tab 2: 数据管理 =====
-const { ref, reactive, computed, onMounted } = Vue;
 
 const TabData = {
   template: `
@@ -65,11 +64,11 @@ const TabData = {
           <table class="data-table">
             <thead><tr><th>合约</th><th>交易所</th><th>周期</th><th class="num">数据量</th><th>开始时间</th><th>结束时间</th></tr></thead>
             <tbody>
-              <tr v-for="d in $s.dataOverview" :key="d.vt_symbol + d.interval">
+              <tr v-for="d in store.dataOverview" :key="d.vt_symbol + d.interval">
                 <td>{{ d.vt_symbol }}</td><td>{{ d.exchange }}</td><td>{{ d.interval }}</td>
                 <td class="num">{{ d.count }}</td><td>{{ d.start }}</td><td>{{ d.end }}</td>
               </tr>
-              <tr v-if="$s.dataOverview.length === 0"><td colspan="6" class="empty">暂无数据</td></tr>
+              <tr v-if="store.dataOverview.length === 0"><td colspan="6" class="empty">暂无数据</td></tr>
             </tbody>
           </table>
         </div>
@@ -121,6 +120,6 @@ const TabData = {
     onMounted(() => { refreshOverview(); });
 
     return { contractFilter, allContracts, dl, dlProducts, dlContracts, exchanges, filteredContracts,
-      queryContracts, exportContracts, onDlExchange, onDlProduct, startDownload, refreshOverview };
+      queryContracts, exportContracts, onDlExchange, onDlProduct, startDownload, refreshOverview, store };
   }
 };

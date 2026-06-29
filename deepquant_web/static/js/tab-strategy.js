@@ -1,5 +1,4 @@
 // ===== Tab 3: 策略 =====
-const { ref, reactive, onMounted } = Vue;
 
 const TabStrategy = {
   template: `
@@ -14,7 +13,7 @@ const TabStrategy = {
           </div>
         </div>
         <div class="panel-body" style="display:flex;flex-wrap:wrap;gap:8px;padding:8px">
-          <div v-for="s in $s.strategies" :key="s.strategy_name || s.id" class="strategy-card">
+          <div v-for="s in store.strategies" :key="s.strategy_name || s.id" class="strategy-card">
             <div class="sc-header">
               <span class="sc-name">{{ s.strategy_name || s.class_name }}</span>
               <span :class="'sc-status status-' + (s.status || 'STOPPED')">{{ statusText(s.status) }}</span>
@@ -32,7 +31,7 @@ const TabStrategy = {
               <button class="btn btn-xs btn-danger" @click="removeStrategy(s)">删除</button>
             </div>
           </div>
-          <div v-if="!$s.strategies || $s.strategies.length === 0" class="empty" style="width:100%;text-align:center;padding:24px;color:var(--text-dim)">
+          <div v-if="!store.strategies || store.strategies.length === 0" class="empty" style="width:100%;text-align:center;padding:24px;color:var(--text-dim)">
             暂无策略，点击“添加”创建
           </div>
         </div>
@@ -42,7 +41,7 @@ const TabStrategy = {
       <div class="panel">
         <div class="panel-header"><span class="panel-title">🔬 策略回测</span></div>
         <div style="display:flex;gap:8px;padding:8px;flex-wrap:wrap;align-items:end">
-          <div class="form-row"><label>策略</label><select v-model="bt.className" class="input"><option v-for="c in $s.btClasses" :value="c">{{ c }}</option></select></div>
+          <div class="form-row"><label>策略</label><select v-model="bt.className" class="input"><option v-for="c in store.btClasses" :value="c">{{ c }}</option></select></div>
           <div class="form-row"><label>合约</label><input v-model="bt.vtSymbol" class="input" placeholder="如 IF2606.CFFEX"></div>
           <div class="form-row"><label>周期</label><select v-model="bt.interval" class="input"><option>1m</option><option>1h</option><option>d</option></select></div>
           <div class="form-row"><label>起始</label><input v-model="bt.start" class="input" type="date"></div>
@@ -81,7 +80,7 @@ const TabStrategy = {
             <button class="btn btn-xs" @click="showAddModal = false">✕</button>
           </div>
           <div class="modal-body form-grid">
-            <div class="form-row"><label>策略类型</label><select v-model="newStrategy.class_name" class="input"><option v-for="c in $s.btClasses" :value="c">{{ c }}</option></select></div>
+            <div class="form-row"><label>策略类型</label><select v-model="newStrategy.class_name" class="input"><option v-for="c in store.btClasses" :value="c">{{ c }}</option></select></div>
             <div class="form-row"><label>策略名称</label><input v-model="newStrategy.strategy_name" class="input"></div>
             <div class="form-row"><label>合约</label><input v-model="newStrategy.vt_symbol" class="input" placeholder="如 IF2606.CFFEX"></div>
             <div class="form-row"><label>参数 (JSON)</label><input v-model="newStrategy.paramsJson" class="input" placeholder='{"fast_window":10}'></div>
@@ -127,6 +126,6 @@ const TabStrategy = {
     onMounted(() => { refreshStrategies(); $wsSend({ action: 'get_bt_classes' }); });
 
     return { showAddModal, editingStrategy, newStrategy, bt, equityEl, statusText,
-      refreshStrategies, initStrategy, startStrategy, stopStrategy, removeStrategy, editStrategy, saveStrategy, runBacktest };
+      refreshStrategies, initStrategy, startStrategy, stopStrategy, removeStrategy, editStrategy, saveStrategy, runBacktest, store };
   }
 };

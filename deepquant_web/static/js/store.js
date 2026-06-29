@@ -1,5 +1,5 @@
 // ===== DeepQuant Vue Store — Reactive state + WebSocket + API =====
-const { reactive, ref, computed, watch, toRaw } = Vue;
+const { reactive, ref, computed, watch, toRaw, onMounted, onUnmounted, nextTick, createApp } = Vue;
 
 // ---- Config ----
 const API_BASE = (() => {
@@ -9,7 +9,7 @@ const API_BASE = (() => {
 })();
 
 // ---- Reactive Store ----
-const $s = reactive({
+const store = reactive({
   tick: {},
   order: {},
   trade: {},
@@ -36,15 +36,15 @@ function $wsConnect() {
   const wsUrl = API_BASE.replace(/^http/, 'ws') + '/ws';
   _ws = new WebSocket(wsUrl);
   _ws.onopen = () => {
-    $s.wsReconnect = 0;
-    $s.wsStatus = true;
+    store.wsReconnect = 0;
+    store.wsStatus = true;
     _pending.forEach(m => { try { _ws.send(m); } catch(e) {} });
     _pending = [];
     $wsSend({ action: 'subscribe_all' });
   };
   _ws.onclose = () => {
-    $s.wsStatus = false;
-    const delay = Math.min(1000 * ++$s.wsReconnect, 10000);
+    store.wsStatus = false;
+    const delay = Math.min(1000 * ++store.wsReconnect, 10000);
     setTimeout($wsConnect, delay);
   };
   _ws.onerror = () => _ws.close();
@@ -64,46 +64,46 @@ function _onWsMessage(e) {
     if (!type) return;
 
     if (type === 'tick' && data) {
-      $s.tick[data.vt_symbol] = data;
+      store.tick[data.vt_symbol] = data;
     } else if (type === 'order' && data) {
-      $s.order[data.orderid || data.vt_orderid] = data;
+      store.order[data.orderid || data.vt_orderid] = data;
     } else if (type === 'trade' && data) {
-      $s.trade[data.tradeid || data.vt_tradeid] = data;
+      store.trade[data.tradeid || data.vt_tradeid] = data;
     } else if (type === 'position' && data) {
-      $s.position[data.vt_positionid || data.symbol] = data;
+      store.position[data.vt_positionid || data.symbol] = data;
     } else if (type === 'account' && data) {
-      $s.account[data.vt_accountid || data.accountid] = data;
+      store.account[data.vt_accountid || data.accountid] = data;
     } else if (type === 'contract' && data) {
-      $s.contract[data.vt_symbol] = data;
+      store.contract[data.vt_symbol] = data;
     } else if (type === 'log') {
       const entry = typeof data === 'string' ? { msg: data, time: new Date().toLocaleTimeString() } : data;
-      $s.log.push(entry);
-      if ($s.log.length > $s.maxLog) $s.log.splice(0, $s.log.length - $s.maxLog);
+      store.log.push(entry);
+      if (store.log.length > store.maxLog) store.log.splice(0, store.log.length - store.maxLog);
     } else if (type === 'eLog' && data) {
       const entry = typeof data === 'string'
         ? { time: new Date().toLocaleTimeString('zh-CN', { hour12: false }), level: 'INFO', source: '', msg: data }
         : { time: data.time || data.msg?.time || new Date().toLocaleTimeString('zh-CN', { hour12: false }),
             level: data.level || 'INFO', source: data.source || data.gateway_name || '',
             msg: data.msg || (typeof data === 'string' ? data : JSON.stringify(data)) };
-      if (!$s.logPaused) {
-        $s.log.push(entry);
-        if ($s.log.length > $s.maxLog) $s.log.splice(0, $s.log.length - $s.maxLog);
+      if (!store.logPaused) {
+        store.log.push(entry);
+        if (store.log.length > store.maxLog) store.log.splice(0, store.log.length - store.maxLog);
       }
     } else if (type === 'cta_strategies' && Array.isArray(data)) {
-      $s.strategies = data;
+      store.strategies = data;
     } else if (type === 'bt_classes' && Array.isArray(data)) {
-      $s.btClasses = data;
+      store.btClasses = data;
     } else if (type === 'data_overview' && Array.isArray(data)) {
-      $s.dataOverview = data;
+      store.dataOverview = data;
     } else if (type === 'gateway_list' && Array.isArray(data)) {
-      $s.gateways = data;
+      store.gateways = data;
     } else if (type === 'gateway_accounts' && Array.isArray(data)) {
-      $s.gatewayAccounts = data;
+      store.gatewayAccounts = data;
     } else if (type === 'strategy_logs' && data) {
       const e = typeof data === 'string' ? { msg: data, time: new Date().toLocaleTimeString() } : data;
-      if (!$s.logPaused) {
-        $s.log.push({ time: e.time || new Date().toLocaleTimeString(), level: 'INFO', source: 'STRATEGY', msg: e.msg || JSON.stringify(e) });
-        if ($s.log.length > $s.maxLog) $s.log.splice(0, $s.log.length - $s.maxLog);
+      if (!store.logPaused) {
+        store.log.push({ time: e.time || new Date().toLocaleTimeString(), level: 'INFO', source: 'STRATEGY', msg: e.msg || JSON.stringify(e) });
+        if (store.log.length > store.maxLog) store.log.splice(0, store.log.length - store.maxLog);
       }
     }
   } catch (err) {
@@ -174,7 +174,7 @@ function isExpired(code) {
 
 // ---- Gateway Account CRUD ----
 async function $loadGatewayAccounts() {
-  try { $s.gatewayAccounts = await $apiGet('/api/gateway-accounts') || []; } catch(e) { console.error('load gateway accounts:', e); }
+  try { store.gatewayAccounts = await $apiGet('/api/gateway-accounts') || []; } catch(e) { console.error('load gateway accounts:', e); }
 }
 
 async function $saveGatewayAccount(alias, gateway, setting) {

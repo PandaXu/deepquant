@@ -1,5 +1,4 @@
 // ===== Tab 5: 设置 =====
-const { reactive, computed, onMounted } = Vue;
 
 const TabSettings = {
   template: `
@@ -8,7 +7,7 @@ const TabSettings = {
       <div class="panel">
         <div class="panel-header"><span class="panel-title">🔌 网关连接</span></div>
         <div class="panel-body" style="padding:8px;display:flex;flex-direction:column;gap:8px">
-          <div class="form-row"><label>网关</label><select v-model="gw.gateway" @change="onGatewayChange" class="input"><option value="">选择网关</option><option v-for="g in $s.gateways" :value="g">{{ g }}</option></select></div>
+          <div class="form-row"><label>网关</label><select v-model="gw.gateway" @change="onGatewayChange" class="input"><option value="">选择网关</option><option v-for="g in store.gateways" :value="g">{{ g }}</option></select></div>
           <div v-if="gw.gateway" class="form-grid">
             <div v-for="(v, k) in gw.settings" :key="k" class="form-row">
               <label>{{ k }}</label>
@@ -25,14 +24,14 @@ const TabSettings = {
             <table class="data-table">
               <thead><tr><th>别名</th><th>网关</th><th>用户名</th><th>操作</th></tr></thead>
               <tbody>
-                <tr v-for="a in $s.gatewayAccounts" :key="a.id || a.alias">
+                <tr v-for="a in store.gatewayAccounts" :key="a.id || a.alias">
                   <td>{{ a.alias }}</td><td>{{ a.gateway }}</td><td>{{ a.username || '—' }}</td>
                   <td>
                     <button class="btn btn-xs" @click="loadAccount(a)">加载</button>
                     <button class="btn btn-xs btn-danger" @click="deleteAccount(a)">删除</button>
                   </td>
                 </tr>
-                <tr v-if="!$s.gatewayAccounts || $s.gatewayAccounts.length === 0"><td colspan="4" class="empty">无已存账户</td></tr>
+                <tr v-if="!store.gatewayAccounts || store.gatewayAccounts.length === 0"><td colspan="4" class="empty">无已存账户</td></tr>
               </tbody>
             </table>
             <button class="btn btn-sm" @click="saveCurrentAccount" style="margin-top:4px" :disabled="!gw.gateway">保存当前账户</button>
@@ -85,7 +84,7 @@ const TabSettings = {
       { value:'DCE', name:'大商所' }, { value:'CZCE', name:'郑商所' },
       { value:'INE', name:'上海能源' }, { value:'GFEX', name:'广期所' },
     ];
-    const accountList = computed(() => Object.values($s.account));
+    const accountList = computed(() => Object.values(store.account));
 
     // Load config from localStorage
     function loadConfig() {
@@ -146,6 +145,6 @@ const TabSettings = {
     });
 
     return { gw, cfg, exchanges, accountList, loadConfig, saveConfig, onGatewayChange,
-      connectGateway, disconnectGateway, loadAccount, deleteAccount, saveCurrentAccount };
+      connectGateway, disconnectGateway, loadAccount, deleteAccount, saveCurrentAccount, store };
   }
 };

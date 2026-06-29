@@ -9,7 +9,7 @@ const TabLog = {
         </select>
         <input v-model="searchText" class="input input-sm" placeholder="搜索..." style="width:150px;margin-left:4px">
         <div style="margin-left:auto;display:flex;gap:4px">
-          <button class="btn btn-xs" @click="$s.logPaused = !$s.logPaused">{{ $s.logPaused ? '▶ 恢复' : '⏸ 暂停' }}</button>
+          <button class="btn btn-xs" @click="store.logPaused = !store.logPaused">{{ store.logPaused ? '▶ 恢复' : '⏸ 暂停' }}</button>
           <button class="btn btn-xs" @click="clearLog">清空</button>
           <button class="btn btn-xs" @click="exportLog">CSV</button>
         </div>
@@ -34,7 +34,7 @@ const TabLog = {
         </table>
       </div>
       <div style="padding:4px 12px;font-size:10px;color:var(--text-dim);border-top:1px solid var(--border)">
-        共 {{ $s.log.length }} 条，显示 {{ filteredLog.length }} 条
+        共 {{ store.log.length }} 条，显示 {{ filteredLog.length }} 条
       </div>
     </div>`,
   setup() {
@@ -45,7 +45,7 @@ const TabLog = {
     const logBody = ref(null);
 
     const filteredLog = computed(() => {
-      let arr = $s.log;
+      let arr = store.log;
       if (levelFilter.value) arr = arr.filter(l => l.level === levelFilter.value);
       if (searchText.value) {
         const q = searchText.value.toLowerCase();
@@ -55,19 +55,19 @@ const TabLog = {
     });
 
     // Auto-scroll
-    watch(() => $s.log.length, () => {
-      if (!$s.logPaused && logBody.value) {
+    watch(() => store.log.length, () => {
+      if (!store.logPaused && logBody.value) {
         nextTick(() => { logBody.value.scrollTop = logBody.value.scrollHeight; });
       }
     });
 
-    function clearLog() { $s.log.splice(0, $s.log.length); }
+    function clearLog() { store.log.splice(0, store.log.length); }
     function exportLog() {
       $exportCSV(['时间','级别','来源','消息'],
         filteredLog.value.map(l => [l.time, l.level, l.source, l.msg]),
         `log_${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.csv`);
     }
 
-    return { levelFilter, searchText, logBody, filteredLog, clearLog, exportLog };
+    return { levelFilter, searchText, logBody, filteredLog, clearLog, exportLog, store };
   }
 };
