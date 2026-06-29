@@ -19,7 +19,14 @@ const $s = reactive({
   log: [],
   wsStatus: false,
   wsReconnect: 0,
-  maxLog: 200,
+  maxLog: 1000,
+  // New state
+  gateways: [],
+  gatewayAccounts: [],
+  strategies: [],
+  btClasses: [],
+  dataOverview: [],
+  logPaused: false,
 });
 
 // ---- WebSocket ----
@@ -72,6 +79,32 @@ function _onWsMessage(e) {
       const entry = typeof data === 'string' ? { msg: data, time: new Date().toLocaleTimeString() } : data;
       $s.log.push(entry);
       if ($s.log.length > $s.maxLog) $s.log.splice(0, $s.log.length - $s.maxLog);
+    } else if (type === 'eLog' && data) {
+      const entry = typeof data === 'string'
+        ? { time: new Date().toLocaleTimeString('zh-CN', { hour12: false }), level: 'INFO', source: '', msg: data }
+        : { time: data.time || data.msg?.time || new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+            level: data.level || 'INFO', source: data.source || data.gateway_name || '',
+            msg: data.msg || (typeof data === 'string' ? data : JSON.stringify(data)) };
+      if (!$s.logPaused) {
+        $s.log.push(entry);
+        if ($s.log.length > $s.maxLog) $s.log.splice(0, $s.log.length - $s.maxLog);
+      }
+    } else if (type === 'cta_strategies' && Array.isArray(data)) {
+      $s.strategies = data;
+    } else if (type === 'bt_classes' && Array.isArray(data)) {
+      $s.btClasses = data;
+    } else if (type === 'data_overview' && Array.isArray(data)) {
+      $s.dataOverview = data;
+    } else if (type === 'gateway_list' && Array.isArray(data)) {
+      $s.gateways = data;
+    } else if (type === 'gateway_accounts' && Array.isArray(data)) {
+      $s.gatewayAccounts = data;
+    } else if (type === 'strategy_logs' && data) {
+      const e = typeof data === 'string' ? { msg: data, time: new Date().toLocaleTimeString() } : data;
+      if (!$s.logPaused) {
+        $s.log.push({ time: e.time || new Date().toLocaleTimeString(), level: 'INFO', source: 'STRATEGY', msg: e.msg || JSON.stringify(e) });
+        if ($s.log.length > $s.maxLog) $s.log.splice(0, $s.log.length - $s.maxLog);
+      }
     }
   } catch (err) {
     console.error('WS parse error:', err);
@@ -137,6 +170,32 @@ function isExpired(code) {
   const expiry = fullYy * 100 + mm;
   const now = new Date();
   return expiry < now.getFullYear() * 100 + (now.getMonth() + 1);
+}
+
+// ---- Gateway Account CRUD ----
+async function $loadGatewayAccounts() {
+  try { $s.gatewayAccounts = await $apiGet('/api/gateway-accounts') || []; } catch(e) { console.error('load gateway accounts:', e); }
+}
+
+async function $saveGatewayAccount(alias, gateway, setting) {
+  await $apiPost('/api/gateway-accounts', { alias, gateway, setting_json: JSON.stringify(setting) });
+  await $loadGatewayAccounts();
+}
+
+async function $deleteGatewayAccount(id) {
+  await $apiPost('/api/account/delete', { vt_accountid: id });
+  await $loadGatewayAccounts();
+}
+
+// ---- Export CSV ----
+function $exportCSV(headers, rows, filename) {
+  const BOM = '﻿';
+  const csv = BOM + headers.join(',') + '\n' + rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename || 'export.csv';
+  a.click();
 }
 
 // ---- Clock ----
