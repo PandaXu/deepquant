@@ -193,6 +193,15 @@ class CtpGateway(BaseGateway):
             and (not md_address.startswith("socks"))
         ):
             md_address = "tcp://" + md_address
+        # Store settings for auto-reconnect
+        self._last_td_address = td_address
+        self._last_md_address = md_address
+        self._last_userid = userid
+        self._last_password = password
+        self._last_brokerid = brokerid
+        self._last_auth_code = auth_code
+        self._last_appid = appid
+        self._last_production = production_mode
 
         self.write_log(f"[CtpGateway] → 连接交易接口 {td_address}")
         self.td_api.connect(td_address, userid, password, brokerid, auth_code, appid, production_mode)
@@ -204,6 +213,29 @@ class CtpGateway(BaseGateway):
     def subscribe(self, req: SubscribeRequest) -> None:
         """订阅行情"""
         self.md_api.subscribe(req)
+
+    def reconnect_md(self) -> None:
+        """Auto-reconnect market data after disconnect (called from MdApi callback)."""
+        if not hasattr(self, '_last_md_address') or not self._last_md_address:
+            self.write_log("[CtpGateway] 无历史行情地址，跳过重连")
+            return
+        self.write_log(f"[CtpGateway] 🔄 自动重连行情接口 {self._last_md_address}")
+        # Create new MdApi instance to avoid crash from reusing old one
+        import time as _time
+        _time.sleep(1)  # brief pause to let old connection fully close
+        self.md_api = MdApi(self)
+        self.md_api.connect(self._last_md_address, self._last_userid, self._last_password, self._last_brokerid, self._last_production)
+
+    def reconnect_td(self) -> None:
+        """Auto-reconnect trading after disconnect."""
+        if not hasattr(self, '_last_td_address') or not self._last_td_address:
+            self.write_log("[CtpGateway] 无历史交易地址，跳过重连")
+            return
+        self.write_log(f"[CtpGateway] 🔄 自动重连交易接口 {self._last_td_address}")
+        import time as _time
+        _time.sleep(1)
+        self.td_api = TdApi(self)
+        self.td_api.connect(self._last_td_address, self._last_userid, self._last_password, self._last_brokerid, self._last_auth_code, self._last_appid, self._last_production)
 
     def send_order(self, req: OrderRequest) -> str:
         """委托下单"""
@@ -289,6 +321,10 @@ class CtpMdApi(MdApi):
         desc = _disconnect_reason_text(reason)
         self.gateway.write_log(f"[MdApi] ❌ 行情连接断开! reason={reason} (0x{reason:04X}) → {desc}")
         self.gateway.write_log(f"[MdApi]    connect_status={self.connect_status} login_status={self.login_status}")
+        # Auto-reconnect after 5 seconds
+        from threading import Timer
+        self.gateway.write_log(f"[MdApi] → 5秒后自动重连行情...")
+        Timer(5.0, self.gateway.reconnect_md).start()
 
     def onRspUserLogin(self, data: dict, error: dict, reqid: int, last: bool) -> None:
         """用户登录请求回报"""
@@ -515,6 +551,10 @@ class CtpTdApi(TdApi):
         desc = _disconnect_reason_text(reason)
         self.gateway.write_log(f"[TdApi] ❌ 交易连接断开! reason={reason} (0x{reason:04X}) → {desc}")
         self.gateway.write_log(f"[TdApi]    connect_status={self.connect_status} login_status={self.login_status} auth_status={self.auth_status}")
+        # Auto-reconnect after 5 seconds
+        from threading import Timer
+        self.gateway.write_log(f"[TdApi] → 5秒后自动重连交易...")
+        Timer(5.0, self.gateway.reconnect_td).start()
 
     def onRspAuthenticate(self, data: dict, error: dict, reqid: int, last: bool) -> None:
         """用户授权验证回报"""
