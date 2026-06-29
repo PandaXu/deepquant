@@ -55,25 +55,61 @@ def available_backends() -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# Prepend backend directory to this package's __path__
-# so that `from .vnctpmd import MdApi` finds the correct .so
+# Multi-backend loader: import backend-specific .so files on demand.
+# Each gateway type (CTP, TTS) can use a different set of native libraries.
 # ---------------------------------------------------------------------------
 _here = os.path.dirname(__file__)
-_backend_dir = os.path.join(_here, "backends", _BACKEND)
+_backend_cache: dict[str, dict] = {}
 
-# Insert backend dir at front of package search path
-if os.path.isdir(_backend_dir):
-    __path__.insert(0, _backend_dir)       # type: ignore[name-defined]  # noqa: F821
-else:
-    import warnings
-    warnings.warn(
-        f"CTP backend '{_BACKEND}' not available at {_backend_dir}. "
-        f"Falling back to default. Available: {available_backends()}"
-    )
 
-# Now do the imports — Python searches __path__[0] (backend dir) first
-from .vnctpmd import MdApi      # noqa: E402,F401
-from .vnctptd import TdApi      # noqa: E402,F401
-from .ctp_constant import *     # noqa: E402,F401
+def load_backend(name: str = "") -> dict:
+    """Load (or return cached) the CTP API symbols for a specific backend.
+
+    Returns dict with keys: MdApi, TdApi, constants_module.
+    If name is empty, uses the current _BACKEND setting.
+    """
+    name = name or _BACKEND
+    if name in _backend_cache:
+        return _backend_cache[name]
+
+    backend_dir = os.path.join(_here, "backends", name)
+    if not os.path.isdir(backend_dir):
+        raise ImportError(f"CTP backend '{name}' not found at {backend_dir}")
+
+    import importlib
+    import importlib.util
+
+    # Load MdApi and TdApi from the backend-specific .so
+    pyver = f"cpython-{sys.version_info.major}{sys.version_info.minor}-darwin"
+    md_path = os.path.join(backend_dir, f"vnctpmd.{pyver}.so")
+    td_path = os.path.join(backend_dir, f"vnctptd.{pyver}.so")
+
+    if not os.path.isfile(md_path) or not os.path.isfile(td_path):
+        raise ImportError(
+            f"CTP backend '{name}' libraries not found. "
+            f"Expected {md_path} and {td_path}"
+        )
+
+    spec_md = importlib.util.spec_from_file_location(f"deepquant_ctp.api.backends.{name}.vnctpmd", md_path)
+    spec_td = importlib.util.spec_from_file_location(f"deepquant_ctp.api.backends.{name}.vnctptd", td_path)
+    mod_md = importlib.util.module_from_spec(spec_md)
+    mod_td = importlib.util.module_from_spec(spec_td)
+    spec_md.loader.exec_module(mod_md)
+    spec_td.loader.exec_module(mod_td)
+
+    result = {
+        "MdApi": getattr(mod_md, "MdApi", None),
+        "TdApi": getattr(mod_td, "TdApi", None),
+    }
+    _backend_cache[name] = result
+    print(f"[CTP API] 后端 '{name}' 已加载: MdApi={result['MdApi']}, TdApi={result['TdApi']}")
+    return result
+
+
+# Load default backend at import time (backward compatibility)
+_default = load_backend(_BACKEND)
+MdApi = _default["MdApi"]
+TdApi = _default["TdApi"]
+from .ctp_constant import *     # noqa: E402,F401  (constants are backend-independent)
 
 _LOADED = True
