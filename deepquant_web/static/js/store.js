@@ -163,6 +163,43 @@ function $toast(msg, type) {
   setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 2500);
 }
 
+// ---- REST actions (replace WS for operations, keep WS only for event stream) ----
+async function $restConnectAccount(accountId) {
+  try {
+    const r = await $apiPost('/api/gateway-accounts/' + accountId + '/connect', {});
+    if (r.error) { $toast(r.error, 'error'); return false; }
+    $toast('连接成功', 'success');
+    return true;
+  } catch(e) { $toast('连接失败', 'error'); return false; }
+}
+
+async function $restDisconnectAccount(accountId) {
+  try {
+    await $apiPost('/api/gateway-accounts/' + accountId + '/disconnect', {});
+    $toast('已断开', 'info');
+  } catch(e) { $toast('断开失败', 'error'); }
+}
+
+async function $restSendOrder(order) {
+  try {
+    const r = await $apiPost('/api/orders', order);
+    if (r.vt_orderid) { $toast('订单已提交: ' + r.vt_orderid, 'success'); return r; }
+    $toast('下单失败', 'error'); return null;
+  } catch(e) { $toast('下单失败', 'error'); return null; }
+}
+
+async function $restCancelOrder(orderid, symbol, exchange, gateway) {
+  try {
+    await $apiGet('/api/orders/' + orderid + '?symbol=' + encodeURIComponent(symbol) + '&exchange=' + exchange + '&gateway=' + (gateway || ''));
+  } catch(e) { /* silent */ }
+}
+
+async function $restSubscribe(symbol, exchange, gateway) {
+  try {
+    await $apiPost('/api/subscribe', { symbol, exchange, gateway: gateway || '' });
+  } catch(e) { /* silent */ }
+}
+
 // ---- Contract Expiry ----
 function isExpired(code) {
   const m = code.match(/[A-Z]+(\d{2})(\d{2})$/);

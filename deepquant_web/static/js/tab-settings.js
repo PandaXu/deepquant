@@ -120,37 +120,29 @@ const TabSettings = {
 
     function connectGateway() {
       if (!gw.gateway) return;
-      if (!store.wsStatus) { $toast('WebSocket未连接，正在重连...', 'warn'); return; }
-      if (loadedAccountId.value) {
-        // Use connect_account which properly adds the gateway engine
-        $wsSend({ action: 'connect_account', payload: { account_id: loadedAccountId.value } });
-        $toast('正在连接已存账户...', 'info');
-      } else {
+      if (!loadedAccountId.value) {
         if (!gw.settings || Object.keys(gw.settings).length === 0) { $toast('请先选择网关或加载账户', 'error'); return; }
-        $wsSend({ action: 'connect_gateway', payload: { gateway: gw.gateway, setting: gw.settings } });
-        $toast(`正在连接 ${gw.gateway}...`, 'info');
       }
+      $toast(`正在连接...`, 'info');
+      $restConnectAccount(loadedAccountId.value);
     }
     function connectAccount(a) {
       loadedAccountId.value = a.id;
       gw.gateway = a.gateway;
       try { gw.settings = JSON.parse(a.setting_json || '{}'); } catch(e){ gw.settings = {}; }
-      connectGateway();
+      $restConnectAccount(a.id);
     }
     function disconnectAccount(a) {
-      $wsSend({ action: 'disconnect_account', payload: { account_id: a.id } });
+      $restDisconnectAccount(a.id);
       loadedAccountId.value = null;
       store.activeAccount = '';
       $toast(`已断开 ${a.alias}`, 'info');
     }
     function disconnectGateway() {
       if (!gw.gateway) return;
-      if (!store.wsStatus) { $toast('WebSocket未连接', 'warn'); return; }
       if (loadedAccountId.value) {
-        $wsSend({ action: 'disconnect_account', payload: { account_id: loadedAccountId.value } });
+        $restDisconnectAccount(loadedAccountId.value);
         loadedAccountId.value = null;
-      } else {
-        $wsSend({ action: 'disconnect_gateway', payload: { gateway: gw.gateway } });
       }
       $toast(`已断开 ${gw.gateway}`, 'info');
     }

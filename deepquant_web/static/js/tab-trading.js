@@ -443,7 +443,7 @@ const TabTrading = {
     }
     function onSymbol() {
       if (form.symbol) {
-        $wsSend({ action: 'subscribe', payload: { symbol: form.symbol, exchange: form.exchange, gateway: form.gateway || '' } });
+        $restSubscribe(form.symbol, form.exchange, form.gateway);
         nextTick(() => loadChart(form.symbol, '1m'));
       }
     }
@@ -458,18 +458,15 @@ const TabTrading = {
     async function placeOrder(dir) {
       if (!canOrder.value) return;
       const parts = (form.symbol || '').split('.');
-      $wsSend({
-        action: 'send_order',
-        payload: {
-          symbol: parts[0], exchange: parts[1] || form.exchange,
-          direction: dir, offset: form.offset, price: form.orderType === 'MARKET' ? 0 : parseFloat(form.price) || 0,
-          volume: parseInt(form.volume) || 1, order_type: form.orderType,
-          reference: 'ManualTrading', gateway: form.gateway || ''
-        }
+      await $restSendOrder({
+        symbol: parts[0], exchange: parts[1] || form.exchange,
+        direction: dir, offset: form.offset, price: form.orderType === 'MARKET' ? 0 : parseFloat(form.price) || 0,
+        volume: parseInt(form.volume) || 1, order_type: form.orderType,
+        reference: 'ManualTrading', gateway: form.gateway || ''
       });
     }
     function cancelOrder(order) {
-      $wsSend({ action: 'cancel_order', payload: { orderid: order.orderid || order.vt_orderid, symbol: order.symbol, exchange: order.exchange, gateway: order.gateway_name || '' } });
+      $restCancelOrder(order.orderid || order.vt_orderid, order.symbol, order.exchange, order.gateway_name || '');
     }
     function cancelAll() {
       Object.values(store.order).forEach(o => { if (isActiveOrder(o)) cancelOrder(o); });
@@ -478,22 +475,16 @@ const TabTrading = {
       Object.values(store.position).forEach(p => {
         const parts = (p.vt_symbol || '').split('.');
         const oppDir = p.direction === 'LONG' ? 'SHORT' : 'LONG';
-        $wsSend({
-          action: 'send_order',
-          payload: { symbol: parts[0], exchange: parts[1] || p.exchange, direction: oppDir, offset: 'CLOSE',
-            price: 0, volume: p.volume, order_type: 'MARKET', reference: 'QuickClose', gateway: '' }
-        });
+        $restSendOrder({ symbol: parts[0], exchange: parts[1] || p.exchange, direction: oppDir, offset: 'CLOSE',
+          price: 0, volume: p.volume, order_type: 'MARKET', reference: 'QuickClose', gateway: '' });
       });
       $toast('已发送全平指令', 'info');
     }
     function closePos(pos) {
       const parts = (pos.vt_symbol || '').split('.');
       const oppDir = pos.direction === 'LONG' ? 'SHORT' : 'LONG';
-      $wsSend({
-        action: 'send_order',
-        payload: { symbol: parts[0], exchange: parts[1] || pos.exchange, direction: oppDir, offset: 'CLOSE',
-          price: 0, volume: pos.volume, order_type: 'MARKET', reference: 'QuickClose', gateway: '' }
-      });
+      $restSendOrder({ symbol: parts[0], exchange: parts[1] || pos.exchange, direction: oppDir, offset: 'CLOSE',
+        price: 0, volume: pos.volume, order_type: 'MARKET', reference: 'QuickClose', gateway: '' });
     }
     function exportOrders() {
       const h = ['订单号','合约','方向/开平','价格','数量','已成交','状态','时间'];

@@ -712,6 +712,33 @@ def api_bars(symbol: str = "", exchange: str = "", interval: str = "1m", start: 
     return {"bars": result, "count": len(result)}
 
 
+@app.post("/api/orders")
+async def api_send_order(request: Request):
+    """Place an order via Gateway service."""
+    body = await request.json()
+    result = await gateway_client.send_order(body)
+    return result
+
+
+@app.delete("/api/orders/{orderid}")
+async def api_cancel_order(orderid: str, symbol: str = "", exchange: str = "", gateway: str = ""):
+    """Cancel an order via Gateway service."""
+    result = await gateway_client.cancel_order(orderid, symbol, exchange, gateway)
+    return result
+
+
+@app.post("/api/subscribe")
+async def api_subscribe(request: Request):
+    """Subscribe to market data via Gateway service."""
+    body = await request.json()
+    result = await gateway_client.subscribe(
+        symbol=body.get("symbol", ""),
+        exchange=body.get("exchange", ""),
+        gateway=body.get("gateway", ""),
+    )
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Public contract data API (backed by contract_cache)
 # ---------------------------------------------------------------------------
