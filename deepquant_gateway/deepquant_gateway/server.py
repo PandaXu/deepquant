@@ -161,7 +161,7 @@ async def subscribe(request: dict):
     except ValueError:
         return {"error": f"invalid exchange: {exchange}"}
 
-    req = SubscribeRequest(symbol=symbol, exchange=ex, gateway=gateway)
+    req = SubscribeRequest(symbol=symbol, exchange=ex)
     for name, gw in active.items():
         if gateway and name != gateway:
             continue
