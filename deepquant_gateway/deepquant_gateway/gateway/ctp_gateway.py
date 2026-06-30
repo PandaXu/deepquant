@@ -496,10 +496,11 @@ class CtpMdApi(MdApi):
 
     def subscribe(self, req: SubscribeRequest) -> None:
         """订阅行情"""
-        self.gateway.write_log(f"[MdApi] subscribe: symbol={req.symbol} exchange={req.exchange} login_status={self.login_status}")
+        instrument_id = f"{req.symbol}.{req.exchange.value}" if req.exchange else req.symbol
+        self.gateway.write_log(f"[MdApi] subscribe: instrument={instrument_id} login_status={self.login_status}")
         if self.login_status:
-            self.subscribeMarketData(req.symbol)
-        self.subscribed.add(req.symbol)
+            self.subscribeMarketData(instrument_id)
+        self.subscribed.add(instrument_id)
 
     def close(self) -> None:
         """关闭连接"""
