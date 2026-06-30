@@ -29,7 +29,7 @@ from deepquant.trader.object import (
 from deepquant.trader.utility import get_folder_path, ZoneInfo
 from deepquant.trader.event import EVENT_TIMER
 
-from ..api import (
+from deepquant_ctp.api import (
     MdApi,
     TdApi,
     THOST_FTDC_OST_NoTradeQueueing,

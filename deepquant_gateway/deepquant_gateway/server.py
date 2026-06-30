@@ -37,13 +37,13 @@ def _load_gateway(backend: str, module_name: str, class_name: str):
     logger.info(f"Switched CTP API to '{backend}': MdApi={be['MdApi']} TdApi={be['TdApi']}")
 
     # 3. Force-reload ctp_gateway so CtpMdApi/CtpTdApi bind to the swapped MdApi/TdApi
-    ctp_mod_name = "deepquant_ctp.gateway.ctp_gateway"
+    ctp_mod_name = "deepquant_gateway.gateway.ctp_gateway"
     if ctp_mod_name in sys.modules:
         importlib.reload(sys.modules[ctp_mod_name])
         logger.info(f"Reloaded {ctp_mod_name} with '{backend}' backend")
 
     # 4. Now import the target gateway module
-    mod = importlib.import_module(f"deepquant_ctp.gateway.{module_name}")
+    mod = importlib.import_module(f"deepquant_gateway.gateway.{module_name}")
     gw_class = getattr(mod, class_name, None)
     if gw_class is None:
         raise RuntimeError(f"Gateway class '{class_name}' not found in deepquant_ctp.gateway.{module_name}")
