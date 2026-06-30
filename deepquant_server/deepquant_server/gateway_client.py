@@ -1,42 +1,92 @@
-"""GatewayClient — HTTP + WebSocket client to deepquant_gateway."""
+"""GatewayClient — multi-instance HTTP + WebSocket client to deepquant_gateway."""
 import asyncio
 import json
 import logging
+import os
+import sys
+
 import aiohttp
 
 logger = logging.getLogger(__name__)
 
-GATEWAY_URL = "http://127.0.0.1:8889"
-GATEWAY_WS_URL = "ws://127.0.0.1:8889/ws"
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    import tomli as tomllib  # type: ignore
+
+
+def _load_gateway_config() -> dict[str, dict]:
+    """Parse gateways.toml → {gateway_type: {port, url, ws_url, backend}}."""
+    config_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+        "deepquant_gateway", "gateways.toml"
+    )
+    result: dict[str, dict] = {}
+    try:
+        with open(config_path, "rb") as f:
+            data = tomllib.load(f)
+        for inst in data.get("gateways", []):
+            port = inst["port"]
+            result[inst.get("backend", inst["id"])] = {
+                "id": inst["id"],
+                "port": port,
+                "url": f"http://127.0.0.1:{port}",
+                "ws_url": f"ws://127.0.0.1:{port}/ws",
+                "backend": inst.get("backend", "official"),
+            }
+    except FileNotFoundError:
+        pass
+
+    # Always have a default
+    if "official" not in result:
+        result["official"] = {"id": "default", "port": 8889, "url": "http://127.0.0.1:8889", "ws_url": "ws://127.0.0.1:8889/ws", "backend": "official"}
+    if "tts" not in result:
+        result["tts"] = {"id": "tts-default", "port": 8890, "url": "http://127.0.0.1:8890", "ws_url": "ws://127.0.0.1:8890/ws", "backend": "tts"}
+    return result
+
+
+_GW_INSTANCES = _load_gateway_config()
+
+
+def _url_for(gateway_type: str, path: str = "") -> str:
+    """Get the URL for a specific gateway type. Falls back to official."""
+    gw = _GW_INSTANCES.get(gateway_type) or _GW_INSTANCES["official"]
+    return f"{gw['url']}{path}"
+
+
+def all_ws_urls() -> list[str]:
+    """Return all Gateway WS URLs for event subscription."""
+    return [g["ws_url"] for g in _GW_INSTANCES.values()]
 
 
 class GatewayClient:
     def __init__(self, on_event=None):
         self._session = None
-        self._ws = None
+        self._ws_connections: dict[str, aiohttp.ClientWebSocketResponse] = {}
         self._connected = False
-        self._on_event = on_event  # callback(gateway_event_dict)
+        self._on_event = on_event
 
     async def start(self):
         self._session = aiohttp.ClientSession()
-        self._ws_task = asyncio.create_task(self._ws_connect_loop())
+        # Connect WS to all gateway instances
+        for gw_id, gw in _GW_INSTANCES.items():
+            asyncio.create_task(self._ws_connect_loop(gw_id, gw["ws_url"]))
+        logger.info(f"GatewayClient: connected to {len(_GW_INSTANCES)} instances")
 
     async def stop(self):
-        if hasattr(self, '_ws_task') and self._ws_task:
-            self._ws_task.cancel()
-            try: await self._ws_task
-            except asyncio.CancelledError: pass
-        if self._ws: await self._ws.close()
-        if self._session: await self._session.close()
+        for ws in list(self._ws_connections.values()):
+            await ws.close()
+        if self._session:
+            await self._session.close()
         self._connected = False
 
-    async def _ws_connect_loop(self):
+    async def _ws_connect_loop(self, gw_id: str, ws_url: str):
         while True:
             try:
-                async with self._session.ws_connect(GATEWAY_WS_URL) as ws:
-                    self._ws = ws
+                async with self._session.ws_connect(ws_url) as ws:
+                    self._ws_connections[gw_id] = ws
                     self._connected = True
-                    logger.info("GatewayClient WS connected")
+                    logger.info(f"GatewayClient WS: {gw_id} connected ({ws_url})")
                     async for msg in ws:
                         if msg.type == aiohttp.WSMsgType.TEXT:
                             data = json.loads(msg.data)
@@ -44,14 +94,14 @@ class GatewayClient:
                                 self._on_event(data)
                     self._connected = False
             except Exception as e:
-                logger.warning(f"GatewayClient WS: {e}, retry in 3s")
+                logger.warning(f"GatewayClient WS {gw_id}: {e}, retry in 3s")
             await asyncio.sleep(3)
 
-    async def request(self, method: str, path: str, body: dict = None) -> dict:
-        """Send REST request to Gateway."""
+    async def request(self, method: str, path: str, body: dict = None, gateway_type: str = "CTP") -> dict:
+        """Send REST request to the correct Gateway instance."""
         if not self._session:
             self._session = aiohttp.ClientSession()
-        url = f"{GATEWAY_URL}{path}"
+        url = _url_for(gateway_type, path)
         try:
             if method == "GET":
                 async with self._session.get(url) as resp:
@@ -76,24 +126,32 @@ class GatewayClient:
             return {"error": str(e)[:200]}
 
     async def connect_gateway(self, gateway_type: str, setting: dict) -> dict:
-        return await self.request("POST", "/connect", {"gateway_type": gateway_type, "setting": setting})
+        return await self.request("POST", "/connect", {"gateway_type": gateway_type, "setting": setting}, gateway_type)
 
     async def disconnect_gateway(self, gateway_type: str) -> dict:
-        return await self.request("POST", "/disconnect", {"gateway_type": gateway_type})
+        return await self.request("POST", "/disconnect", {"gateway_type": gateway_type}, gateway_type)
 
     async def send_order(self, order: dict) -> dict:
-        """Send an order via Gateway service."""
-        return await self.request("POST", "/send_order", order)
+        gw = order.get("gateway", "CTP")
+        return await self.request("POST", "/send_order", order, gw)
 
-    async def cancel_order(self, orderid: str, symbol: str, exchange: str, gateway: str = "") -> dict:
-        """Cancel an order via Gateway service."""
-        return await self.request("POST", "/cancel_order", {"orderid": orderid, "symbol": symbol, "exchange": exchange, "gateway": gateway})
+    async def cancel_order(self, orderid: str, symbol: str, exchange: str, gateway: str = "CTP") -> dict:
+        return await self.request("POST", "/cancel_order", {"orderid": orderid, "symbol": symbol, "exchange": exchange, "gateway": gateway}, gateway)
 
-    async def subscribe(self, symbol: str, exchange: str, gateway: str = "") -> dict:
-        return await self.request("POST", "/subscribe", {"symbol": symbol, "exchange": exchange, "gateway": gateway})
+    async def subscribe(self, symbol: str, exchange: str, gateway: str = "CTP") -> dict:
+        gw = gateway or "CTP"
+        return await self.request("POST", "/subscribe", {"symbol": symbol, "exchange": exchange, "gateway": gw}, gw)
 
-    async def get_status(self) -> dict:
-        return await self.request("GET", "/status")
+    async def get_status(self, gateway_type: str = "CTP") -> dict:
+        return await self.request("GET", "/status", gateway_type=gateway_type)
+
+    async def get_all_status(self) -> dict:
+        """Get combined status from all gateway instances."""
+        all_gateways = []
+        for gw_id in _GW_INSTANCES:
+            status = await self.get_status(gw_id)
+            all_gateways.extend(status.get("gateways", []))
+        return {"gateways": all_gateways}
 
     @property
     def is_connected(self) -> bool:

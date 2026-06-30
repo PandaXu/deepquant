@@ -900,10 +900,10 @@ async def on_startup():
         global _cached_gateways
         while True:
             try:
-                status = await asyncio.wait_for(gateway_client.get_status(), timeout=3.0)
+                status = await asyncio.wait_for(gateway_client.get_all_status(), timeout=3.0)
                 _cached_gateways = status.get("gateways", [])
             except Exception:
-                pass  # Gateway unreachable — keep last known value
+                pass
             await asyncio.sleep(10)
     asyncio.create_task(_poll_gw_status())
     t = threading.Thread(target=start_engine, daemon=True)
