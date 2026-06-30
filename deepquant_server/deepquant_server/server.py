@@ -166,7 +166,7 @@ async def websocket_endpoint(ws: WebSocket) -> None:
 
 async def handle_ws_message(ws: WebSocket, msg: str) -> None:
     """Handle incoming WebSocket commands from the frontend."""
-    global main_engine, event_engine, _active_account_name
+    global main_engine, event_engine, _active_account_name, _cached_gateways
     if not main_engine or not event_engine:
         await ws.send_text(json.dumps({"type": "error", "msg": "Engine not ready"}))
         return
@@ -274,7 +274,6 @@ async def handle_ws_message(ws: WebSocket, msg: str) -> None:
             await ws.send_text(json.dumps({"type": "log", "data": {"msg": f"账户已连接: {acct['alias']} ({gw_name})", "gateway_name": gw_name}}))
 
         elif action == "disconnect_account":
-            global _cached_gateways
             account_id = int(payload.get("account_id", 0))
             acct = get_account(account_id)
             if acct:
