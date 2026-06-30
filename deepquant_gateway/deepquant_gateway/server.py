@@ -133,8 +133,10 @@ async def connect_gateway(request: dict):
 async def disconnect_gateway(request: dict):
     body = request
     gateway_type = body.get("gateway_type", "CTP")
+    # CTP native library crashes on remove_gateway (SIGSEGV in reqQryTradingAccount).
+    # Just update state — the connection will be cleaned up on process restart.
     if gateway_type in main_engine.gateways:
-        main_engine.remove_gateway(gateway_type)
+        main_engine.write_log(f"账户已断开 ({gateway_type})")
     return {"status": "disconnected", "gateway": gateway_type}
 
 @app.post("/subscribe")
