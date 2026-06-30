@@ -655,13 +655,13 @@ async def api_connect_gateway_account(account_id: int):
 @app.post("/api/gateway-accounts/{account_id}/disconnect")
 async def api_disconnect_gateway_account(account_id: int):
     """Disconnect a gateway account via GatewayClient."""
+    global _active_account_name, _cached_gateways
     if not main_engine:
         return {"error": "engine not ready"}
     acct = get_account(account_id)
     if not acct:
         return {"error": "account not found"}
     gw_name = acct.get("gateway", "CTP")
-    global _active_account_name, _cached_gateways
     if gateway_client:
         result = await gateway_client.disconnect_gateway(gw_name)
         _active_account_name = ""
