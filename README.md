@@ -51,13 +51,12 @@ deepquant/
 │   └── strategy_service.py     #   策略调度
 ├── deepquant_gateway/          # 网关服务 (:8889+)
 │   └── server.py               #   独立 MainEngine，连接 CTP/TTS
-├── deepquant_ctp/              # CTP 协议层
-│   ├── api/__init__.py         #   多后端加载器 (load_backend)
-│   ├── api/backends/official/  #   官方 CTP C++ 绑定
-│   ├── api/backends/tts/       #   TTS C++ 绑定
-│   └── gateway/                #   网关实现
-│       ├── ctp_gateway.py      #     CtpGateway
-│       └── tts_gateway.py      #     TtsGateway (TTS 独立实现)
+├── deepquant_ctp/              # CTP 协议层 (纯协议，无网关逻辑)
+│   └── api/                    #   多后端 C++ 绑定
+├── deepquant_gateway/          # 网关服务 (:8889+)
+│   ├── gateway/                #   网关实现
+│   │   ├── ctp_gateway.py      #     CtpGateway
+│   │   └── tts_gateway.py      #     TtsGateway (TTS 独立后端)
 ├── deepquant_web/              # Web 前端 (:8080)
 │   └── static/                 #   Vue3 + ECharts SPA
 └── deepquant_datarecorder/     # 数据录制器 (:8900)
