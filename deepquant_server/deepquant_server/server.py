@@ -190,29 +190,29 @@ async def handle_ws_message(ws: WebSocket, msg: str) -> None:
                 main_engine.write_log(f"Web: 连接 {gateway_name}")
 
         elif action == "send_order":
-            req = OrderRequest(
-                symbol=payload["symbol"],
-                exchange=Exchange(payload["exchange"]),
-                direction=Direction(payload["direction"]),
-                type=OrderType(payload.get("order_type", "LIMIT")),
-                volume=float(payload["volume"]),
-                price=float(payload.get("price", 0)),
-                offset=Offset(payload.get("offset", "OPEN")),
-                reference=payload.get("reference", ""),
-            )
-            vt_orderid = main_engine.send_order(req, payload.get("gateway", ""))
+            result = await gateway_client.send_order({
+                "symbol": payload["symbol"],
+                "exchange": payload["exchange"],
+                "direction": payload["direction"],
+                "order_type": payload.get("order_type", "LIMIT"),
+                "volume": float(payload["volume"]),
+                "price": float(payload.get("price", 0)),
+                "offset": payload.get("offset", "OPEN"),
+                "reference": payload.get("reference", ""),
+                "gateway": payload.get("gateway", ""),
+            })
             await ws.send_text(json.dumps({
                 "type": "order_sent",
-                "vt_orderid": vt_orderid,
+                "vt_orderid": result.get("vt_orderid", ""),
             }))
 
         elif action == "cancel_order":
-            req = CancelRequest(
+            await gateway_client.cancel_order(
                 orderid=payload["orderid"],
                 symbol=payload["symbol"],
-                exchange=Exchange(payload["exchange"]),
+                exchange=payload["exchange"],
+                gateway=payload.get("gateway", ""),
             )
-            main_engine.cancel_order(req, payload.get("gateway", ""))
 
         elif action == "cancel_quote":
             from deepquant.trader.object import CancelRequest as QuoteCancelRequest

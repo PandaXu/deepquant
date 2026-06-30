@@ -14,7 +14,8 @@ from deepquant.trader.event import (
     EVENT_POSITION, EVENT_ACCOUNT, EVENT_LOG,
     EVENT_CONTRACT, EVENT_QUOTE
 )
-from deepquant.trader.object import SubscribeRequest
+from deepquant.trader.object import SubscribeRequest, OrderRequest, CancelRequest
+from deepquant.trader.constant import Direction, Exchange, Offset, OrderType
 
 # Lazy gateway loaders — each backend must be loaded AFTER set_ctp_backend()
 _GATEWAY_LOADERS = {
@@ -148,6 +149,34 @@ async def subscribe(request: dict):
         if body.get("gateway") and name != body["gateway"]: continue
         gw.subscribe(req)
     return {"subscribed": f"{body['symbol']}.{body['exchange']}"}
+
+@app.post("/send_order")
+async def send_order(request: dict):
+    body = request
+    req = OrderRequest(
+        symbol=body["symbol"],
+        exchange=Exchange(body["exchange"]),
+        direction=Direction(body["direction"]),
+        type=OrderType(body.get("order_type", "LIMIT")),
+        volume=float(body["volume"]),
+        price=float(body.get("price", 0)),
+        offset=Offset(body.get("offset", "OPEN")),
+        reference=body.get("reference", ""),
+    )
+    gateway = body.get("gateway", "")
+    vt_orderid = main_engine.send_order(req, gateway)
+    return {"vt_orderid": vt_orderid, "status": "sent"}
+
+@app.post("/cancel_order")
+async def cancel_order(request: dict):
+    body = request
+    req = CancelRequest(
+        orderid=body["orderid"],
+        symbol=body["symbol"],
+        exchange=Exchange(body["exchange"]),
+    )
+    main_engine.cancel_order(req, body.get("gateway", ""))
+    return {"status": "cancelled"}
 
 @app.on_event("startup")
 async def on_startup():

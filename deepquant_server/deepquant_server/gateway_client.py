@@ -69,6 +69,14 @@ class GatewayClient:
     async def disconnect_gateway(self, gateway_type: str) -> dict:
         return await self.request("POST", "/disconnect", {"gateway_type": gateway_type})
 
+    async def send_order(self, order: dict) -> dict:
+        """Send an order via Gateway service."""
+        return await self.request("POST", "/send_order", order)
+
+    async def cancel_order(self, orderid: str, symbol: str, exchange: str, gateway: str = "") -> dict:
+        """Cancel an order via Gateway service."""
+        return await self.request("POST", "/cancel_order", {"orderid": orderid, "symbol": symbol, "exchange": exchange, "gateway": gateway})
+
     async def subscribe(self, symbol: str, exchange: str, gateway: str = "") -> dict:
         return await self.request("POST", "/subscribe", {"symbol": symbol, "exchange": exchange, "gateway": gateway})
 
