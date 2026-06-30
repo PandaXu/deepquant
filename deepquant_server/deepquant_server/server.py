@@ -636,6 +636,7 @@ def api_delete_gateway_account(account_id: int):
 @app.post("/api/gateway-accounts/{account_id}/connect")
 async def api_connect_gateway_account(account_id: int):
     """Connect a saved gateway account via GatewayClient."""
+    global _active_account_name
     if not main_engine:
         return {"error": "engine not ready"}
     acct = get_account(account_id)
@@ -647,6 +648,7 @@ async def api_connect_gateway_account(account_id: int):
         result = await gateway_client.connect_gateway(gw_name, acct["setting"])
         if "error" in result:
             return {"error": result["error"]}
+        _active_account_name = acct["alias"]
         main_engine.write_log(f"账户已连接: {acct['alias']} ({gw_name})")
         return {"status": "connected", "gateway_name": gw_name}
     return {"error": "gateway client not available"}
