@@ -143,33 +143,35 @@ async def disconnect_gateway(request: dict):
 
 @app.post("/subscribe")
 async def subscribe(request: dict):
-    body = request
-    symbol = body.get("symbol", "")
-    exchange = body.get("exchange", "")
-    gateway = body.get("gateway", "")
-    if not symbol or not exchange:
-        return {"error": "symbol and exchange are required"}
-
-    # Filter out disconnected gateways
-    active = {k: v for k, v in main_engine.gateways.items() if k not in _disconnected}
-    if not active:
-        return {"error": "no active gateway"}
-
-    from deepquant.trader.constant import Exchange
     try:
-        ex = Exchange(exchange)
-    except ValueError:
-        return {"error": f"invalid exchange: {exchange}"}
+        body = request
+        symbol = body.get("symbol", "")
+        exchange = body.get("exchange", "")
+        gateway = body.get("gateway", "")
+        if not symbol or not exchange:
+            return {"error": "symbol and exchange are required"}
 
-    req = SubscribeRequest(symbol=symbol, exchange=ex)
-    for name, gw in active.items():
-        if gateway and name != gateway:
-            continue
+        active = {k: v for k, v in main_engine.gateways.items() if k not in _disconnected}
+        if not active:
+            return {"error": "no active gateway"}
+
+        from deepquant.trader.constant import Exchange
         try:
-            gw.subscribe(req)
-        except Exception as e:
-            return {"error": f"subscribe failed on {name}: {e}"}
-    return {"subscribed": f"{symbol}.{exchange}"}
+            ex = Exchange(exchange)
+        except ValueError:
+            return {"error": f"invalid exchange: {exchange}"}
+
+        req = SubscribeRequest(symbol=symbol, exchange=ex)
+        for name, gw in active.items():
+            if gateway and name != gateway:
+                continue
+            try:
+                gw.subscribe(req)
+            except Exception as e:
+                return {"error": f"subscribe failed on {name}: {e}"}
+        return {"subscribed": f"{symbol}.{exchange}"}
+    except Exception as e:
+        return {"error": f"internal: {e}"}
 
 @app.post("/send_order")
 async def send_order(request: dict):
