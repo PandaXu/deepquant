@@ -209,7 +209,7 @@ async def on_startup():
     global event_engine, main_engine, _main_loop
     _main_loop = asyncio.get_running_loop()
     event_engine = EventEngine()
-    event_engine.start()
+    # MainEngine.__init__ calls event_engine.start() — do NOT call it here
     main_engine = MainEngine(event_engine)
     event_engine.register_general(bridge_event)
     main_engine.write_log("Gateway engine ready")
