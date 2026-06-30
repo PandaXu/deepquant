@@ -55,13 +55,25 @@ class GatewayClient:
         try:
             if method == "GET":
                 async with self._session.get(url) as resp:
-                    return await resp.json()
+                    if resp.status >= 400:
+                        text = await resp.text()
+                        return {"error": text[:200]}
+                    return await resp.json(content_type=None)
             elif method == "POST":
                 async with self._session.post(url, json=body) as resp:
-                    return await resp.json()
+                    if resp.status >= 400:
+                        text = await resp.text()
+                        return {"error": text[:200]}
+                    return await resp.json(content_type=None)
+            elif method == "DELETE":
+                async with self._session.delete(url) as resp:
+                    if resp.status >= 400:
+                        text = await resp.text()
+                        return {"error": text[:200]}
+                    return await resp.json(content_type=None) if resp.status != 204 else {}
         except Exception as e:
             logger.error(f"GatewayClient request {method} {path}: {e}")
-            return {"error": str(e)}
+            return {"error": str(e)[:200]}
 
     async def connect_gateway(self, gateway_type: str, setting: dict) -> dict:
         return await self.request("POST", "/connect", {"gateway_type": gateway_type, "setting": setting})

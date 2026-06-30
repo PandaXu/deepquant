@@ -144,15 +144,21 @@ async def disconnect_gateway(request: dict):
 @app.post("/subscribe")
 async def subscribe(request: dict):
     body = request
-    req = SubscribeRequest(
-        symbol=body["symbol"],
-        exchange=body["exchange"],
-        gateway=body.get("gateway", "")
-    )
-    for name, gw in main_engine.gateways.items():
-        if body.get("gateway") and name != body["gateway"]: continue
+    symbol = body.get("symbol", "")
+    exchange = body.get("exchange", "")
+    gateway = body.get("gateway", "")
+
+    # Filter out disconnected gateways
+    active = {k: v for k, v in main_engine.gateways.items() if k not in _disconnected}
+    if not active:
+        return {"error": "no active gateway"}
+
+    req = SubscribeRequest(symbol=symbol, exchange=exchange, gateway=gateway)
+    for name, gw in active.items():
+        if gateway and name != gateway:
+            continue
         gw.subscribe(req)
-    return {"subscribed": f"{body['symbol']}.{body['exchange']}"}
+    return {"subscribed": f"{symbol}.{exchange}"}
 
 @app.post("/send_order")
 async def send_order(request: dict):
