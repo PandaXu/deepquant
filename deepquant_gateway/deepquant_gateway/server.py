@@ -77,7 +77,11 @@ def json_dumps(obj):
 
 def bridge_event(event: Event):
     if not ws_clients: return
-    payload = json_dumps({"type": event.type, "data": event.data, "time": datetime.now().isoformat()})
+    try:
+        payload = json_dumps({"type": event.type, "data": event.data, "time": datetime.now().isoformat()})
+    except Exception as e:
+        print(f"[bridge_event] json_dumps error: {e}", flush=True)
+        return
     async def broadcast():
         dead = []
         for ws in ws_clients:
@@ -206,6 +210,7 @@ async def on_startup():
     global event_engine, main_engine, _main_loop
     _main_loop = asyncio.get_running_loop()
     event_engine = EventEngine()
+    event_engine.start()
     main_engine = MainEngine(event_engine)
     event_engine.register_general(bridge_event)
     main_engine.write_log("Gateway engine ready")
