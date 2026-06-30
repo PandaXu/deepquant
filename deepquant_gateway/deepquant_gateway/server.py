@@ -3,7 +3,7 @@ import asyncio
 import json
 import threading
 from datetime import datetime
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
@@ -142,9 +142,9 @@ async def disconnect_gateway(request: dict):
     return {"status": "disconnected", "gateway": gateway_type}
 
 @app.post("/subscribe")
-async def subscribe(request: dict):
+async def subscribe(request: Request):
     try:
-        body = request
+        body = await request.json()
         symbol = body.get("symbol", "")
         exchange = body.get("exchange", "")
         gateway = body.get("gateway", "")
