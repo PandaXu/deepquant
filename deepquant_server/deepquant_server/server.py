@@ -274,11 +274,13 @@ async def handle_ws_message(ws: WebSocket, msg: str) -> None:
             await ws.send_text(json.dumps({"type": "log", "data": {"msg": f"账户已连接: {acct['alias']} ({gw_name})", "gateway_name": gw_name}}))
 
         elif action == "disconnect_account":
+            global _cached_gateways
             account_id = int(payload.get("account_id", 0))
             acct = get_account(account_id)
             if acct:
                 gw_name = acct.get("gateway", "CTP")
                 _active_account_name = ""
+                _cached_gateways = []
                 await gateway_client.disconnect_gateway(gw_name)
                 main_engine.write_log(f"账户已断开: {acct['alias']} ({gw_name})")
                 await ws.send_text(json.dumps({"type": "log", "data": {"msg": f"账户已断开: {acct['alias']}", "gateway_name": gw_name}}))
@@ -660,10 +662,14 @@ async def api_disconnect_gateway_account(account_id: int):
     if not acct:
         return {"error": "account not found"}
     gw_name = acct.get("gateway", "CTP")
+    global _active_account_name, _cached_gateways
     if gateway_client:
         result = await gateway_client.disconnect_gateway(gw_name)
+        _active_account_name = ""
+        _cached_gateways = []
         main_engine.write_log(f"账户已断开: {acct['alias']} ({gw_name})")
         return {"disconnected": "error" not in result}
+    return {"error": "gateway client not available"}
     main_engine.write_log(f"账户已断开: {acct['alias']} ({gw_name})")
     return {"disconnected": True}
 
