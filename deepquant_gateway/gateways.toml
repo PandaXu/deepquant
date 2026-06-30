@@ -1,0 +1,14 @@
+# DeepQuant Gateway — 多实例配置
+# 每个 [[gateways]] 定义一个独立网关实例
+
+[[gateways]]
+id = "ctp-simnow"
+port = 8889
+backend = "official"
+accounts = [3, 4]        # account_store IDs: SimNow仿真(3), SimNow(4)
+
+[[gateways]]
+id = "tts-openctp"
+port = 8890
+backend = "tts"
+accounts = [5]           # OpenCTP-7x24(5)
