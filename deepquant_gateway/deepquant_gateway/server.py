@@ -165,7 +165,10 @@ async def subscribe(request: dict):
     for name, gw in active.items():
         if gateway and name != gateway:
             continue
-        gw.subscribe(req)
+        try:
+            gw.subscribe(req)
+        except Exception as e:
+            return {"error": f"subscribe failed on {name}: {e}"}
     return {"subscribed": f"{symbol}.{exchange}"}
 
 @app.post("/send_order")
