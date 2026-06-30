@@ -147,13 +147,21 @@ async def subscribe(request: dict):
     symbol = body.get("symbol", "")
     exchange = body.get("exchange", "")
     gateway = body.get("gateway", "")
+    if not symbol or not exchange:
+        return {"error": "symbol and exchange are required"}
 
     # Filter out disconnected gateways
     active = {k: v for k, v in main_engine.gateways.items() if k not in _disconnected}
     if not active:
         return {"error": "no active gateway"}
 
-    req = SubscribeRequest(symbol=symbol, exchange=exchange, gateway=gateway)
+    from deepquant.trader.constant import Exchange
+    try:
+        ex = Exchange(exchange)
+    except ValueError:
+        return {"error": f"invalid exchange: {exchange}"}
+
+    req = SubscribeRequest(symbol=symbol, exchange=ex, gateway=gateway)
     for name, gw in active.items():
         if gateway and name != gateway:
             continue
