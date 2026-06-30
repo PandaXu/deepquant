@@ -63,6 +63,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, 
 event_engine: EventEngine = None
 main_engine: MainEngine = None
 ws_clients: list[WebSocket] = []
+_disconnected: set = set()  # gateway types that have been disconnected via /disconnect
 _main_loop = None
 
 def json_dumps(obj):
@@ -102,7 +103,7 @@ def get_status():
     if not main_engine: return {"status": "offline"}
     return {
         "status": "online",
-        "gateways": main_engine.get_all_gateway_names(),
+        "gateways": [g for g in main_engine.get_all_gateway_names() if g not in _disconnected],
         "exchanges": [e.value for e in main_engine.get_all_exchanges()],
         "ticks": len(main_engine.get_all_ticks()) if hasattr(main_engine, "get_all_ticks") else 0,
     }
@@ -122,9 +123,11 @@ async def connect_gateway(request: dict):
         return {"error": f"unsupported gateway: {gateway_type}"}
 
     if gateway_type in main_engine.gateways:
+        _disconnected.discard(gateway_type)
         return {"status": "connected", "gateway": gateway_type}
 
     main_engine.add_gateway(gw_class, gateway_type)
+    _disconnected.discard(gateway_type)
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, main_engine.connect, setting, gateway_type)
     return {"status": "connected", "gateway": gateway_type}
@@ -133,10 +136,9 @@ async def connect_gateway(request: dict):
 async def disconnect_gateway(request: dict):
     body = request
     gateway_type = body.get("gateway_type", "CTP")
-    # CTP native library crashes on remove_gateway (SIGSEGV in reqQryTradingAccount).
-    # Just update state — the connection will be cleaned up on process restart.
-    if gateway_type in main_engine.gateways:
-        main_engine.write_log(f"账户已断开 ({gateway_type})")
+    # CTP native library crashes on remove_gateway (SIGSEGV) — mark as disconnected instead
+    _disconnected.add(gateway_type)
+    main_engine.write_log(f"账户已断开 ({gateway_type})")
     return {"status": "disconnected", "gateway": gateway_type}
 
 @app.post("/subscribe")
