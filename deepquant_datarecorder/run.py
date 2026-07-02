@@ -39,7 +39,7 @@ async def main():
         tick = data.get("data", data)
         buffer.add_tick(tick)
 
-    client.on("tick", on_tick)
+    client.on("eTick.", on_tick)
     await client.start()
     asyncio.create_task(buffer.flush_loop())
 
