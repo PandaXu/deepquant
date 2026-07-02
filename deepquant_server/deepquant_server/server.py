@@ -107,13 +107,16 @@ _broadcast_queue: asyncio.Queue = asyncio.Queue()
 
 async def _broadcast_worker():
     """Consume broadcast queue in the uvicorn event loop."""
+    print("[broadcast] worker started", flush=True)
     while True:
         payload, clients_snapshot = await _broadcast_queue.get()
         dead = []
         for ws in list(clients_snapshot):
             try:
                 await ws.send_text(payload)
-            except Exception:
+                print(f"[broadcast] sent to client OK", flush=True)
+            except Exception as e:
+                print(f"[broadcast] send failed: {e}", flush=True)
                 if ws in ws_clients:
                     dead.append(ws)
         for ws in dead:
