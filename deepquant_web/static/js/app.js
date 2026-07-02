@@ -42,7 +42,7 @@ const App = {
       if (_autoSubscribed.value) return;
       if (store.connectedGateways.length === 0) return;
       _autoSubscribed.value = true;
-      ['au2609.SHFE', 'rb2609.SHFE', 'IF2606.CFFEX'].forEach(vt => {
+      ['AU2609.SHFE', 'rb2609.SHFE', 'IF2606.CFFEX'].forEach(vt => {
         const parts = vt.split('.');
         $restSubscribe(parts[0], parts[1]);
       });
