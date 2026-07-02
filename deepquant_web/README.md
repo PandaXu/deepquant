@@ -19,3 +19,14 @@ python deepquant_web/run.py
 | 策略 | CTA 策略管理、回测 |
 | 日志 | 实时日志 |
 | 设置 | 网关连接、账户管理、全局配置 |
+
+## 数据流
+
+```
+Gateway WS → Server WS → Web WS → store.tick → Vue reactive → UI
+```
+
+- **Tick 表格**：始终可见，无数据时显示占位提示
+- **K 线图**：默认加载主力合约日线，选择合约后自动切换
+- **行情条**：水平滚动显示所有活跃 tick
+- **深度图**：点击 tick 或选择合约后展示五档盘口

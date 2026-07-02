@@ -898,6 +898,18 @@ async def on_startup():
     global gateway_client
     gateway_client = GatewayClient(on_event=_on_gateway_event)
     await gateway_client.start()
+    # Auto-connect default account after a brief delay
+    async def _auto_connect():
+        await asyncio.sleep(3)
+        default = get_default_account()
+        if default:
+            gw_name = default.get("gateway", "CTP")
+            result = await gateway_client.connect_gateway(gw_name, default["setting"])
+            if "error" not in result:
+                global _active_account_name
+                _active_account_name = default["alias"]
+                main_engine.write_log(f"Auto-connected: {default['alias']} ({gw_name})")
+    asyncio.create_task(_auto_connect())
     # Background: poll Gateway status every 10s, never block
     async def _poll_gw_status():
         global _cached_gateways

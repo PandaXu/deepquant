@@ -36,6 +36,21 @@ const App = {
     // Auto-pause log when not on log tab, resume when entering
     watch(activeTab, (tab) => { store.logPaused = tab !== 'log'; });
 
+    // Auto-subscribe default contract after WS connects
+    const _autoSubscribed = ref(false);
+    watch(() => store.wsStatus, (connected) => {
+      if (connected && !_autoSubscribed.value) {
+        _autoSubscribed.value = true;
+        setTimeout(() => {
+          const defaults = ['au2609.SHFE', 'rb2609.SHFE', 'IF2606.CFFEX'];
+          defaults.forEach(vt => {
+            const parts = vt.split('.');
+            $restSubscribe(parts[0], parts[1] || 'SHFE', '');
+          });
+        }, 2000);
+      }
+    });
+
     return { tabs, activeTab, orderCount, tickCount, posCount, tradeCount, logPaused, store, wsConnect: $wsConnect, gatewayLabel };
   },
 };

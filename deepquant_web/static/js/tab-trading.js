@@ -146,7 +146,7 @@ const TabTrading = {
       </div>
 
       <!-- Tick Table -->
-      <div class="panel" style="flex:0 0 auto; max-height:200px; margin:0 6px" v-if="tickList.length">
+      <div class="panel" style="flex:0 0 auto; max-height:200px; margin:0 6px">
         <div class="panel-header">
           <span class="panel-title">📈 行情 Tick</span>
           <span class="panel-badge">{{ tickList.length }}</span>
