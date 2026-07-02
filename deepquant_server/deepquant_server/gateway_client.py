@@ -49,8 +49,9 @@ _GW_INSTANCES = _load_gateway_config()
 
 
 def _url_for(gateway_type: str, path: str = "") -> str:
-    """Get the URL for a specific gateway type. Falls back to official."""
-    gw = _GW_INSTANCES.get(gateway_type) or _GW_INSTANCES["official"]
+    """Get the URL for a specific gateway type. Case-insensitive, falls back to official."""
+    key = gateway_type.lower() if gateway_type else "official"
+    gw = _GW_INSTANCES.get(key) or _GW_INSTANCES.get("official") or next(iter(_GW_INSTANCES.values()))
     return f"{gw['url']}{path}"
 
 
