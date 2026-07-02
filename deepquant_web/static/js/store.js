@@ -64,11 +64,9 @@ function _onWsMessage(e) {
     const msg = JSON.parse(e.data);
     const { type, data } = msg;
     if (!type) return;
-    console.log('[ws] received:', type, data ? 'has-data' : 'no-data');
 
     if (type === 'tick' && data) {
       store.tick[data.vt_symbol] = data;
-      console.log('[store] tick stored:', data.vt_symbol, 'count:', Object.keys(store.tick).length);
     } else if (type === 'order' && data) {
       store.order[data.orderid || data.vt_orderid] = data;
     } else if (type === 'trade' && data) {

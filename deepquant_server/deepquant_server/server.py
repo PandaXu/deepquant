@@ -105,7 +105,6 @@ def json_dumps(obj: Any) -> str:
 # ---------------------------------------------------------------------------
 def bridge_event(event: Event) -> None:
     """Forward VeighNa events to all connected WebSocket clients."""
-    print(f"[srv-bridge] type={event.type} clients={len(ws_clients)}", flush=True)
     if not ws_clients:
         return
 
@@ -127,11 +126,7 @@ def bridge_event(event: Event) -> None:
             _remove_client(ws)
 
     if _main_loop and _main_loop.is_running():
-        try:
-            future = asyncio.run_coroutine_threadsafe(broadcast(), _main_loop)
-            future.result(timeout=2)
-        except Exception as e:
-            print(f"[bridge] broadcast failed: {e}", flush=True)
+        asyncio.run_coroutine_threadsafe(broadcast(), _main_loop)
 
 
 def _remove_client(ws: WebSocket) -> None:
