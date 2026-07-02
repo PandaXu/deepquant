@@ -36,20 +36,19 @@ const App = {
     // Auto-pause log when not on log tab, resume when entering
     watch(activeTab, (tab) => { store.logPaused = tab !== 'log'; });
 
-    // Auto-subscribe default contracts after WS connects
+    // Auto-subscribe default contracts when a gateway comes online
     const _autoSubscribed = ref(false);
-    function doAutoSubscribe() {
+    function tryAutoSubscribe() {
       if (_autoSubscribed.value) return;
+      if (store.connectedGateways.length === 0) return;
       _autoSubscribed.value = true;
-      setTimeout(() => {
-        ['au2609.SHFE', 'rb2609.SHFE', 'IF2606.CFFEX'].forEach(vt => {
-          const parts = vt.split('.');
-          $restSubscribe(parts[0], parts[1]);
-        });
-      }, 2000);
+      ['au2609.SHFE', 'rb2609.SHFE', 'IF2606.CFFEX'].forEach(vt => {
+        const parts = vt.split('.');
+        $restSubscribe(parts[0], parts[1]);
+      });
     }
-    watch(() => store.wsStatus, (connected) => { if (connected) doAutoSubscribe(); });
-    onMounted(() => { if (store.wsStatus) doAutoSubscribe(); });
+    watch(() => store.connectedGateways.length, () => tryAutoSubscribe());
+    onMounted(() => { setTimeout(tryAutoSubscribe, 3000); });
 
     return { tabs, activeTab, orderCount, tickCount, posCount, tradeCount, logPaused, store, wsConnect: $wsConnect, gatewayLabel };
   },
