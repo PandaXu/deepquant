@@ -46,8 +46,11 @@ class GatewayWSClient:
         except json.JSONDecodeError:
             return
         event_type = data.get("type", "")
-        for handler in self._handlers.get(event_type, []):
+        handlers = self._handlers.get(event_type, [])
+        if event_type == 'eTick.':
+            print(f"[dispatch] eTick. handlers={len(handlers)} data_keys={list(data.keys())[:5]}", flush=True)
+        for handler in handlers:
             try:
                 handler(data)
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[dispatch] handler error: {e}", flush=True)

@@ -22,6 +22,7 @@ class TickBuffer:
         vt_symbol = tick.get("vt_symbol", "unknown")
         self._ticks[vt_symbol].append(tick)
         self._count += 1
+        print(f"[buffer] add_tick {vt_symbol} count={self._count}", flush=True)
 
     def add_bar(self, bar: dict):
         """Add a bar to the buffer."""

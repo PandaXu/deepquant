@@ -76,7 +76,11 @@ def json_dumps(obj):
     return json.dumps(obj, default=convert, ensure_ascii=False)
 
 def bridge_event(event: Event):
-    if not ws_clients: return
+    if not ws_clients:
+        print(f"[bridge] drop {event.type} (no clients)", flush=True)
+        return
+    if event.type == 'eTick.':
+        print(f"[bridge] pushing tick to {len(ws_clients)} clients, loop={_main_loop.is_running() if _main_loop else 'no-loop'}", flush=True)
     try:
         payload = json_dumps({"type": event.type, "data": event.data, "time": datetime.now().isoformat()})
     except Exception as e:
