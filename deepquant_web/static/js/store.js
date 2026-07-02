@@ -67,6 +67,7 @@ function _onWsMessage(e) {
 
     if (type === 'tick' && data) {
       store.tick[data.vt_symbol] = data;
+      console.log('[store] tick stored:', data.vt_symbol, 'count:', Object.keys(store.tick).length);
     } else if (type === 'order' && data) {
       store.order[data.orderid || data.vt_orderid] = data;
     } else if (type === 'trade' && data) {

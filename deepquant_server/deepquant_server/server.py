@@ -115,8 +115,6 @@ def json_dumps(obj: Any) -> str:
 # ---------------------------------------------------------------------------
 def bridge_event(event: Event) -> None:
     """Forward VeighNa events to all connected WebSocket clients."""
-    if event.type == 'tick':
-        print(f"[bridge] tick event, clients={len(ws_clients)} loop={_main_loop.is_running() if _main_loop else 'none'}", flush=True)
     if not ws_clients:
         return
 
@@ -892,8 +890,6 @@ def _on_gateway_event(data: dict):
     # Map Gateway event types to Web-compatible types
     type_map = {"eTick.":"tick","eOrder.":"order","eTrade.":"trade","ePosition.":"position","eAccount.":"account","eLog.":"log","eContract.":"contract","eQuote.":"quote"}
     web_type = type_map.get(event_type, event_type)
-    if event_type == 'eTick.':
-        print(f"[_on_gw] tick received, mapping to {web_type}", flush=True)
     if not main_engine or not event_engine: return
     event = Event(type=web_type, data=data.get("data", {}))
     event_engine.put(event)
