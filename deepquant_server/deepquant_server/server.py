@@ -103,30 +103,42 @@ def json_dumps(obj: Any) -> str:
 # ---------------------------------------------------------------------------
 # Event → WebSocket bridge
 # ---------------------------------------------------------------------------
+_broadcast_queue: asyncio.Queue = asyncio.Queue()
+
+async def _broadcast_worker():
+    """Consume broadcast queue in the uvicorn event loop."""
+    while True:
+        payload, clients_snapshot = await _broadcast_queue.get()
+        dead = []
+        for ws in list(clients_snapshot):
+            try:
+                await ws.send_text(payload)
+            except Exception:
+                if ws in ws_clients:
+                    dead.append(ws)
+        for ws in dead:
+            _remove_client(ws)
+
+
 def bridge_event(event: Event) -> None:
     """Forward VeighNa events to all connected WebSocket clients."""
     if not ws_clients:
         return
 
-    data = event.data
-    payload = json_dumps({
-        "type": event.type,
-        "data": data,
-        "time": datetime.now().isoformat(),
-    })
+    try:
+        payload = json_dumps({
+            "type": event.type,
+            "data": event.data,
+            "time": datetime.now().isoformat(),
+        })
+    except Exception:
+        return
 
-    async def broadcast():
-        dead: list[WebSocket] = []
-        for ws in ws_clients:
-            try:
-                await ws.send_text(payload)
-            except Exception:
-                dead.append(ws)
-        for ws in dead:
-            _remove_client(ws)
-
-    if _main_loop and _main_loop.is_running():
-        asyncio.run_coroutine_threadsafe(broadcast(), _main_loop)
+    # Push to queue — worker runs in uvicorn event loop
+    try:
+        _broadcast_queue.put_nowait((payload, list(ws_clients)))
+    except asyncio.QueueFull:
+        pass
 
 
 def _remove_client(ws: WebSocket) -> None:
@@ -898,6 +910,8 @@ async def on_startup():
     global gateway_client
     gateway_client = GatewayClient(on_event=_on_gateway_event)
     await gateway_client.start()
+    # Start broadcast worker in uvicorn event loop
+    asyncio.create_task(_broadcast_worker())
     # Auto-connect default account after a brief delay
     async def _auto_connect():
         await asyncio.sleep(3)
