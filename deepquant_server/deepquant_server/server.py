@@ -127,7 +127,11 @@ def bridge_event(event: Event) -> None:
             _remove_client(ws)
 
     if _main_loop and _main_loop.is_running():
-        asyncio.run_coroutine_threadsafe(broadcast(), _main_loop)
+        try:
+            future = asyncio.run_coroutine_threadsafe(broadcast(), _main_loop)
+            future.result(timeout=2)
+        except Exception as e:
+            print(f"[bridge] broadcast failed: {e}", flush=True)
 
 
 def _remove_client(ws: WebSocket) -> None:
