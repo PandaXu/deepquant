@@ -76,14 +76,11 @@ def json_dumps(obj):
     return json.dumps(obj, default=convert, ensure_ascii=False)
 
 def bridge_event(event: Event):
-    if not ws_clients:
-        print(f"[bridge] no clients, dropping {event.type}", flush=True)
-        return
+    if not ws_clients: return
     try:
         payload = json_dumps({"type": event.type, "data": event.data, "time": datetime.now().isoformat()})
     except Exception as e:
         payload = json.dumps({"type": event.type, "error": str(e)[:200]}, ensure_ascii=False)
-        print(f"[bridge] json error: {e}", flush=True)
     async def broadcast():
         dead = []
         for ws in ws_clients:
@@ -91,11 +88,7 @@ def bridge_event(event: Event):
             except: dead.append(ws)
         for ws in dead: ws_clients.remove(ws)
     if _main_loop and _main_loop.is_running():
-        future = asyncio.run_coroutine_threadsafe(broadcast(), _main_loop)
-        try: future.result(timeout=1)
-        except: pass
-    else:
-        print(f"[bridge] loop not running, dropping {event.type}", flush=True)
+        asyncio.run_coroutine_threadsafe(broadcast(), _main_loop)
 
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
