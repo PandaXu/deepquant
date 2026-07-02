@@ -878,9 +878,14 @@ def start_engine() -> None:
 def _on_gateway_event(data: dict):
     """Forward Gateway WS events to Server event engine."""
     event_type = data.get("type", "")
-    # Map Gateway event types to Web-compatible types
-    type_map = {"eTick.":"tick","eOrder.":"order","eTrade.":"trade","ePosition.":"position","eAccount.":"account","eLog.":"log","eContract.":"contract","eQuote.":"quote"}
-    web_type = type_map.get(event_type, event_type)
+    # Map Gateway event types to Web-compatible types (handle eTick.XXX variants)
+    web_type = event_type
+    for prefix, mapped in [("eTick.", "tick"), ("eOrder.", "order"), ("eTrade.", "trade"),
+                           ("ePosition.", "position"), ("eAccount.", "account"), ("eLog.", "log"),
+                           ("eContract.", "contract"), ("eQuote.", "quote")]:
+        if event_type.startswith(prefix):
+            web_type = mapped
+            break
     if not main_engine or not event_engine: return
     event = Event(type=web_type, data=data.get("data", {}))
     event_engine.put(event)
