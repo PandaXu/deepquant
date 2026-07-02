@@ -738,11 +738,15 @@ async def api_cancel_order(orderid: str, symbol: str = "", exchange: str = "", g
 async def api_subscribe(request: Request):
     """Subscribe to market data via Gateway service."""
     body = await request.json()
-    result = await gateway_client.subscribe(
-        symbol=body.get("symbol", ""),
-        exchange=body.get("exchange", ""),
-        gateway=body.get("gateway", ""),
-    )
+    symbol = body.get("symbol", "")
+    exchange = body.get("exchange", "")
+    gateway = body.get("gateway", "")
+    # If no specific gateway, subscribe on all active gateways
+    if not gateway:
+        for gw_type in _cached_gateways:
+            result = await gateway_client.subscribe(symbol, exchange, gw_type)
+        return {"subscribed": f"{symbol}.{exchange}"}
+    result = await gateway_client.subscribe(symbol, exchange, gateway)
     return result
 
 

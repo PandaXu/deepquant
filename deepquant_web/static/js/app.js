@@ -44,7 +44,7 @@ const App = {
       setTimeout(() => {
         ['au2609.SHFE', 'rb2609.SHFE', 'IF2606.CFFEX'].forEach(vt => {
           const parts = vt.split('.');
-          $restSubscribe(parts[0], parts[1] || 'SHFE', '');
+          $restSubscribe(parts[0], parts[1]);
         });
       }, 2000);
     }
