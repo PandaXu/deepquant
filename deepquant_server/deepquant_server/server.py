@@ -28,7 +28,7 @@ from deepquant.trader.setting import SETTINGS
 
 SETTINGS["font.family"] = "PingFang SC"
 
-from .gateway_client import GatewayClient
+from .gateway_client import GatewayClient, _GW_INSTANCES
 
 gateway_client: GatewayClient = None
 
@@ -741,10 +741,11 @@ async def api_subscribe(request: Request):
     symbol = body.get("symbol", "")
     exchange = body.get("exchange", "")
     gateway = body.get("gateway", "")
-    # If no specific gateway, subscribe on all active gateways
+    # If no specific gateway, subscribe on all available gateways
     if not gateway:
-        for gw_type in _cached_gateways:
-            result = await gateway_client.subscribe(symbol, exchange, gw_type)
+        targets = _cached_gateways if _cached_gateways else list(_GW_INSTANCES.keys())
+        for gw_type in targets:
+            await gateway_client.subscribe(symbol, exchange, gw_type)
         return {"subscribed": f"{symbol}.{exchange}"}
     result = await gateway_client.subscribe(symbol, exchange, gateway)
     return result
