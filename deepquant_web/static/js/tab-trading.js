@@ -137,7 +137,7 @@ const TabTrading = {
       </div>
 
       <!-- Ticker Strip -->
-      <div class="ticker-strip" v-if="tickList.length">
+      <div class="ticker-strip">
         <div v-for="t in tickList" :key="t.vt_symbol" class="ticker-item" @click="onPickTick(t)">
           <span class="sym">{{ t.vt_symbol.split('.')[0] }}</span>
           <span class="price" :class="chgCls(t)">{{ fmtPrice(t.last_price) }}</span>
