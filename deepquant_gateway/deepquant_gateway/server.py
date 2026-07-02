@@ -78,7 +78,7 @@ def json_dumps(obj):
 def bridge_event(event: Event):
     if not ws_clients: return
     try:
-        payload = json.dumps({"type": event.type, "msg": str(event.data)[:500], "time": datetime.now().isoformat()}, ensure_ascii=False, default=str)
+        payload = json_dumps({"type": event.type, "data": event.data, "time": datetime.now().isoformat()})
     except Exception as e:
         payload = json.dumps({"type": event.type, "error": str(e)[:200]}, ensure_ascii=False)
     async def broadcast():
