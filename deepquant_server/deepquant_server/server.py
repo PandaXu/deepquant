@@ -115,6 +115,8 @@ def json_dumps(obj: Any) -> str:
 # ---------------------------------------------------------------------------
 def bridge_event(event: Event) -> None:
     """Forward VeighNa events to all connected WebSocket clients."""
+    if event.type == 'tick':
+        print(f"[bridge] tick event, clients={len(ws_clients)} loop={_main_loop.is_running() if _main_loop else 'none'}", flush=True)
     if not ws_clients:
         return
 
