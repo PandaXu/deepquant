@@ -1,0 +1,6 @@
+{
+  "tests/test_alpha101.py::TestAlpha101::test_alpha62": true,
+  "tests/test_alpha101.py::TestAlpha101::test_alpha64": true,
+  "tests/test_alpha101.py::TestAlpha101::test_alpha65": true,
+  "tests/test_alpha101.py::TestAlpha101::test_alpha68": true
+}
