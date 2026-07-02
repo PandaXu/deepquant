@@ -890,6 +890,8 @@ def _on_gateway_event(data: dict):
     # Map Gateway event types to Web-compatible types
     type_map = {"eTick.":"tick","eOrder.":"order","eTrade.":"trade","ePosition.":"position","eAccount.":"account","eLog.":"log","eContract.":"contract","eQuote.":"quote"}
     web_type = type_map.get(event_type, event_type)
+    if event_type == 'eTick.':
+        print(f"[_on_gw] tick received, mapping to {web_type}", flush=True)
     if not main_engine or not event_engine: return
     event = Event(type=web_type, data=data.get("data", {}))
     event_engine.put(event)
