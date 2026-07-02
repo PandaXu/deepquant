@@ -105,6 +105,7 @@ def json_dumps(obj: Any) -> str:
 # ---------------------------------------------------------------------------
 def bridge_event(event: Event) -> None:
     """Forward VeighNa events to all connected WebSocket clients."""
+    print(f"[srv-bridge] type={event.type} clients={len(ws_clients)}", flush=True)
     if not ws_clients:
         return
 
