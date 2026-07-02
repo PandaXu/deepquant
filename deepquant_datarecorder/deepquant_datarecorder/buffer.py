@@ -22,7 +22,6 @@ class TickBuffer:
         vt_symbol = tick.get("vt_symbol", "unknown")
         self._ticks[vt_symbol].append(tick)
         self._count += 1
-        print(f"[buffer] add_tick {vt_symbol} count={self._count}", flush=True)
 
     def add_bar(self, bar: dict):
         """Add a bar to the buffer."""
@@ -49,7 +48,10 @@ class TickBuffer:
 
     async def flush_loop(self):
         """Periodically flush buffered data."""
+        print("[buffer] flush_loop started", flush=True)
         while True:
             await asyncio.sleep(1)
-            if await self.should_flush():
-                await self.flush()
+            try:
+                if await self.should_flush():
+                    await self.flush()
+            except Exception:

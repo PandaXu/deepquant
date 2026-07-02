@@ -1,72 +1,60 @@
-"""DatabaseWriter — persist tick/bar data to SQLite."""
+"""DatabaseWriter — persist tick/bar data to SQLite (matching existing vnpy schema)."""
 import sqlite3
 import os
 from pathlib import Path
 from datetime import datetime
-import asyncio
 
 
 class DatabaseWriter:
-    """Write tick and bar data to a SQLite database."""
 
     def __init__(self, db_path: str = ""):
         self._db_path = db_path or str(Path.home() / ".vntrader" / "database.db")
         os.makedirs(os.path.dirname(self._db_path), exist_ok=True)
-        self._ensure_tables()
 
     def _get_conn(self):
         return sqlite3.connect(self._db_path)
 
-    def _ensure_tables(self):
-        conn = self._get_conn()
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS dbbardata (
-                vt_symbol TEXT, symbol TEXT, exchange TEXT,
-                datetime TEXT, interval TEXT,
-                open_price REAL, high_price REAL, low_price REAL, close_price REAL,
-                volume REAL, open_interest REAL,
-                gateway_name TEXT,
-                PRIMARY KEY (vt_symbol, datetime, interval)
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS dbtickdata (
-                vt_symbol TEXT, symbol TEXT, exchange TEXT,
-                datetime TEXT,
-                last_price REAL, volume REAL, open_interest REAL,
-                bid_price_1 REAL, bid_volume_1 REAL,
-                ask_price_1 REAL, ask_volume_1 REAL,
-                gateway_name TEXT,
-                PRIMARY KEY (vt_symbol, datetime)
-            )
-        """)
-        conn.commit()
-        conn.close()
-
     async def save_ticks(self, vt_symbol: str, ticks: list[dict]):
-        """Batch insert ticks."""
-        await asyncio.to_thread(self._save_ticks_sync, vt_symbol, ticks)
-
-    def _save_ticks_sync(self, vt_symbol: str, ticks: list[dict]):
         conn = self._get_conn()
         for t in ticks:
             try:
                 conn.execute("""
-                    INSERT OR REPLACE INTO dbtickdata
-                    (vt_symbol, symbol, exchange, datetime, last_price, volume, open_interest,
-                     bid_price_1, bid_volume_1, ask_price_1, ask_volume_1, gateway_name)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO dbtickdata
+                    (symbol, exchange, datetime, name, volume, turnover, open_interest,
+                     last_price, last_volume, limit_up, limit_down,
+                     open_price, high_price, low_price, pre_close,
+                     bid_price_1, bid_price_2, bid_price_3, bid_price_4, bid_price_5,
+                     ask_price_1, ask_price_2, ask_price_3, ask_price_4, ask_price_5,
+                     bid_volume_1, bid_volume_2, bid_volume_3, bid_volume_4, bid_volume_5,
+                     ask_volume_1, ask_volume_2, ask_volume_3, ask_volume_4, ask_volume_5,
+                     localtime)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                            ?, ?, ?, ?, ?, ?)
                 """, (
-                    t.get("vt_symbol", vt_symbol),
                     t.get("symbol", ""),
                     t.get("exchange", ""),
                     t.get("datetime", datetime.now().isoformat()),
-                    t.get("last_price", 0),
-                    t.get("volume", 0),
+                    t.get("name", ""),
+                    t.get("volume", 0), t.get("turnover", 0),
                     t.get("open_interest", 0),
-                    t.get("bid_price_1", 0), t.get("bid_volume_1", 0),
-                    t.get("ask_price_1", 0), t.get("ask_volume_1", 0),
-                    t.get("gateway_name", ""),
+                    t.get("last_price", 0), t.get("last_volume", 0),
+                    t.get("limit_up", 0), t.get("limit_down", 0),
+                    t.get("open_price", 0), t.get("high_price", 0),
+                    t.get("low_price", 0), t.get("pre_close", 0),
+                    t.get("bid_price_1", 0), t.get("bid_price_2", 0),
+                    t.get("bid_price_3", 0), t.get("bid_price_4", 0),
+                    t.get("bid_price_5", 0),
+                    t.get("ask_price_1", 0), t.get("ask_price_2", 0),
+                    t.get("ask_price_3", 0), t.get("ask_price_4", 0),
+                    t.get("ask_price_5", 0),
+                    t.get("bid_volume_1", 0), t.get("bid_volume_2", 0),
+                    t.get("bid_volume_3", 0), t.get("bid_volume_4", 0),
+                    t.get("bid_volume_5", 0),
+                    t.get("ask_volume_1", 0), t.get("ask_volume_2", 0),
+                    t.get("ask_volume_3", 0), t.get("ask_volume_4", 0),
+                    t.get("ask_volume_5", 0),
+                    t.get("localtime", datetime.now().isoformat()),
                 ))
             except Exception:
                 pass
@@ -74,31 +62,4 @@ class DatabaseWriter:
         conn.close()
 
     async def save_bars(self, vt_symbol: str, bars: list[dict]):
-        """Batch insert bars."""
-        await asyncio.to_thread(self._save_bars_sync, vt_symbol, bars)
-
-    def _save_bars_sync(self, vt_symbol: str, bars: list[dict]):
-        conn = self._get_conn()
-        for b in bars:
-            try:
-                conn.execute("""
-                    INSERT OR REPLACE INTO dbbardata
-                    (vt_symbol, symbol, exchange, datetime, interval,
-                     open_price, high_price, low_price, close_price,
-                     volume, open_interest, gateway_name)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    b.get("vt_symbol", vt_symbol),
-                    b.get("symbol", ""),
-                    b.get("exchange", ""),
-                    b.get("datetime", datetime.now().isoformat()),
-                    b.get("interval", "1m"),
-                    b.get("open_price", 0), b.get("high_price", 0),
-                    b.get("low_price", 0), b.get("close_price", 0),
-                    b.get("volume", 0), b.get("open_interest", 0),
-                    b.get("gateway_name", ""),
-                ))
-            except Exception:
-                pass
-        conn.commit()
-        conn.close()
+        pass  # bar writing not implemented yet

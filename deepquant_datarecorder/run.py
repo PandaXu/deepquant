@@ -37,7 +37,6 @@ async def main():
 
     def on_tick(data: dict):
         tick = data.get("data", data)
-        print(f"[recorder] tick: {tick.get('vt_symbol')} price={tick.get('last_price')}", flush=True)
         buffer.add_tick(tick)
 
     client.on("eTick.", on_tick)
