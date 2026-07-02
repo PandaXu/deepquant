@@ -88,24 +88,14 @@ _main_loop: asyncio.AbstractEventLoop | None = None
 def json_dumps(obj: Any) -> str:
     """Custom JSON encoder for VeighNa objects."""
     def convert(o: Any) -> Any:
+        if isinstance(o, datetime): return o.isoformat()
+        if isinstance(o, Enum): return o.value  # Enum — check BEFORE __dict__
         if hasattr(o, "__dict__"):
             result = {}
             for k, v in o.__dict__.items():
-                if k.startswith("_"):
-                    continue
-                if isinstance(v, datetime):
-                    result[k] = v.isoformat()
-                elif isinstance(v, Enum):
-                    result[k] = v.value
-                elif hasattr(v, "__dict__"):
-                    result[k] = convert(v)
-                else:
-                    result[k] = v
+                if k.startswith("_"): continue
+                result[k] = convert(v)
             return result
-        elif isinstance(o, datetime):
-            return o.isoformat()
-        elif isinstance(o, Enum):
-            return o.value
         return o
     return json.dumps(obj, default=convert, ensure_ascii=False)
 
