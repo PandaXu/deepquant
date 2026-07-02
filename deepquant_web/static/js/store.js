@@ -64,6 +64,7 @@ function _onWsMessage(e) {
     const msg = JSON.parse(e.data);
     const { type, data } = msg;
     if (!type) return;
+    console.log('[ws] received:', type, data ? 'has-data' : 'no-data');
 
     if (type === 'tick' && data) {
       store.tick[data.vt_symbol] = data;
