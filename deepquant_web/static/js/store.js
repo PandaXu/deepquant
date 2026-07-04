@@ -200,8 +200,44 @@ function $fmtPnl(v) {
 
 function $timeStr(ts) {
   if (!ts) return '';
-  if (typeof ts === 'string') return ts.slice(-8);
-  return new Date(ts).toLocaleTimeString('zh-CN', { hour12: false });
+  const d = ts instanceof Date ? ts : new Date(ts);
+  if (Number.isNaN(d.getTime())) {
+    const m = String(ts).match(/T(\d{2}:\d{2}:\d{2})/);
+    return m ? m[1] : String(ts);
+  }
+  const pad = n => String(n).padStart(2, '0');
+  const hh = pad(d.getHours());
+  const mm = pad(d.getMinutes());
+  const ss = pad(d.getSeconds());
+  const time = `${hh}:${mm}:${ss}`;
+  const now = new Date();
+  const isToday = d.getFullYear() === now.getFullYear()
+    && d.getMonth() === now.getMonth()
+    && d.getDate() === now.getDate();
+  if (isToday) return time;
+  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${time}`;
+}
+
+/** 逐笔时间：HH:mm:ss.SSS，非当日加 MM-DD 前缀 */
+function $tickTimeStr(ts) {
+  if (!ts) return '';
+  const d = ts instanceof Date ? ts : new Date(ts);
+  if (Number.isNaN(d.getTime())) {
+    const m = String(ts).match(/T(\d{2}:\d{2}:\d{2})/);
+    return m ? m[1] : String(ts);
+  }
+  const pad = n => String(n).padStart(2, '0');
+  const hh = pad(d.getHours());
+  const mm = pad(d.getMinutes());
+  const ss = pad(d.getSeconds());
+  const ms = String(d.getMilliseconds()).padStart(3, '0');
+  const time = `${hh}:${mm}:${ss}.${ms}`;
+  const now = new Date();
+  const isToday = d.getFullYear() === now.getFullYear()
+    && d.getMonth() === now.getMonth()
+    && d.getDate() === now.getDate();
+  if (isToday) return time;
+  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${time}`;
 }
 
 // ---- Toast ----

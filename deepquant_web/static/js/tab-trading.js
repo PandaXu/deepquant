@@ -33,7 +33,10 @@ const TabTrading = {
           <div class="trading-center panel">
             <div class="kline-wrap">
               <div class="kline-container" ref="klineEl"></div>
-              <div v-if="chartEmpty" class="chart-empty-overlay"><div>{{ chartSymbol ? '暂无 ' + chartSymbol + ' 行情数据' : '在左侧自选点击合约' }}</div></div>
+              <div v-if="chartEmpty" class="chart-empty-overlay">
+                <div>{{ chartEmptyHint }}</div>
+                <div v-if="chartEmptySub" class="hint-sub">{{ chartEmptySub }}</div>
+              </div>
             </div>
             <tick-stream-drawer :open="ui.showTickStream" :symbol="chartSymbol" @close="ui.showTickStream = false" />
           </div>
@@ -42,7 +45,7 @@ const TabTrading = {
             <div class="panel-header"><span class="panel-title">五档盘口</span></div>
             <div class="depth-panel" v-if="symbolTick">
               <div class="depth-asks">
-                <div v-for="i in 5" :key="'a'+i" class="depth-row" @click="setPrice('ask', i)">
+                <div v-for="i in depthAskLevels" :key="'a'+i" class="depth-row" @click="setPrice('ask', i)">
                   <span class="depth-label">卖{{ i }}</span>
                   <span class="depth-price ask">{{ fmtPrice(symbolTick['ask_price_'+i]) }}</span>
                   <span class="depth-vol">{{ fmtVol(symbolTick['ask_volume_'+i]) }}</span>
@@ -52,7 +55,7 @@ const TabTrading = {
                 <span class="depth-last" :class="chgCls(symbolTick)">{{ fmtPrice(symbolTick.last_price) }}</span>
               </div>
               <div class="depth-bids">
-                <div v-for="i in 5" :key="'b'+i" class="depth-row" @click="setPrice('bid', i)">
+                <div v-for="i in depthBidLevels" :key="'b'+i" class="depth-row" @click="setPrice('bid', i)">
                   <span class="depth-label">买{{ i }}</span>
                   <span class="depth-price bid">{{ fmtPrice(symbolTick['bid_price_'+i]) }}</span>
                   <span class="depth-vol">{{ fmtVol(symbolTick['bid_volume_'+i]) }}</span>
@@ -146,10 +149,13 @@ const TabTrading = {
     let chartInstance = null;
     let chartResizeObs = null;
     let chartBars = [];
+    let timeshareState = null;
     const chartSymbol = ref('');
     const chartInterval = ref('1m');
     const chartMode = ref('candle');
     const chartEmpty = ref(true);
+    const chartEmptyHint = ref('在左侧自选点击合约');
+    const chartEmptySub = ref('');
     const priceMode = ref('opponent');
     const priceFlashCls = ref('');
     const priceModes = [
@@ -159,6 +165,9 @@ const TabTrading = {
       { id: 'limit', label: '指定价' },
     ];
     const intervals = ['tick', '1m', '5m', '15m', '1h', 'd'];
+    /** 卖盘自上而下：卖五→卖一（卖一贴近现价） */
+    const depthAskLevels = [5, 4, 3, 2, 1];
+    const depthBidLevels = [1, 2, 3, 4, 5];
     const tradingPrefs = $loadTradingPrefs();
     const form = reactive({
       exchange: '', product: '', symbol: '', direction: 'LONG', offset: 'OPEN',
@@ -235,12 +244,8 @@ const TabTrading = {
 
     function refreshMarkLines() {
       if (!chartInstance || !chartSymbol.value) return;
-      if (chartMode.value === 'timeshare') {
-        renderTimeshare();
-        return;
-      }
-      if (chartBars.length) {
-        $applyCandleChart(chartInstance, chartBars, chartSymbol.value);
+      if (chartMode.value === 'timeshare' && timeshareState) {
+        $updateTimeshareMarkLines(chartInstance, timeshareState, chartSymbol.value);
         return;
       }
       $updateChartMarkLines(chartInstance, chartSymbol.value);
@@ -248,32 +253,65 @@ const TabTrading = {
 
     function clearChartView() {
       chartBars = [];
+      timeshareState = null;
       chartEmpty.value = true;
+      chartEmptyHint.value = chartSymbol.value ? `暂无 ${chartSymbol.value} 行情数据` : '在左侧自选点击合约';
+      chartEmptySub.value = '';
       if (chartInstance) $clearChart(chartInstance);
     }
 
-    function renderTimeshare() {
+    async function loadTimeshare(vtSymbol) {
       if (!ensureChart()) return;
-      const vt = chartSymbol.value;
-      const nvt = $normalizeVt(vt);
-      const stream = store.tickStream[nvt] || [];
-      const tick = $lookupTick(vt);
-      const ticks = stream.length ? stream : (tick ? [{ time: tick.datetime, last_price: tick.last_price, volume: tick.volume }] : []);
-      const td = $ticksToTimeshare(ticks, tick?.pre_close || tick?.open_price);
-      if (!td) {
-        clearChartView();
-        return;
-      }
+      vtSymbol = $normalizeVt(vtSymbol);
+      const { symbol, exchange } = $parseVtSymbol(vtSymbol);
+      const ex = exchange || form.exchange || 'CFFEX';
       chartMode.value = 'timeshare';
-      $applyTimeshareChart(chartInstance, td, vt);
-      chartEmpty.value = false;
-      nextTick(() => chartInstance?.resize());
+      chartEmptyHint.value = `加载 ${vtSymbol} 分时…`;
+      chartEmptySub.value = '';
+      chartEmpty.value = true;
+
+      try {
+        const bars = await $fetchIntradayBars(symbol, ex);
+        const tick = $lookupTick(vtSymbol);
+        const preClose = tick?.pre_close || tick?.open_price || bars[0]?.open;
+        timeshareState = $buildTimeshareState(bars, ex, preClose, tick, vtSymbol);
+        if (!timeshareState) {
+          chartEmptyHint.value = `暂无 ${vtSymbol} 分时数据`;
+          chartEmptySub.value = '请确认已连接网关并订阅行情';
+          chartEmpty.value = true;
+          if (chartInstance) $clearChart(chartInstance);
+          return;
+        }
+        $applyTimeshareChart(chartInstance, timeshareState, vtSymbol);
+        chartEmpty.value = !timeshareState.hasAnyData;
+        if (chartEmpty.value) {
+          chartEmptyHint.value = `等待 ${vtSymbol} 分时成交…`;
+          chartEmptySub.value = timeshareState.sessionDate ? `交易日 ${timeshareState.sessionDate}` : '';
+        }
+        nextTick(() => chartInstance?.resize());
+      } catch (e) {
+        console.error('loadTimeshare:', e);
+        chartEmptyHint.value = `加载分时失败`;
+        chartEmptySub.value = String(e.message || e);
+        chartEmpty.value = true;
+      }
+    }
+
+    function updateTimeshareFromTick(tick) {
+      if (!timeshareState || !tick || !$tickMatchesVt(tick, chartSymbol.value)) return;
+      const changed = $applyTickToTimeshareState(timeshareState, tick);
+      if (!changed || !chartInstance) return;
+      $patchTimeshareChart(chartInstance, timeshareState, chartSymbol.value);
+      chartEmpty.value = !timeshareState.hasAnyData;
+      if (!chartEmpty.value) chartEmptySub.value = '';
     }
 
     function renderCandles(bars) {
       if (!ensureChart() || !bars.length) return false;
       chartBars = bars.slice();
       chartMode.value = 'candle';
+      timeshareState = null;
+      chartEmptySub.value = '';
       $applyCandleChart(chartInstance, chartBars, chartSymbol.value);
       chartEmpty.value = false;
       nextTick(() => chartInstance?.resize());
@@ -309,10 +347,13 @@ const TabTrading = {
       chartInterval.value = interval || '1m';
 
       if (interval === 'tick') {
-        renderTimeshare();
+        await loadTimeshare(vtSymbol);
         persistContract();
         return;
       }
+
+      chartMode.value = 'candle';
+      timeshareState = null;
 
       const { symbol, exchange } = $parseVtSymbol(vtSymbol);
       const ex = exchange || form.exchange || 'CFFEX';
@@ -326,14 +367,15 @@ const TabTrading = {
         if (bars.length) {
           renderCandles(bars);
         } else {
-          const nvt = $normalizeVt(vtSymbol);
-          const stream = store.tickStream[nvt] || [];
-          if (stream.length >= 2) renderTimeshare();
-          else {
-            const tick = $lookupTick(vtSymbol);
-            const seed = tick ? $tickToSeedBar(tick) : null;
-            if (seed) renderCandles([seed]);
-            else clearChartView();
+          const tick = $lookupTick(vtSymbol);
+          const seed = tick ? $tickToSeedBar(tick) : null;
+          if (seed) {
+            renderCandles([seed]);
+            chartEmptySub.value = '历史 K 线为空，仅显示最新价';
+          } else {
+            chartEmptyHint.value = `暂无 ${vtSymbol} ${interval} K 线`;
+            chartEmptySub.value = '请确认 DataRecorder 已录制或数据库有历史数据';
+            clearChartView();
           }
         }
       } catch (e) {
@@ -351,7 +393,7 @@ const TabTrading = {
         setTimeout(() => { priceFlashCls.value = ''; }, 350);
       }
       if (chartMode.value === 'timeshare' || chartInterval.value === 'tick') {
-        renderTimeshare();
+        updateTimeshareFromTick(tick);
         return;
       }
       if (!chartInstance) return;
@@ -372,7 +414,7 @@ const TabTrading = {
         low_price: Math.min(last.low ?? last.low_price ?? tick.last_price, tick.last_price),
         volume: (last.volume || 0) + (tick.last_volume || 0),
       };
-      $applyCandleChart(chartInstance, chartBars, chartSymbol.value);
+      $patchCandleChart(chartInstance, chartBars, chartSymbol.value);
       chartEmpty.value = false;
     }
 
@@ -435,7 +477,8 @@ const TabTrading = {
       if (!t) return;
       priceMode.value = 'limit';
       form.orderType = 'LIMIT';
-      form.price = String(t[side === 'ask' ? 'ask_price_' : 'bid_price_' + i] || '');
+      const key = `${side}_price_${i}`;
+      form.price = String(t[key] || '');
     }
 
     function editOrder(o) {
@@ -531,8 +574,9 @@ const TabTrading = {
     });
 
     return {
-      ui, klineEl, chartSymbol, chartInterval, chartMode, chartModeLabel, chartEmpty, symbolTick, priceMode, priceModes,
-      form, intervals, priceFlashCls,
+      ui, klineEl, chartSymbol, chartInterval, chartMode, chartModeLabel, chartEmpty, chartEmptyHint, chartEmptySub,
+      symbolTick, priceMode, priceModes,
+      form, intervals, depthAskLevels, depthBidLevels, priceFlashCls,
       showOnboarding, activeTick, canOrder, longPos, shortPos, keyLabels,
       contractLabel, contractSubLabel, contractCodeLine, isIndexOption,
       loadChart, applySymbol,

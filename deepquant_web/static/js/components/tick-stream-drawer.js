@@ -15,7 +15,7 @@ const TickStreamDrawer = {
           <thead><tr><th>时间</th><th class="num">最新价</th><th class="num">成交量</th><th class="num">买一</th><th class="num">卖一</th></tr></thead>
           <tbody>
             <tr v-for="(r, i) in rowsRev" :key="i">
-              <td class="num" style="font-size:10px">{{ timeStr(r.time) }}</td>
+              <td class="num tsd-time">{{ tickTimeStr(r.time) }}</td>
               <td class="num">{{ fmtPrice(r.last_price) }}</td>
               <td class="num">{{ r.volume }}</td>
               <td class="num bid">{{ fmtPrice(r.bid_price_1) }}</td>
@@ -29,6 +29,6 @@ const TickStreamDrawer = {
   setup(props) {
     const rows = computed(() => store.tickStream[$normalizeVt(props.symbol)] || []);
     const rowsRev = computed(() => [...rows.value].reverse().slice(0, 100));
-    return { rows, rowsRev, fmtPrice: $fmtPrice, timeStr: $timeStr };
+    return { rows, rowsRev, fmtPrice: $fmtPrice, tickTimeStr: $tickTimeStr };
   },
 };

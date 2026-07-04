@@ -74,10 +74,19 @@ function $appendTickStream(tick) {
   const vt = $normalizeVt(tick.vt_symbol);
   if (!store.tickStream[vt]) store.tickStream[vt] = [];
   const arr = store.tickStream[vt];
+  const prev = arr.length ? arr[arr.length - 1] : null;
+  let vol = tick.last_volume;
+  if (vol == null || vol <= 0) {
+    const cum = tick.volume;
+    const prevCum = prev?.cum_volume ?? prev?.volume;
+    if (cum != null && prevCum != null && cum >= prevCum) vol = cum - prevCum;
+    else vol = 0;
+  }
   arr.push({
     time: tick.datetime || tick.time || new Date().toISOString(),
     last_price: tick.last_price,
-    volume: tick.last_volume || tick.volume,
+    volume: vol,
+    cum_volume: tick.volume,
     bid_price_1: tick.bid_price_1,
     ask_price_1: tick.ask_price_1,
   });
