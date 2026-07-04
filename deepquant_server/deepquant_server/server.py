@@ -759,6 +759,12 @@ async def api_subscribe(request: Request):
             await gateway_client.subscribe(symbol, exchange, gw_type)
         return {"subscribed": f"{symbol}.{exchange}"}
     result = await gateway_client.subscribe(symbol, exchange, gateway)
+    # TEST: send a tick directly to all WS clients to verify they receive it
+    import json as _json
+    test_tick = _json.dumps({"type":"tick","data":{"vt_symbol":"TEST.SHFE","symbol":"TEST","last_price":999.99,"volume":100,"exchange":"SHFE","open_price":900,"high_price":1000,"low_price":800}})
+    for ws in list(ws_clients):
+        try: await ws.send_text(test_tick)
+        except: pass
     return result
 
 
