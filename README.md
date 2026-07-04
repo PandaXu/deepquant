@@ -61,6 +61,8 @@ deepquant/
 │   └── static/                 #   Vue3 + ECharts SPA
 └── deepquant_datarecorder/     # 数据录制器 (:8900)
     └── engine.py               #   tick/bar 持久化
+└── deepquant_datamanager/      # 历史数据管理 App (Server MainEngine)
+    └── engine.py               #   下载/更新/导入导出
 ```
 
 ## 快速开始

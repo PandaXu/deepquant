@@ -36,6 +36,10 @@ const TabTrading = {
               <div v-if="chartEmpty" class="chart-empty-overlay">
                 <div>{{ chartEmptyHint }}</div>
                 <div v-if="chartEmptySub" class="hint-sub">{{ chartEmptySub }}</div>
+                <div v-if="chartEmptyActions" class="chart-empty-actions">
+                  <button class="btn btn-xs btn-primary" @click="goDataDownload">下载历史数据</button>
+                  <button class="btn btn-xs" @click="goDataRecorder">查看录制状态</button>
+                </div>
               </div>
             </div>
             <tick-stream-drawer :open="ui.showTickStream" :symbol="chartSymbol" @close="ui.showTickStream = false" />
@@ -564,6 +568,26 @@ const TabTrading = {
         else $toast('请先选择持仓', 'info');
       };
     });
+    const chartEmptyActions = computed(() =>
+      chartEmpty.value && !!chartSymbol.value && !!chartEmptySub.value
+    );
+
+    function goDataDownload() {
+      const parsed = $parseVtSymbol(chartSymbol.value);
+      $openDataTab({
+        sub: 'local',
+        symbol: parsed.symbol,
+        exchange: parsed.exchange,
+        interval: chartInterval.value === 'tick' ? '1m' : chartInterval.value,
+        vt_symbol: chartSymbol.value,
+        action: 'update',
+      });
+    }
+
+    function goDataRecorder() {
+      $openDataTab({ sub: 'recorder' });
+    }
+
     onUnmounted(() => {
       chartResizeObs?.disconnect();
       if (chartInstance) { chartInstance.dispose(); chartInstance = null; }
@@ -574,7 +598,8 @@ const TabTrading = {
     });
 
     return {
-      ui, klineEl, chartSymbol, chartInterval, chartMode, chartModeLabel, chartEmpty, chartEmptyHint, chartEmptySub,
+      ui, klineEl, chartSymbol, chartInterval, chartMode, chartModeLabel, chartEmpty, chartEmptyHint, chartEmptySub, chartEmptyActions,
+      goDataDownload, goDataRecorder,
       symbolTick, priceMode, priceModes,
       form, intervals, depthAskLevels, depthBidLevels, priceFlashCls,
       showOnboarding, activeTick, canOrder, longPos, shortPos, keyLabels,

@@ -187,17 +187,19 @@ class ManagerEngine(BaseEngine):
         exchange: Exchange,
         interval: str,
         start: datetime,
-        output: Callable
+        output: Callable,
+        end: datetime | None = None,
     ) -> int:
         """
         Query bar data from datafeed.
         """
+        end_dt = end or datetime.now(DB_TZ)
         req: HistoryRequest = HistoryRequest(
             symbol=symbol,
             exchange=exchange,
             interval=Interval(interval),
             start=start,
-            end=datetime.now(DB_TZ)
+            end=end_dt
         )
 
         vt_symbol: str = f"{symbol}.{exchange.value}"
@@ -245,19 +247,29 @@ class ManagerEngine(BaseEngine):
 
     def sync_minute_data(self, output: Callable = print) -> int:
         """Sync recent minute data for all contracts with daily data."""
-        from deepquant.trader.constant import Interval, Exchange
+        from datetime import timedelta
+        from deepquant.trader.constant import Interval
+
         overviews = self.get_bar_overview()
         synced = 0
+        now = datetime.now(DB_TZ).replace(tzinfo=None)
+        minute_ends = {
+            (o.symbol, o.exchange): o.end.replace(tzinfo=None) if o.end else None
+            for o in overviews if o.interval == Interval.MINUTE
+        }
         for ov in overviews:
             if ov.interval != Interval.DAILY:
                 continue
-            # Skip option contracts (Sina minute data only for futures)
             if '-' in ov.symbol:
                 continue
             try:
+                last_1m = minute_ends.get((ov.symbol, ov.exchange))
+                start = (last_1m + timedelta(minutes=1)) if last_1m else now - timedelta(days=7)
+                if start >= now:
+                    continue
                 count = self.download_bar_data(
                     ov.symbol, ov.exchange, Interval.MINUTE.value,
-                    datetime.now(DB_TZ) - __import__('datetime').timedelta(days=7), output
+                    start, output, end=now,
                 )
                 if count > 0:
                     synced += 1

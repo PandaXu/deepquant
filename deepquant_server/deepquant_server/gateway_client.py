@@ -169,6 +169,35 @@ class GatewayClient:
             all_gateways.extend(status.get("gateways", []))
         return {"gateways": all_gateways}
 
+    async def get_contracts(self, filter: str = "", gateway_type: str = "") -> list:
+        """Fetch contracts from connected gateway instance(s), merged by vt_symbol."""
+        from urllib.parse import quote
+
+        merged: list[dict] = []
+        seen: set[str] = set()
+        keys = [_resolve_gateway_key(gateway_type)] if gateway_type else list(_GW_INSTANCES.keys())
+        path = f"/contracts?filter={quote(filter)}" if filter else "/contracts"
+
+        for gw_id in keys:
+            try:
+                status = await self.get_status(gw_id)
+                if not status.get("gateways"):
+                    continue
+                data = await self.request("GET", path, gateway_type=gw_id)
+                if isinstance(data, dict) and data.get("error"):
+                    logger.warning(f"GatewayClient get_contracts {gw_id}: {data.get('error')}")
+                    continue
+                if not isinstance(data, list):
+                    continue
+                for c in data:
+                    vt = c.get("vt_symbol", "")
+                    if vt and vt not in seen:
+                        seen.add(vt)
+                        merged.append(c)
+            except Exception as e:
+                logger.warning(f"GatewayClient get_contracts {gw_id}: {e}")
+        return merged
+
     @property
     def is_connected(self) -> bool:
         return self._connected

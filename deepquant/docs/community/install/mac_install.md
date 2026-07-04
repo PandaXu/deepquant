@@ -44,12 +44,12 @@ python3 -m pip install rqdatac --index=https://pypi2.ricequant.com/simple
 
 ```python3
 python3 -m pip install vnpy --index=https://pypi.doubanio.com/simple
-python3 -m pip install vnpy_ctastrategy vnpy_ctabacktester vnpy_datamanager vnpy_sqlite vnpy_rqdata --index=https://pypi.doubanio.com/simple
+python3 -m pip install vnpy_ctastrategy vnpy_ctabacktester deepquant_datamanager vnpy_sqlite vnpy_rqdata --index=https://pypi.doubanio.com/simple
 ```
 这里的例子中包括（具体可以根据自己的需求调整）：
 
  - CTA策略实盘和回测模块：vnpy_ctastrategy、vnpy_ctabacktester
- - 历史数据管理模块：vnpy_datamanager
+ - 历史数据管理模块：deepquant_datamanager
  - SQLite数据库驱动：vnpy_sqlite
  - RQData数据服务适配器：vnpy_rqdata
 
@@ -95,7 +95,7 @@ from vnpy.trader.ui import MainWindow, create_qapp
 from vnpy_ctp import CtpGateway
 from vnpy_ctastrategy import CtaStrategyApp
 from vnpy_ctabacktester import CtaBacktesterApp
-from vnpy_datamanager import DataManagerApp
+from deepquant_datamanager import DataManagerApp
 
 def main():
     """Start VeighNa Trader"""

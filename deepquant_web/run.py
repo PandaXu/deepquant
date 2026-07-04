@@ -25,7 +25,10 @@ def main():
     os.chdir(STATIC_DIR)
     handler = http.server.SimpleHTTPRequestHandler
 
-    with socketserver.TCPServer(("", port), handler) as httpd:
+    class ReuseTCPServer(socketserver.TCPServer):
+        allow_reuse_address = True
+
+    with ReuseTCPServer(("", port), handler) as httpd:
         print(f"DeepQuant Web → http://0.0.0.0:{port}")
         print(f"  (API server expected on :8888)")
         try:

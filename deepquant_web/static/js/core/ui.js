@@ -105,7 +105,14 @@ function $autoSubscribeWatchlist() {
     const symbol = $resolveSubscribeSymbol(key);
     if (!symbol || !exchange) return;
     gws.forEach(gw => {
-      $restSubscribe(symbol, exchange, gw).then(ok => { if (ok) $markSubscribed(key); });
+      $restSubscribe(symbol, exchange, gw).then(ok => {
+        if (ok) {
+          $markSubscribed(key);
+          if (typeof $queueAutoDataUpdate === 'function') {
+            $queueAutoDataUpdate(key, ['1m', 'd'], 'low');
+          }
+        }
+      });
     });
   };
   ui.watchlist.forEach(item => subscribeOne(item.vt_symbol));

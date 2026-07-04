@@ -54,7 +54,7 @@ except ImportError:
     HAS_BACKTESTER = False
 
 try:
-    from vnpy_datamanager import DataManagerApp
+    from deepquant_datamanager import DataManagerApp
     HAS_DATAMANAGER = True
 except ImportError:
     HAS_DATAMANAGER = False

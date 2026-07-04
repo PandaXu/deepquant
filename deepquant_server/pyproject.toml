@@ -23,6 +23,7 @@ dependencies = [
     "deepquant>=4.0.0",
     "fastapi>=0.100.0",
     "uvicorn>=0.20.0",
+    "python-multipart>=0.0.9",
 ]
 keywords = ["quant", "quantitative", "investment", "trading", "web", "fastapi"]
 
@@ -31,8 +32,8 @@ ctp = ["vnpy_ctp"]
 paper = ["vnpy_paperaccount"]
 cta = ["vnpy_ctastrategy"]
 backtester = ["vnpy_ctabacktester"]
-datamanager = ["vnpy_datamanager"]
-all = ["vnpy_ctp", "vnpy_paperaccount", "vnpy_ctastrategy", "vnpy_ctabacktester", "vnpy_datamanager"]
+datamanager = ["deepquant_datamanager"]
+all = ["vnpy_ctp", "vnpy_paperaccount", "vnpy_ctastrategy", "vnpy_ctabacktester", "deepquant_datamanager"]
 
 [project.urls]
 "Homepage" = "https://www.vnpy.com"

@@ -29,6 +29,21 @@ const store = reactive({
   backtestResult: null,
   backtestError: null,
   dataOverview: [],
+  dataOverviewTicks: [],
+  dataSubTab: 'local',
+  dataSelection: null,
+  dataSelectedKey: '',
+  dataTasks: [],
+  dataManagerAvailable: false,
+  dataDeepLink: null,
+  recorderStatus: null,
+  dataTree: [],
+  dataHealth: null,
+  dataOptionCatalog: [],
+  dataListedCatalog: [],
+  dataIncludeListedOptions: true,
+  lastStrategyDataError: null,
+  dataPreviewRevision: 0,
   logPaused: false,
   connectedGateways: [],   // CTP connection status from server
   activeAccount: '',       // currently connected account alias
@@ -119,6 +134,7 @@ function _onWsMessage(e) {
       const entry = typeof data === 'string' ? { msg: data, time: new Date().toLocaleTimeString() } : data;
       store.log.push(entry);
       if (store.log.length > store.maxLog) store.log.splice(0, store.log.length - store.maxLog);
+      $trackDataManagerLog(entry);
     } else if (type === 'eLog' && data) {
       const entry = typeof data === 'string'
         ? { time: new Date().toLocaleTimeString('zh-CN', { hour12: false }), level: 'INFO', source: '', msg: data }
@@ -141,6 +157,26 @@ function _onWsMessage(e) {
       store.backtestError = typeof data === 'string' ? data : (data?.msg || JSON.stringify(data));
     } else if (type === 'data_overview' && Array.isArray(data)) {
       store.dataOverview = data;
+      $rebuildDataTree();
+    } else if (type === 'tick_overview' && Array.isArray(data)) {
+      store.dataOverviewTicks = data;
+      $rebuildDataTree();
+    } else if (type === 'data_task' && data) {
+      $applyDataTask(data);
+    } else if (type === 'cta_init_result' && data) {
+      if (data.error) {
+        $toast(data.error, 'error');
+        if (String(data.error).includes('历史数据')) {
+          store.lastStrategyDataError = data;
+          if (data.vt_symbol) {
+            $queueAutoDataUpdate(data.vt_symbol, ['1m', 'd'], 'high');
+            $toast('已自动排队下载历史数据', 'info');
+          }
+        }
+      } else {
+        store.lastStrategyDataError = null;
+        $toast(data.message || '策略初始化成功', 'success');
+      }
     } else if (type === 'gateway_list' && Array.isArray(data)) {
       store.gateways = data;
     } else if (type === 'gateway_accounts' && Array.isArray(data)) {
@@ -337,6 +373,368 @@ async function $deleteGatewayAccount(id) {
   await $loadGatewayAccounts();
 }
 
+// ---- Data management helpers ----
+function $applyDataTask(task) {
+  if (!task?.id) return;
+  const idx = store.dataTasks.findIndex(t => t.id === task.id);
+  const prev = idx >= 0 ? store.dataTasks[idx] : null;
+  const row = { ...task };
+  if (idx >= 0) store.dataTasks[idx] = { ...prev, ...row };
+  else store.dataTasks.unshift(row);
+  if (store.dataTasks.length > 30) store.dataTasks.length = 30;
+
+  const isBatchProgress = task.status === 'running' && task.progress?.total > 0;
+  const isBatchDone = task.status === 'success' && (prev?.progress?.total || task.progress?.total);
+
+  if (task.status === 'success') {
+    if (!isBatchProgress) {
+      if (!isBatchDone || task.progress?.current === task.progress?.total) {
+        $toast(task.message || `${task.label} 完成`, 'success');
+      }
+    }
+    $refreshDataOverview();
+    store.dataPreviewRevision += 1;
+  } else if (task.status === 'error' && !isBatchProgress) {
+    $toast(task.message || `${task.label} 失败`, 'error');
+  }
+}
+
+function $trackDataManagerLog(entry) {
+  const src = entry?.gateway_name || entry?.source || '';
+  const msg = entry?.msg || '';
+  if (src !== 'DataManager' && !msg.includes('[DataManager]')) return;
+  const running = store.dataTasks.find(t => t.status === 'running');
+  if (!running) return;
+  // 批量任务由 data_task 事件驱动，日志兜底会重复标记完成
+  if (running.progress?.total) return;
+  if (/下载完成|已删除|同步/.test(msg) && !/失败/.test(msg)) {
+    $applyDataTask({ ...running, status: 'success', message: msg.replace(/^\[DataManager\]\s*/, '') });
+  } else if (/失败/.test(msg)) {
+    $applyDataTask({ ...running, status: 'error', message: msg.replace(/^\[DataManager\]\s*/, '') });
+  }
+}
+
+function $selectDataNode(node) {
+  if (!node) return;
+  store.dataSelectedKey = $dataNodeKey(node);
+  store.dataSelection = node;
+}
+
+function $syncDataTreeSelection() {
+  const key = store.dataSelectedKey;
+  if (!key || !store.dataTree?.length) return;
+  const node = $resyncDataSelection(store.dataTree, key);
+  if (node) store.dataSelection = node;
+}
+
+function $ensureDataTreeSelection() {
+  if (store.dataSelectedKey) {
+    $syncDataTreeSelection();
+    return;
+  }
+  const leaves = $flattenDataLeaves(store.dataTree);
+  const withData = leaves.find(l => !l.catalogOnly && l.count > 0);
+  if (withData) $selectDataNode(withData);
+  else if (leaves.length) $selectDataNode(leaves.find(l => !l.catalogOnly) || leaves[0]);
+}
+
+function $rebuildDataTree() {
+  store.dataTree = $buildDataTree(
+    store.dataOverview,
+    store.dataOverviewTicks,
+    store.dataSelectedKey,
+    store.dataListedCatalog,
+    store.dataIncludeListedOptions,
+  );
+  $preloadDataTreeNames(store.dataTree);
+  $syncDataTreeSelection();
+}
+
+async function $loadListedCatalog() {
+  try {
+    const parts = await Promise.all((CONTRACT_EXCHANGES || []).map(async (ex) => {
+      try {
+        const d = await $apiGet(`/api/contracts/public?exchange=${ex.value}`);
+        return (d.contracts || []).map(c => ({
+          symbol: c.symbol,
+          exchange: c.exchange_code || ex.value,
+          vt_symbol: c.vt_symbol || `${c.symbol}.${ex.value}`,
+          name: c.name || '',
+          listed: c.listed !== false,
+        }));
+      } catch (e) {
+        return [];
+      }
+    }));
+    store.dataListedCatalog = parts.flat();
+    store.dataOptionCatalog = store.dataListedCatalog.filter(c =>
+      (typeof $isCffexIndexOptionSymbol === 'function'
+        ? $isCffexIndexOptionSymbol(c.symbol)
+        : /^(IO|HO|MO)/i.test(c.symbol || ''))
+    );
+    return store.dataListedCatalog;
+  } catch (e) {
+    return store.dataListedCatalog;
+  }
+}
+
+async function $loadCffexOptionCatalog() {
+  return $loadListedCatalog();
+}
+
+function $refreshDataOverview() {
+  $wsSend({ action: 'get_data_overview' });
+}
+
+async function $loadDataHealth() {
+  try {
+    const h = await $apiGet('/api/data/health');
+    store.dataManagerAvailable = !!h.datamanager;
+    store.dataHealth = h;
+    if (h.recorder) store.recorderStatus = { ...store.recorderStatus, ...h.recorder };
+    return h;
+  } catch (e) {
+    store.dataManagerAvailable = false;
+    return null;
+  }
+}
+
+async function $loadDataOverviewRest() {
+  try {
+    const o = await $apiGet('/api/data/overview');
+    store.dataOverview = o.bars || [];
+    store.dataOverviewTicks = o.ticks || [];
+    $rebuildDataTree();
+    return o;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function $loadRecorderStatus() {
+  try {
+    store.recorderStatus = await $apiGet('/api/recorder/status');
+    return store.recorderStatus;
+  } catch (e) {
+    return null;
+  }
+}
+
+function $openDataTab(preset) {
+  store.dataDeepLink = preset || null;
+  if (preset?.sub) store.dataSubTab = preset.sub;
+  if (typeof window.__setActiveTab === 'function') window.__setActiveTab('data');
+}
+
+function $startDataDownload(payload) {
+  const taskId = `dl-${Date.now().toString(36)}`;
+  $wsSend({
+    action: 'download_bar_data',
+    payload: { ...payload, task_id: taskId, incremental: false },
+  });
+  return taskId;
+}
+
+function $startDataDownloadForSelection(selection) {
+  if (!selection) return;
+  const key = $dataNodeKey(selection);
+  if (key) store.dataSelectedKey = key;
+  const dates = $defaultDownloadDates();
+  $startDataDownload({
+    symbol: selection.symbol,
+    exchange: selection.exchange,
+    interval: selection.interval || '1m',
+    start: dates.start,
+    end: dates.end,
+  });
+  $toast(`已提交下载 ${selection.vt_symbol || selection.symbol}`, 'info');
+}
+
+function $startDataUpdate(selection, opts) {
+  if (!selection) return;
+  const key = $dataNodeKey(selection);
+  if (key) store.dataSelectedKey = key;
+  $wsSend({
+    action: 'update_bar_data',
+    payload: {
+      symbol: selection.symbol,
+      exchange: selection.exchange,
+      interval: selection.interval,
+      end: opts?.end || '',
+      materialize_first: selection.interval === '1m',
+      task_id: `up-${Date.now().toString(36)}`,
+      priority: 'high',
+    },
+  });
+}
+
+function $cancelDataTask(taskId) {
+  if (!taskId) return;
+  $wsSend({ action: 'cancel_data_task', payload: { task_id: taskId } });
+}
+
+function $syncDataWatchlistToServer() {
+  const items = (ui.watchlist || []).map(w => ({
+    vt_symbol: w.vt_symbol,
+    intervals: ['1m', 'd'],
+  }));
+  $wsSend({ action: 'set_data_watchlist', payload: { items } });
+}
+
+function $queueAutoDataUpdate(vt, intervals, priority) {
+  const parsed = $parseVtSymbol(vt);
+  if (!parsed.symbol || !parsed.exchange) return;
+  const ivs = intervals || ['1m', 'd'];
+  for (const interval of ivs) {
+    _autoUpdatePending.push({
+      symbol: parsed.symbol,
+      exchange: parsed.exchange,
+      interval,
+    });
+  }
+  clearTimeout(_autoUpdateTimer);
+  _autoUpdateTimer = setTimeout(() => {
+    const raw = _autoUpdatePending.splice(0);
+    const seen = new Set();
+    const items = raw.filter(it => {
+      const k = `${it.symbol}.${it.exchange}:${it.interval}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+    if (!items.length) return;
+    $startBatchUpdate(items, priority || 'low');
+  }, 2500);
+}
+
+let _autoUpdatePending = [];
+let _autoUpdateTimer = null;
+
+function $materializeBarData(selection) {
+  if (!selection) return;
+  $wsSend({
+    action: 'materialize_bar_data',
+    payload: {
+      symbol: selection.symbol,
+      exchange: selection.exchange,
+      interval: selection.interval === 'tick' ? '1m' : selection.interval,
+      task_id: `mat-${Date.now().toString(36)}`,
+    },
+  });
+}
+
+function $startDataDelete(selection) {
+  if (!selection || selection.kind === 'tick') return;
+  if (!confirm(`确认删除 ${selection.vt_symbol} ${selection.interval} 的全部 K 线数据？`)) return;
+  $wsSend({
+    action: 'delete_bar_data',
+    payload: {
+      symbol: selection.symbol,
+      exchange: selection.exchange,
+      interval: selection.interval,
+      task_id: `del-${Date.now().toString(36)}`,
+    },
+  });
+}
+
+function $startBatchUpdate(items, priority, label) {
+  if (!items?.length) return;
+  $wsSend({
+    action: 'auto_update',
+    payload: {
+      items,
+      materialize_first: true,
+      priority: priority || 'normal',
+      label: label || `批量更新 (${items.length} 项)`,
+      task_id: `batch-up-${Date.now().toString(36)}`,
+    },
+  });
+}
+
+function $startUpdateAllBars() {
+  if (!store.dataManagerAvailable) {
+    $toast('DataManager 未加载', 'error');
+    return;
+  }
+  const seen = new Set();
+  const items = (store.dataOverview || []).filter(r => {
+    if (!r.symbol || !r.exchange || !r.interval || r.interval === 'tick') return false;
+    const k = `${r.symbol}.${r.exchange}:${r.interval}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  }).map(r => ({ symbol: r.symbol, exchange: r.exchange, interval: r.interval }));
+  if (!items.length) {
+    $toast('本地暂无 K 线数据', 'info');
+    return;
+  }
+  if (!confirm(`确认增量更新全部 ${items.length} 组 K 线到今天？\n（已在队列中的任务会继续执行）`)) return;
+  $startBatchUpdate(items, 'normal', `全部更新 (${items.length} 项)`);
+  $toast(`已提交全部更新 ${items.length} 项`, 'info');
+}
+
+async function $checkDataCoverage(items) {
+  return $apiPost('/api/data/check', { items });
+}
+
+function $findLocalDataCoverage(vtSymbol, interval) {
+  const parsed = $parseVtSymbol(vtSymbol);
+  const bar = store.dataOverview.find(r =>
+    r.symbol === parsed.symbol && r.exchange === parsed.exchange && r.interval === interval
+  );
+  if (bar) {
+    const end = bar.effective_end || bar.end;
+    return { status: 'ok', ...bar, end, freshness: $computeDataFreshness(end) };
+  }
+  const tick = store.dataOverviewTicks.find(r =>
+    r.symbol === parsed.symbol && r.exchange === parsed.exchange
+  );
+  if (tick && interval === '1m') return { status: 'tick_only', ...tick, effective_end: tick.end };
+  return { status: 'missing', vt_symbol: `${parsed.symbol}.${parsed.exchange}`, interval };
+}
+
+async function $exportBarData(selection) {
+  if (!selection || selection.kind === 'tick') return;
+  const start = (selection.start || '').slice(0, 10) || $defaultDownloadDates().start;
+  const end = (selection.end || '').slice(0, 10) || new Date().toISOString().slice(0, 10);
+  const q = new URLSearchParams({
+    symbol: selection.symbol,
+    exchange: selection.exchange,
+    interval: selection.interval,
+    start,
+    end,
+  });
+  window.open(`${API_BASE}/api/data/export?${q}`, '_blank');
+}
+
+async function $importBarCsv(formData) {
+  const r = await fetch(`${API_BASE}/api/data/import`, { method: 'POST', body: formData });
+  if (!r.ok) throw new Error(`import failed: ${r.status}`);
+  return r.json();
+}
+
+function $fmtBytes(n) {
+  if (n == null || !Number.isFinite(n)) return '—';
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
+
+function $openDataTabForStrategy(strategy) {
+  const vt = strategy?.vt_symbol;
+  if (!vt) return;
+  const parsed = $parseVtSymbol(vt);
+  $openDataTab({
+    sub: 'local',
+    symbol: parsed.symbol,
+    exchange: parsed.exchange,
+    interval: '1m',
+    vt_symbol: vt,
+    action: 'update',
+  });
+}
+
 // ---- Export CSV ----
 function $exportCSV(headers, rows, filename) {
   const BOM = '﻿';
@@ -382,5 +780,9 @@ setInterval($pollStatus, 5000);  // Poll every 5 seconds
 
 // ---- Init WS on load ----
 if (typeof window !== 'undefined') {
-  window.addEventListener('DOMContentLoaded', () => { $wsConnect(); $pollStatus(); });
+  window.addEventListener('DOMContentLoaded', () => {
+    $wsConnect();
+    $pollStatus();
+    $initDataTabFromUrl();
+  });
 }

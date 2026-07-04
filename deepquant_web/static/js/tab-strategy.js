@@ -42,6 +42,7 @@ const TabStrategy = {
               <div class="sc-actions">
                 <button class="btn btn-xs" @click="jumpToChart(s.vt_symbol)" v-if="s.vt_symbol">看K线</button>
                 <button class="btn btn-xs btn-primary" @click="initStrategy(s)" v-if="canInit(s)">初始化</button>
+                <button class="btn btn-xs" @click="goDownloadData(s)" v-if="s.vt_symbol" title="补历史数据">补数据</button>
                 <button class="btn btn-xs btn-success" @click="startStrategy(s)" v-if="canStart(s)">启动</button>
                 <button class="btn btn-xs btn-warn" @click="stopStrategy(s)" v-if="canStop(s)">停止</button>
                 <button class="btn btn-xs" @click="editStrategy(s)">编辑</button>
@@ -58,13 +59,17 @@ const TabStrategy = {
           <div class="panel-header"><span class="panel-title">🔬 回测实验室</span></div>
           <div class="backtest-form">
             <div class="form-row"><label>策略</label><select v-model="bt.className" class="input"><option v-for="c in store.btClasses" :value="c">{{ strategyLabel(c) }}</option></select></div>
-            <div class="form-row"><label>合约</label><input v-model="bt.vtSymbol" class="input" placeholder="IF2606.CFFEX"></div>
-            <div class="form-row"><label>周期</label><select v-model="bt.interval" class="input"><option>1m</option><option>1h</option><option>d</option></select></div>
-            <div class="form-row"><label>起始</label><input v-model="bt.start" class="input" type="date"></div>
-            <div class="form-row"><label>结束</label><input v-model="bt.end" class="input" type="date"></div>
+            <div class="form-row"><label>合约</label><input v-model="bt.vtSymbol" class="input" placeholder="IF2606.CFFEX" @change="checkBtCoverage"></div>
+            <div class="form-row"><label>周期</label><select v-model="bt.interval" class="input" @change="checkBtCoverage"><option>1m</option><option>1h</option><option>d</option></select></div>
+            <div class="form-row"><label>起始</label><input v-model="bt.start" class="input" type="date" @change="checkBtCoverage"></div>
+            <div class="form-row"><label>结束</label><input v-model="bt.end" class="input" type="date" @change="checkBtCoverage"></div>
             <div class="form-row"><label>资金</label><input v-model="bt.capital" class="input" type="number" style="width:100px"></div>
             <button class="btn btn-sm btn-primary" @click="runBacktest" :disabled="bt.running">{{ bt.running ? '回测中…' : '开始回测' }}</button>
             <button v-if="bt.result && bt.vtSymbol" class="btn btn-sm" @click="jumpToChart(bt.vtSymbol)">K线查看</button>
+          </div>
+          <div v-if="bt.coverage" class="data-bt-coverage" :class="'cov-' + bt.coverage.status">
+            <span>数据：{{ covLabel(bt.coverage.status) }} — {{ bt.coverage.detail }}</span>
+            <button v-if="bt.coverage.status !== 'ok'" class="btn btn-xs" @click="goDownloadForBt">下载数据</button>
           </div>
           <div ref="equityEl" class="equity-chart"></div>
           <div v-if="bt.result" class="panel-body" style="padding:8px">
@@ -108,7 +113,7 @@ const TabStrategy = {
     const showAddModal = ref(false);
     const editingStrategy = ref(null);
     const newStrategy = reactive({ class_name:'', strategy_name:'', vt_symbol:'', paramsJson:'{}' });
-    const bt = reactive({ className:'', vtSymbol:'', interval:'d', start:'', end:'', capital:'1000000', result:null, logs:[], running:false });
+    const bt = reactive({ className:'', vtSymbol:'', interval:'d', start:'', end:'', capital:'1000000', result:null, logs:[], running:false, coverage:null });
     const equityEl = ref(null);
     let equityChart = null;
 
@@ -123,7 +128,57 @@ const TabStrategy = {
       $wsSend({ action: 'get_cta_classes' });
     }
 
-    function initStrategy(s) { $wsSend({ action: 'cta_strategy_init', payload: { strategy_name: s.strategy_name } }); }
+    function initStrategy(s) {
+      store.lastStrategyDataError = null;
+      $wsSend({ action: 'cta_strategy_init', payload: { strategy_name: s.strategy_name } });
+    }
+
+    function goDownloadData(s) {
+      $openDataTabForStrategy(s);
+    }
+
+    function covLabel(st) {
+      return ({ ok: '充足', missing: '缺失', partial: '部分', stale: '偏旧', tick_only: '仅Tick' }[st] || st);
+    }
+
+    async function checkBtCoverage() {
+      if (!bt.vtSymbol) { bt.coverage = null; return; }
+      try {
+        const data = await $checkDataCoverage([{
+          vt_symbol: bt.vtSymbol,
+          interval: bt.interval,
+          start: bt.start,
+          end: bt.end,
+        }]);
+        bt.coverage = (data.results || [])[0] || null;
+      } catch (e) {
+        bt.coverage = $findLocalDataCoverage(bt.vtSymbol, bt.interval);
+      }
+    }
+
+    function goDownloadForBt() {
+      const parsed = $parseVtSymbol(bt.vtSymbol);
+      $openDataTab({
+        sub: 'local',
+        symbol: parsed.symbol,
+        exchange: parsed.exchange,
+        interval: bt.interval,
+        vt_symbol: bt.vtSymbol,
+        action: 'update',
+      });
+    }
+
+    window.__openBacktestWithSymbol = (vt, interval) => {
+      subTab.value = 'lab';
+      bt.vtSymbol = vt;
+      if (interval) bt.interval = interval;
+      if (!bt.start) {
+        const d = $defaultDownloadDates();
+        bt.start = d.start;
+        bt.end = d.end;
+      }
+      checkBtCoverage();
+    };
     function startStrategy(s) { $wsSend({ action: 'cta_strategy_start', payload: { strategy_name: s.strategy_name } }); }
     function stopStrategy(s) { $wsSend({ action: 'cta_strategy_stop', payload: { strategy_name: s.strategy_name } }); }
     function removeStrategy(s) { if(confirm('确定删除策略 ' + s.strategy_name + '?')) $wsSend({ action: 'cta_strategy_remove', payload: { strategy_name: s.strategy_name } }); }
@@ -235,14 +290,26 @@ const TabStrategy = {
       $toast(String(err), 'error');
     });
 
+    watch(() => store.lastStrategyDataError, (err) => {
+      if (!err) return;
+      const s = store.strategies.find(x => x.strategy_name === err.strategy_name);
+      if (s) setTimeout(() => {
+        if (confirm('策略历史数据不足，是否前往数据管理下载？')) goDownloadData(s);
+      }, 100);
+    });
+
     onMounted(() => {
       refreshStrategies();
       $wsSend({ action: 'get_backtest_classes' });
       $preloadWatchlistNames();
+      const d = $defaultDownloadDates();
+      if (!bt.start) bt.start = d.start;
+      if (!bt.end) bt.end = d.end;
     });
 
     onUnmounted(() => {
       if (equityChart) { equityChart.dispose(); equityChart = null; }
+      window.__openBacktestWithSymbol = null;
     });
 
     return {
@@ -251,7 +318,8 @@ const TabStrategy = {
       strategyLabel: $strategyLabel, strategyStatus: $strategyStatusCn, contractLabel: $contractLabel,
       contractSubLabel: $contractSubLabel, contractCodeLine: $contractCodeLine, isIndexOption: $isIndexOption,
       btReturnText, btReturnCls, btDrawdownText,
-      refreshStrategies, initStrategy, startStrategy, stopStrategy, removeStrategy, editStrategy, saveStrategy, runBacktest, jumpToChart, store,
+      refreshStrategies, initStrategy, startStrategy, stopStrategy, removeStrategy, editStrategy, saveStrategy, runBacktest, jumpToChart,
+      goDownloadData, covLabel, checkBtCoverage, goDownloadForBt, store,
     };
   }
 };

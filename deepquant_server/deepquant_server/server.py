@@ -5,12 +5,17 @@ Starts the trading engine and bridges events to WebSocket clients.
 import asyncio
 import json
 import threading
-from datetime import datetime
+import uuid
+from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+from . import data_api
+from . import data_update_service
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from loguru import logger
 
 from deepquant.event import EventEngine, Event, EVENT_TIMER
@@ -51,7 +56,7 @@ except ImportError:
     HAS_BACKTESTER = False
 
 try:
-    from vnpy_datamanager import DataManagerApp
+    from deepquant_datamanager import DataManagerApp
     HAS_DATAMANAGER = True
 except ImportError:
     HAS_DATAMANAGER = False
@@ -147,6 +152,186 @@ def bridge_event(event: Event) -> None:
 def _remove_client(ws: WebSocket) -> None:
     if ws in ws_clients:
         ws_clients.remove(ws)
+
+
+def _broadcast_json(payload: dict) -> None:
+    """Push JSON event to all WS clients from any thread."""
+    if not ws_clients:
+        return
+    try:
+        _broadcast_queue.put_nowait((json.dumps(payload, ensure_ascii=False), list(ws_clients)))
+    except Exception:
+        pass
+
+
+def _emit_data_task(
+    task_id: str,
+    action: str,
+    status: str,
+    label: str,
+    message: str = "",
+    progress_current: int = 0,
+    progress_total: int = 0,
+) -> None:
+    now = datetime.now().isoformat()
+    payload: dict[str, Any] = {
+        "id": task_id,
+        "action": action,
+        "status": status,
+        "label": label,
+        "message": message,
+        "started_at": now if status == "running" else "",
+        "finished_at": now if status in ("success", "error", "cancelled") else "",
+    }
+    if progress_total > 0:
+        payload["progress"] = {"current": progress_current, "total": progress_total}
+    _broadcast_json({"type": "data_task", "data": payload})
+
+
+def _push_data_overviews() -> None:
+    if not main_engine:
+        return
+    overview = data_api.load_data_overview(main_engine)
+    _broadcast_json({"type": "data_overview", "data": overview["bars"]})
+    _broadcast_json({"type": "tick_overview", "data": overview["ticks"]})
+
+
+def _get_data_queue() -> data_update_service.DataUpdateQueue | None:
+    return data_update_service.get_update_queue(
+        lambda: main_engine,
+        _emit_data_task,
+        _push_data_overviews,
+        _data_manager_log,
+    )
+
+
+def _data_manager_log(msg: str) -> None:
+    if main_engine:
+        main_engine.write_log(msg)
+    _broadcast_json({"type": "log", "data": {"msg": msg, "gateway_name": "DataManager"}})
+
+
+# ---------------------------------------------------------------------------
+# DataManager WS actions
+# ---------------------------------------------------------------------------
+async def _handle_data_manager_action(action: str, payload: dict, ws: WebSocket) -> None:
+    global main_engine
+    engine = main_engine.get_engine("DataManager") if main_engine else None
+    if not engine and action not in ("cancel_data_task", "set_data_watchlist", "materialize_bar_data"):
+        await ws.send_text(json.dumps({"type": "error", "msg": "DataManager 未加载，请安装 deepquant_datamanager"}))
+        return
+
+    symbol = payload.get("symbol", "")
+    exchange = payload.get("exchange", "")
+    interval = payload.get("interval", "d")
+    task_id = payload.get("task_id") or str(uuid.uuid4())[:8]
+    priority = payload.get("priority", "high" if action == "update_bar_data" else "normal")
+    user_end = payload.get("end", "")
+
+    queue = _get_data_queue()
+    if not queue:
+        await ws.send_text(json.dumps({"type": "error", "msg": "数据更新队列未初始化"}))
+        return
+
+    if action == "cancel_data_task":
+        cancelled = queue.cancel(payload.get("task_id", task_id))
+        await ws.send_text(json.dumps({"type": "data_task_cancelled", "ok": cancelled, "task_id": payload.get("task_id", task_id)}))
+        return
+
+    if action == "set_data_watchlist":
+        items = payload.get("items") or []
+        queue.set_scheduled_symbols(items)
+        return
+
+    if action == "materialize_bar_data":
+        if not symbol or not exchange:
+            await ws.send_text(json.dumps({"type": "error", "msg": "缺少 symbol/exchange"}))
+            return
+        queue.enqueue(
+            action="materialize_bar_data",
+            symbol=symbol,
+            exchange=exchange,
+            interval=interval or "1m",
+            task_id=task_id,
+            label=f"{symbol}.{exchange} 物化",
+            priority="high",
+        )
+        return
+
+    if action == "auto_update":
+        items = payload.get("items") or []
+        if not items and symbol and exchange:
+            items = [{"symbol": symbol, "exchange": exchange, "interval": interval}]
+        if not items:
+            await ws.send_text(json.dumps({"type": "error", "msg": "无更新目标"}))
+            return
+        queue.enqueue(
+            action="auto_update",
+            batch_items=items,
+            incremental=True,
+            user_end=user_end,
+            materialize_first=payload.get("materialize_first", True),
+            priority=payload.get("priority", "normal"),
+            task_id=task_id,
+            label=payload.get("label", f"自动更新 {len(items)} 项"),
+        )
+        return
+
+    if action == "sync_minute_data":
+        queue.enqueue(action="sync_minute_data", task_id=task_id, label="同步分钟数据", priority="normal")
+        return
+
+    if action == "delete_bar_data":
+        if not symbol or not exchange:
+            await ws.send_text(json.dumps({"type": "error", "msg": "缺少 symbol/exchange"}))
+            return
+        queue.enqueue(
+            action="delete_bar_data",
+            symbol=symbol,
+            exchange=exchange,
+            interval=interval,
+            task_id=task_id,
+            label=f"{symbol}.{exchange} {interval}",
+            priority="high",
+        )
+        return
+
+    if action == "batch_download_bar_data":
+        items = payload.get("items") or []
+        if not items:
+            await ws.send_text(json.dumps({"type": "error", "msg": "批量下载列表为空"}))
+            return
+        queue.enqueue(
+            action="batch_download_bar_data",
+            batch_items=items,
+            interval=payload.get("interval", "d"),
+            incremental=payload.get("incremental", False),
+            user_start=payload.get("start", ""),
+            user_end=user_end,
+            materialize_first=payload.get("materialize_first", False),
+            task_id=task_id,
+            priority=payload.get("priority", "normal"),
+        )
+        return
+
+    if not symbol or not exchange:
+        await ws.send_text(json.dumps({"type": "error", "msg": "请选择合约"}))
+        return
+
+    incremental = action == "update_bar_data"
+    queue.enqueue(
+        action=action,
+        symbol=symbol,
+        exchange=exchange,
+        interval=interval,
+        incremental=incremental,
+        user_start=payload.get("start", ""),
+        user_end=user_end,
+        materialize_first=payload.get("materialize_first", incremental and interval == "1m"),
+        task_id=task_id,
+        label=f"{symbol}.{exchange} {interval}",
+        priority=priority,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -347,7 +532,9 @@ async def handle_ws_message(ws: WebSocket, msg: str) -> None:
             if strategy_service:
                 name = payload.get("strategy_name", "")
                 act = action.replace("cta_strategy_", "")
-                if act == "init": strategy_service.init(name)
+                if act == "init":
+                    result = strategy_service.init(name)
+                    await ws.send_text(json.dumps({"type": "cta_init_result", "data": {"strategy_name": name, **result}}))
                 elif act == "start": strategy_service.start(name)
                 elif act == "stop": strategy_service.stop(name)
                 elif act == "remove": strategy_service.remove(name)
@@ -404,41 +591,21 @@ async def handle_ws_message(ws: WebSocket, msg: str) -> None:
                 t.start()
 
         # ---- App: DataManager ----
-        elif action == "download_bar_data":
-            engine = main_engine.get_engine("DataManager")
-            if engine:
-                from deepquant.trader.constant import Interval as _Interval
-                from datetime import datetime
-                symbol = payload.get("symbol", "")
-                exchange = payload.get("exchange", "")
-                interval = payload.get("interval", "d")
-                start = payload.get("start", "2025-01-01")
-                end = payload.get("end", datetime.now().strftime("%Y-%m-%d"))
-
-                def _download():
-                    try:
-                        engine.download_bar_data(
-                            symbol, Exchange(exchange), _Interval(interval),
-                            datetime.strptime(start, "%Y-%m-%d"),
-                            datetime.strptime(end, "%Y-%m-%d")
-                        )
-                        main_engine.write_log(f"[DataManager] 下载完成: {symbol}.{exchange} {interval}")
-                    except Exception as e:
-                        main_engine.write_log(f"[DataManager] 下载失败: {e}")
-                import threading
-                threading.Thread(target=_download, daemon=True).start()
-                await ws.send_text(json.dumps({"type": "log", "data": {"msg": f"开始下载: {symbol}.{exchange} {interval}", "gateway_name": "DataManager"}}))
+        elif action in (
+            "download_bar_data", "update_bar_data", "delete_bar_data", "sync_minute_data",
+            "batch_download_bar_data", "cancel_data_task", "set_data_watchlist",
+            "auto_update", "materialize_bar_data",
+        ):
+            await _handle_data_manager_action(action, payload, ws)
 
         elif action == "get_data_overview":
-            engine = main_engine.get_engine("DataManager")
-            if engine:
-                overviews = engine.get_bar_overview()
-                result = [{"symbol": o.symbol, "exchange": o.exchange.value if o.exchange else "",
-                           "interval": o.interval.value if o.interval else "", "count": o.count,
-                           "start": o.start.isoformat() if o.start else "", "end": o.end.isoformat() if o.end else "",
-                           "vt_symbol": f"{o.symbol}.{o.exchange.value}" if o.exchange else o.symbol}
-                          for o in overviews]
-                await ws.send_text(json.dumps({"type": "data_overview", "data": result}))
+            overview = data_api.load_data_overview(main_engine)
+            await ws.send_text(json.dumps({"type": "data_overview", "data": overview["bars"]}))
+            await ws.send_text(json.dumps({"type": "tick_overview", "data": overview["ticks"]}))
+
+        elif action == "get_tick_overview":
+            ticks = data_api.load_tick_overviews()
+            await ws.send_text(json.dumps({"type": "tick_overview", "data": ticks}))
 
     except Exception as e:
         await ws.send_text(json.dumps({"type": "error", "msg": str(e)}))
@@ -498,7 +665,12 @@ def api_apps():
 
 
 @app.get("/api/contracts")
-def api_contracts(filter: str = ""):
+async def api_contracts(filter: str = ""):
+    """Contracts from Gateway TD query; fallback to Server MainEngine if any."""
+    if gateway_client:
+        gw_list = await gateway_client.get_contracts(filter=filter)
+        if gw_list:
+            return gw_list
     if not main_engine:
         return []
     contracts = main_engine.get_all_contracts()
@@ -703,6 +875,94 @@ async def api_disconnect_gateway_account(account_id: int):
 
 
 # ---------------------------------------------------------------------------
+# Data management REST API
+# ---------------------------------------------------------------------------
+@app.get("/api/data/overview")
+def api_data_overview():
+    if not main_engine:
+        return {"bars": [], "ticks": [], "db_path": ""}
+    return data_api.load_data_overview(main_engine)
+
+
+@app.get("/api/data/health")
+def api_data_health():
+    if not main_engine:
+        return {"datamanager": False, "datafeed": False, "recorder": {"tick_symbols": 0, "bar_symbols": 0}}
+    return data_api.load_data_health(main_engine, HAS_DATAMANAGER)
+
+
+@app.get("/api/data/export")
+def api_data_export(
+    symbol: str = "",
+    exchange: str = "",
+    interval: str = "1m",
+    start: str = "",
+    end: str = "",
+):
+    if not main_engine or not symbol or not exchange:
+        return Response(content="missing params", status_code=400)
+    start_dt = datetime.strptime(start, "%Y-%m-%d") if start else datetime.now() - timedelta(days=365)
+    end_dt = datetime.strptime(end, "%Y-%m-%d") if end else datetime.now()
+    bars = data_api.load_bars_for_export(main_engine, symbol, exchange, interval, start_dt, end_dt)
+    csv_text = data_api.bars_to_csv(bars)
+    filename = f"{symbol}_{exchange}_{interval}.csv"
+    return Response(
+        content=csv_text,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.post("/api/data/import")
+async def api_data_import(
+    file: UploadFile = File(...),
+    symbol: str = Form(...),
+    exchange: str = Form(...),
+    interval: str = Form("1m"),
+    tz_name: str = Form("Asia/Shanghai"),
+    datetime_head: str = Form("datetime"),
+    open_head: str = Form("open"),
+    high_head: str = Form("high"),
+    low_head: str = Form("low"),
+    close_head: str = Form("close"),
+    volume_head: str = Form("volume"),
+    turnover_head: str = Form("turnover"),
+    open_interest_head: str = Form("open_interest"),
+    datetime_format: str = Form(""),
+):
+    if not main_engine:
+        return {"error": "engine not ready"}
+    raw = await file.read()
+    content = raw.decode("utf-8-sig", errors="replace")
+    mapping = {
+        "tz_name": tz_name,
+        "datetime_head": datetime_head,
+        "open_head": open_head,
+        "high_head": high_head,
+        "low_head": low_head,
+        "close_head": close_head,
+        "volume_head": volume_head,
+        "turnover_head": turnover_head,
+        "open_interest_head": open_interest_head,
+        "datetime_format": datetime_format,
+    }
+    result = data_api.import_bars_csv(main_engine, content, symbol, exchange, interval, mapping)
+    if result.get("error"):
+        return {"error": result["error"]}
+    _push_data_overviews()
+    return result
+
+
+@app.post("/api/data/check")
+async def api_data_check(request: Request):
+    if not main_engine:
+        return {"results": []}
+    body = await request.json()
+    items = body.get("items") or []
+    return {"results": data_api.check_data_coverage(main_engine, items)}
+
+
+# ---------------------------------------------------------------------------
 # Historical bar data API (for K-line charts)
 # ---------------------------------------------------------------------------
 @app.get("/api/recorder/status")
@@ -744,6 +1004,7 @@ def api_bars(symbol: str = "", exchange: str = "", interval: str = "1m", start: 
     from datetime import datetime, timedelta
     from deepquant.trader.database import get_database
     from deepquant.trader.constant import Exchange, Interval
+    from .bar_merge import enrich_bars_with_recorded_data, bar_to_dict
 
     if not main_engine:
         return {"bars": []}
@@ -770,12 +1031,16 @@ def api_bars(symbol: str = "", exchange: str = "", interval: str = "1m", start: 
 
     # 合并 DataRecorder 录制的 1m K 线 + tick 补全
     if itv == Interval.MINUTE:
-        from .bar_merge import enrich_bars_with_recorded_data, bar_to_dict
         bars = enrich_bars_with_recorded_data(db, symbol, ex, itv, bars or [], end_dt)
 
     result = []
     for b in (bars or []):
-        result.append(bar_to_dict(b) if hasattr(b, "open_price") else b)
+        if hasattr(b, "open_price"):
+            result.append(bar_to_dict(b))
+        elif isinstance(b, dict):
+            result.append(b)
+        else:
+            result.append(bar_to_dict(b))
     return {"bars": result, "count": len(result)}
 
 
@@ -910,6 +1175,7 @@ def start_engine() -> None:
         logger.info("  CTA Backtester loaded")
     if HAS_DATAMANAGER:
         main_engine.add_app(DataManagerApp)
+        data_api.ensure_public_datafeed(main_engine)
         logger.info("  Data Manager loaded")
 
     # Register backtest result events
@@ -995,6 +1261,41 @@ async def on_startup():
                 pass
             await asyncio.sleep(10)
     asyncio.create_task(_poll_gw_status())
+
+    async def _init_data_queue():
+        for _ in range(100):
+            if main_engine is not None:
+                data_update_service.get_update_queue(
+                    lambda: main_engine,
+                    _emit_data_task,
+                    _push_data_overviews,
+                    _data_manager_log,
+                )
+                logger.info("Data update queue initialized")
+                break
+            await asyncio.sleep(0.1)
+    asyncio.create_task(_init_data_queue())
+
+    async def _scheduled_data_update():
+        """Daily post-close watchlist incremental update (18:00 local)."""
+        last_run_date = ""
+        while True:
+            try:
+                now = datetime.now()
+                today = now.strftime("%Y-%m-%d")
+                if now.hour == 18 and now.minute < 5 and last_run_date != today:
+                    q = _get_data_queue()
+                    if q and q.get_scheduled_symbols():
+                        tid = q.run_scheduled_watchlist_update()
+                        if tid:
+                            logger.info(f"Scheduled data update queued: {tid}")
+                    last_run_date = today
+            except Exception as e:
+                logger.warning(f"Scheduled data update error: {e}")
+            await asyncio.sleep(60)
+
+    asyncio.create_task(_scheduled_data_update())
+
     t = threading.Thread(target=start_engine, daemon=True)
     t.start()
     for _ in range(50):

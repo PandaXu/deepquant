@@ -58,6 +58,7 @@ deepquant/
 ├── deepquant_web/              # 前端 SPA
 │   └── static/js/              # store.js、tab-*.js、app.js
 ├── deepquant_datarecorder/     # 行情录制
+├── deepquant_datamanager/      # 历史数据管理
 └── start.sh                    # 一键启动全部服务
 ```
 
@@ -161,7 +162,7 @@ Server 启动时按需加载（ImportError 则跳过）：
 - `vnpy_paperaccount` — 模拟交易
 - `vnpy_ctastrategy` — CTA 策略（经 `StrategyService` 封装）
 - `vnpy_ctabacktester` — 回测
-- `vnpy_datamanager` — 数据管理
+- `deepquant_datamanager` — 数据管理
 
 ## 前端 Tab 结构
 

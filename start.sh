@@ -3,7 +3,7 @@
 set -e
 
 VENV="deepquant/.venv/bin/python"
-export PYTHONPATH="deepquant:deepquant_gateway:deepquant_ctp:deepquant_server:deepquant_datarecorder"
+export PYTHONPATH="deepquant:deepquant_gateway:deepquant_ctp:deepquant_server:deepquant_datarecorder:deepquant_datamanager"
 
 # 释放常用端口，避免重复启动冲突
 for p in 8080 8888 8889 8890 8900; do

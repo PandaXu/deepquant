@@ -2,124 +2,257 @@
 
 const TabData = {
   template: `
-    <div style="display:flex;flex-direction:column;flex:1;overflow:hidden;padding:8px;gap:8px">
-      <!-- Contract Query -->
-      <div class="panel" style="flex:0 0 auto">
-        <div class="panel-header">
-          <span class="panel-title">📋 合约查询</span>
-          <input v-model="contractFilter" class="input" placeholder="按代码/交易所筛选" style="width:180px;height:24px;font-size:11px;margin-left:auto">
-          <button class="btn btn-xs" @click="exportContracts">CSV</button>
+    <div class="data-tab">
+      <div class="data-top-bar panel" style="flex:0 0 auto">
+        <div class="data-subtabs">
+          <button v-for="t in subTabs" :key="t.id" class="btn btn-xs"
+            :class="{ 'btn-primary': subTab === t.id }" @click="subTab = t.id">{{ t.label }}</button>
         </div>
-        <div class="panel-body" style="max-height:300px;overflow:auto">
-          <table class="data-table">
-            <thead><tr>
-              <th>合约代码</th><th>交易所</th><th>名称</th><th>品种</th><th>乘数</th>
-              <th class="num">最小变动</th><th class="num">最小手数</th>
-              <th>期权组合</th><th>到期日</th><th>行权价</th><th>期权类型</th><th>网关</th>
-            </tr></thead>
-            <tbody>
-              <tr v-for="c in filteredContracts" :key="c.vt_symbol">
-                <td>{{ c.vt_symbol }}</td><td>{{ c.exchange }}</td><td>{{ c.name }}</td>
-                <td>{{ c.product }}</td><td class="num">{{ c.size }}</td>
-                <td class="num">{{ c.pricetick }}</td><td class="num">{{ c.min_volume }}</td>
-                <td>{{ c.option_portfolio || '' }}</td><td>{{ c.option_expiry || '' }}</td>
-                <td class="num">{{ c.option_strike || '' }}</td><td>{{ c.option_type || '' }}</td>
-                <td>{{ c.gateway_name }}</td>
-              </tr>
-              <tr v-if="filteredContracts.length === 0"><td colspan="12" class="empty">输入筛选条件后点击"查询"</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <div style="padding:4px 8px;display:flex;gap:8px">
-          <button class="btn btn-sm btn-primary" @click="queryContracts">🔍 查询</button>
-          <span style="font-size:10px;color:var(--text-dim)">共 {{ filteredContracts.length }} 条</span>
+        <input v-if="subTab === 'local'" v-model="search" class="input input-sm data-search" placeholder="搜索合约…">
+        <div class="data-top-meta">
+          <span v-if="healthLine" class="hint-sub data-health-line">{{ healthLine }}</span>
+          <span class="data-dm-badge" :class="store.dataManagerAvailable ? 'on' : 'off'">
+            DataManager {{ store.dataManagerAvailable ? '已加载' : '未加载' }}
+          </span>
+          <button v-if="store.dataManagerAvailable" class="btn btn-xs" @click="syncMinute">同步分钟</button>
+          <button v-if="store.dataManagerAvailable && subTab === 'local'" class="btn btn-xs btn-primary" @click="updateAll">全部更新</button>
+          <button class="btn btn-xs" @click="importOpen = true">导入</button>
+          <button class="btn btn-xs" @click="refreshAll">↻</button>
         </div>
       </div>
 
-      <!-- Data Download -->
-      <div class="panel" style="flex:0 0 auto">
-        <div class="panel-header"><span class="panel-title">⬇️ 历史数据下载</span></div>
-        <div style="display:flex;gap:8px;padding:8px;flex-wrap:wrap;align-items:end">
-          <div class="form-row"><label>交易所</label><select v-model="dl.exchange" @change="onDlExchange" class="input"><option value="">选择</option><option v-for="e in exchanges" :value="e.value">{{ e.name }}</option></select></div>
-          <div class="form-row"><label>品种</label><select v-model="dl.product" @change="onDlProduct" class="input"><option value="">选择</option><option v-for="p in dlProducts" :value="p.prefix">{{ p.prefix }} — {{ p.name }}</option></select></div>
-          <div class="form-row"><label>合约</label><select v-model="dl.symbol" class="input"><option value="">选择</option><option v-for="c in dlContracts" :value="c.vt_symbol">{{ c.symbol }}</option></select></div>
-          <div class="form-row"><label>周期</label><select v-model="dl.interval" class="input"><option>1m</option><option>5m</option><option>15m</option><option>30m</option><option>1h</option><option>d</option><option>w</option></select></div>
-          <div class="form-row"><label>起始日</label><input v-model="dl.start" class="input" type="date"></div>
-          <div class="form-row"><label>结束日</label><input v-model="dl.end" class="input" type="date"></div>
-          <button class="btn btn-sm btn-primary" @click="startDownload" :disabled="dl.downloading">{{ dl.downloading ? '下载中...' : '下载' }}</button>
+      <data-watchlist-check
+        v-if="subTab === 'local'"
+        @update="onWatchlistUpdate"
+        @batch-update="onBatchUpdate"
+      />
+
+      <div v-show="subTab === 'local'" class="data-split">
+        <div class="data-left panel">
+          <div class="panel-header">
+            <span class="panel-title">本地数据</span>
+            <label v-if="subTab === 'local'" class="data-opt-toggle" style="margin-left:auto">
+              <input type="checkbox" v-model="store.dataIncludeListedOptions" @change="onToggleListedOptions">
+              挂牌合约
+            </label>
+          </div>
+          <div class="panel-body data-tree-wrap">
+            <data-tree-nav :tree="filteredTree" :selected-key="selectedKey" @select="onSelect" />
+          </div>
         </div>
-        <div v-if="dl.downloading" class="progress-bar" style="margin:0 8px 8px">
-          <div class="progress-fill" :style="{width: dl.progress + '%'}"></div>
-          <span style="font-size:10px;text-align:center;display:block">{{ dl.progress }}%</span>
+        <div class="data-right panel">
+          <data-detail-panel
+            :selection="selection"
+            :dm-available="store.dataManagerAvailable"
+            @update="onUpdate"
+            @delete="onDelete"
+            @open-trading="openTrading"
+            @open-backtest="openBacktest"
+            @materialize="onMaterialize"
+            @download="onDownload"
+          />
         </div>
       </div>
 
-      <!-- Data Overview -->
-      <div class="panel" style="flex:1;min-height:0">
-        <div class="panel-header">
-          <span class="panel-title">📊 数据概览</span>
-          <button class="btn btn-xs" @click="refreshOverview">刷新</button>
-        </div>
-        <div class="panel-body" style="overflow:auto">
-          <table class="data-table">
-            <thead><tr><th>合约</th><th>交易所</th><th>周期</th><th class="num">数据量</th><th>开始时间</th><th>结束时间</th></tr></thead>
-            <tbody>
-              <tr v-for="d in store.dataOverview" :key="d.vt_symbol + d.interval">
-                <td>{{ d.vt_symbol }}</td><td>{{ d.exchange }}</td><td>{{ d.interval }}</td>
-                <td class="num">{{ d.count }}</td><td>{{ d.start }}</td><td>{{ d.end }}</td>
-              </tr>
-              <tr v-if="store.dataOverview.length === 0"><td colspan="6" class="empty">暂无数据</td></tr>
-            </tbody>
-          </table>
+      <div v-show="subTab === 'contracts'" class="data-full panel">
+        <div class="panel-header"><span class="panel-title">合约目录</span></div>
+        <div class="panel-body">
+          <data-contract-browser @open-trading="openTrading" />
         </div>
       </div>
+
+      <div v-show="subTab === 'recorder'" class="data-full panel">
+        <div class="panel-header">
+          <span class="panel-title">录制状态</span>
+          <button class="btn btn-xs" @click="$loadRecorderStatus()">刷新</button>
+        </div>
+        <div class="panel-body">
+          <data-recorder-panel :status="recorderView" @refresh="$loadRecorderStatus()" />
+        </div>
+      </div>
+
+      <data-task-bar @go-log="goLog" />
+      <data-import-modal
+        :open="importOpen"
+        :preset="importPreset"
+        :dm-available="store.dataManagerAvailable"
+        @close="importOpen = false"
+        @done="refreshAll"
+      />
     </div>`,
   setup() {
-    const contractFilter = ref('');
-    const allContracts = ref([]);
-    const dl = reactive({ exchange:'', product:'', symbol:'', interval:'1m', start:'', end:'', downloading:false, progress:0 });
-    const dlProducts = ref([]);
-    const dlContracts = ref([]);
-    const exchanges = [
-      { value:'CFFEX', name:'中金所' }, { value:'SHFE', name:'上期所' },
-      { value:'DCE', name:'大商所' }, { value:'CZCE', name:'郑商所' },
-      { value:'INE', name:'上海能源' }, { value:'GFEX', name:'广期所' },
+    const subTabs = [
+      { id: 'local', label: '本地数据' },
+      { id: 'contracts', label: '合约目录' },
+      { id: 'recorder', label: '录制状态' },
     ];
+    const subTab = ref(store.dataSubTab || 'local');
+    const search = ref('');
+    const importOpen = ref(false);
+    const importPreset = ref(null);
 
-    const filteredContracts = computed(() => {
-      if (!contractFilter.value) return allContracts.value;
-      const q = contractFilter.value.toLowerCase();
-      return allContracts.value.filter(c => (c.vt_symbol||'').toLowerCase().includes(q) || (c.exchange||'').toLowerCase().includes(q));
+    const selection = computed(() => {
+      const key = store.dataSelectedKey;
+      if (key && store.dataTree?.length) {
+        const node = $findDataNode(store.dataTree, key);
+        if (node) return node;
+      }
+      return store.dataSelection;
+    });
+    const selectedKey = computed(() => store.dataSelectedKey || '');
+
+    const filteredTree = computed(() => $matchDataTreeSearch(store.dataTree, search.value));
+
+    const healthLine = computed(() => {
+      const h = store.dataHealth;
+      if (!h) return '';
+      const parts = [];
+      if (h.bar_series != null) parts.push(`K线 ${h.bar_series} 组`);
+      if (h.db_size_bytes) parts.push($fmtBytes(h.db_size_bytes));
+      return parts.join(' · ');
     });
 
-    async function queryContracts() {
-      try {
-        const data = await $apiGet(`/api/contracts?filter=${encodeURIComponent(contractFilter.value || '')}`);
-        allContracts.value = data || [];
-      } catch(e) { $toast('查询合约失败', 'error'); }
-    }
-    function exportContracts() {
-      $exportCSV(['合约代码','交易所','名称','品种','乘数','最小变动','最小手数','网关'],
-        filteredContracts.value.map(c => [c.vt_symbol, c.exchange, c.name, c.product, c.size, c.pricetick, c.min_volume, c.gateway_name]),
-        `contracts_${new Date().toISOString().slice(0,10)}.csv`);
+    const recorderView = computed(() => ({
+      ...(store.recorderStatus || {}),
+      db_path: store.dataHealth?.db_path,
+      db_size_bytes: store.dataHealth?.db_size_bytes,
+    }));
+
+    watch(subTab, (v) => { store.dataSubTab = v; });
+
+    function onSelect(node) {
+      $selectDataNode(node);
     }
 
-    async function onDlExchange() { dl.product=''; dlContracts.value=[]; if(dl.exchange) { try { const d = await $apiGet(`/api/contracts/products?exchange=${dl.exchange}`) || {}; dlProducts.value = Array.isArray(d) ? d : (d.products || []); } catch(e){} } }
-    async function onDlProduct() { dl.symbol=''; if(dl.product) { try { const d = await $apiGet(`/api/contracts/public?exchange=${dl.exchange}&product=${dl.product}`) || {}; dlContracts.value = Array.isArray(d) ? d : (d.contracts || []); } catch(e){} } }
-    function startDownload() {
-      if (!dl.symbol) return $toast('请选择合约', 'error');
-      dl.downloading = true; dl.progress = 0;
-      const parts = dl.symbol.split('.');
-      $wsSend({ action: 'download_bar_data', payload: { symbol: parts[0], exchange: parts[1]||dl.exchange, interval: dl.interval, start: dl.start, end: dl.end } });
-      // Simulate progress (server doesn't push progress yet)
-      const timer = setInterval(() => { if(dl.progress < 90) dl.progress += 10; else clearInterval(timer); }, 500);
-      setTimeout(() => { dl.downloading = false; dl.progress = 100; clearInterval(timer); $toast('下载完成', 'success'); }, 8000);
+    function onWatchlistUpdate(r) {
+      $startDataUpdate({ symbol: r.symbol, exchange: r.exchange, interval: r.interval, kind: 'bar', vt_symbol: r.vt_symbol });
     }
-    function refreshOverview() { $wsSend({ action: 'get_data_overview' }); }
 
-    onMounted(() => { refreshOverview(); });
+    function onBatchUpdate({ items }) {
+      if (!items?.length) return;
+      $startBatchUpdate(items);
+      $toast(`已提交批量更新 ${items.length} 个合约`, 'info');
+    }
 
-    return { contractFilter, allContracts, dl, dlProducts, dlContracts, exchanges, filteredContracts,
-      queryContracts, exportContracts, onDlExchange, onDlProduct, startDownload, refreshOverview, store };
-  }
+    function onUpdate() {
+      const sel = selection.value;
+      if (sel?.kind === 'bar') $startDataUpdate(sel);
+    }
+
+    function onDelete() {
+      $startDataDelete(selection.value);
+    }
+
+    function openBacktest() {
+      const sel = selection.value;
+      if (!sel) return;
+      store.dataDeepLink = null;
+      if (typeof window.__openBacktestWithSymbol === 'function') {
+        window.__openBacktestWithSymbol(sel.vt_symbol, sel.interval === 'tick' ? '1m' : sel.interval);
+      } else if (typeof window.__setActiveTab === 'function') {
+        window.__setActiveTab('strategy');
+      }
+    }
+
+    function openTrading(vt) {
+      const sym = $normalizeVt(vt || selection.value?.vt_symbol);
+      if (!sym) return;
+      $setActiveSymbol(sym);
+      if (typeof window.__applyTradingSymbol === 'function') window.__applyTradingSymbol(sym);
+      if (typeof window.__setActiveTab === 'function') window.__setActiveTab('trading');
+    }
+
+    function onMaterialize() {
+      if (selection.value) $materializeBarData(selection.value);
+    }
+
+    function onDownload() {
+      const sel = selection.value;
+      if (!sel) return;
+      if (sel.catalogOnly) $startDataDownloadForSelection(sel);
+      else onUpdate();
+    }
+
+    function onToggleListedOptions() {
+      $rebuildDataTree();
+    }
+
+    function syncMinute() {
+      $wsSend({ action: 'sync_minute_data', payload: { task_id: `sync-${Date.now().toString(36)}` } });
+    }
+
+    function updateAll() {
+      $startUpdateAllBars();
+    }
+
+    function goLog() {
+      if (typeof window.__setActiveTab === 'function') window.__setActiveTab('log');
+    }
+
+    async function refreshAll() {
+      await Promise.all([
+        $loadDataHealth(),
+        $loadListedCatalog(),
+        $loadRecorderStatus(),
+      ]);
+      await $loadDataOverviewRest();
+      $refreshDataOverview();
+    }
+
+    function applyDeepLink(link) {
+      if (!link) return;
+      subTab.value = link.sub || 'local';
+      refreshAll().then(() => {
+        if (link.symbol && link.exchange) {
+          const key = `${link.interval === 'tick' ? 'tick' : 'bar'}:${link.interval}:${link.exchange}:${link.symbol}`;
+          let node = $findDataNode(store.dataTree, key);
+          if (!node) {
+            node = {
+              kind: link.interval === 'tick' ? 'tick' : 'bar',
+              symbol: link.symbol,
+              exchange: link.exchange,
+              interval: link.interval || '1m',
+              vt_symbol: `${link.symbol}.${link.exchange}`,
+              label: link.symbol,
+              count: 0,
+              start: '',
+              end: '',
+              freshness: $computeDataFreshness(''),
+            };
+          }
+          onSelect(node);
+        }
+        if (link.action === 'import') {
+          importPreset.value = link.symbol ? { symbol: link.symbol, exchange: link.exchange, interval: link.interval || '1m' } : null;
+          importOpen.value = true;
+        }
+        if (link.action === 'update' && link.symbol && link.exchange) {
+          $startDataUpdate({ symbol: link.symbol, exchange: link.exchange, interval: link.interval || '1m', kind: 'bar', vt_symbol: link.vt_symbol });
+        }
+      });
+      store.dataDeepLink = null;
+    }
+
+    watch(() => store.dataDeepLink, (link) => {
+      if (link) applyDeepLink(link);
+    }, { immediate: true });
+
+    watch(() => store.dataTree, () => {
+      $ensureDataTreeSelection();
+    });
+
+    onMounted(() => {
+      refreshAll();
+      $syncDataWatchlistToServer();
+      if (store.dataDeepLink) applyDeepLink(store.dataDeepLink);
+    });
+
+    return {
+      store, subTabs, subTab, search, selection, selectedKey, filteredTree,
+      importOpen, importPreset, healthLine, recorderView,
+      onSelect, onWatchlistUpdate, onBatchUpdate,
+      onUpdate, onDelete, openBacktest, openTrading, onMaterialize, onDownload, onToggleListedOptions,
+      syncMinute, updateAll, goLog, refreshAll,
+    };
+  },
 };

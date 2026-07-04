@@ -309,13 +309,16 @@ class StrategyService:
             update_config_status(strategy_name, "inited")
             append_log(strategy_name, "INFO",
                        f"初始化成功 (已加载历史数据, size={am.count})" if am else "初始化成功")
-            return {"status": "inited", "message": "初始化成功"}
+            return {"status": "inited", "message": "初始化成功", "vt_symbol": strategy.vt_symbol}
         elif strategy.inited and not data_loaded:
             # Strategy on_init didn't throw but also didn't load data
             strategy.inited = False
             update_config_status(strategy_name, "stopped")
             append_log(strategy_name, "ERROR", "初始化失败：历史数据不足，请先下载合约K线数据")
-            return {"error": "初始化失败：历史数据不足，请先通过数据管理下载合约K线"}
+            return {
+                "error": "初始化失败：历史数据不足，请先通过数据管理下载合约K线",
+                "vt_symbol": strategy.vt_symbol,
+            }
         else:
             update_config_status(strategy_name, "stopped")
             append_log(strategy_name, "ERROR", "初始化失败：策略 on_init 执行异常")

@@ -155,6 +155,39 @@ def get_ticks():
     return {"ticks": [json.loads(json_dumps(t)) for t in ticks]}
 
 
+@app.get("/contracts")
+def get_contracts(filter: str = ""):
+    """Return contracts loaded by connected gateway(s) (after TD query_contract)."""
+    if not main_engine:
+        return []
+    active = [g for g in main_engine.get_all_gateway_names() if g not in _disconnected]
+    if not active:
+        return []
+    result = []
+    for c in main_engine.get_all_contracts():
+        if filter:
+            f = filter.lower()
+            hay = f"{c.vt_symbol} {c.symbol} {c.exchange.value if c.exchange else ''} {c.name or ''}".lower()
+            if f not in hay:
+                continue
+        result.append({
+            "vt_symbol": c.vt_symbol,
+            "symbol": c.symbol,
+            "exchange": c.exchange.value if c.exchange else "",
+            "name": c.name or "",
+            "product": c.product.value if c.product else "",
+            "size": c.size,
+            "pricetick": c.pricetick,
+            "min_volume": c.min_volume,
+            "gateway_name": c.gateway_name or "",
+            "option_portfolio": c.option_portfolio or "",
+            "option_expiry": c.option_expiry.isoformat() if c.option_expiry else "",
+            "option_strike": c.option_strike or "",
+            "option_type": c.option_type.value if c.option_type else "",
+        })
+    return result
+
+
 @app.post("/subscribe")
 async def subscribe(request: Request):
     try:

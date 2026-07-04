@@ -121,10 +121,8 @@ async function $fetchContractName(vt) {
     const hit = list.find(x => $normalizeVt(x.vt_symbol || `${x.symbol}.${exchange}`) === key)
       || list.find(x => (x.symbol || '').toUpperCase() === symbol.toUpperCase());
     if (hit?.name && !$isSymbolLikeName(hit.name, vt)) {
-      const title = $formatOptionTitle(vt);
-      const name = title || hit.name;
-      contractNameCache[key] = name;
-      return name;
+      contractNameCache[key] = hit.name;
+      return hit.name;
     }
   } catch (e) { /* ignore */ }
 
@@ -171,4 +169,11 @@ function $contractCodeLine(vt) {
 async function $preloadWatchlistNames() {
   const tasks = (ui.watchlist || []).map(w => $fetchContractName(w.vt_symbol));
   await Promise.allSettled(tasks);
+}
+
+/** 预加载数据树叶子合约中文名 */
+function $preloadDataTreeNames(tree) {
+  for (const leaf of $flattenDataLeaves(tree || [])) {
+    if (leaf.vt_symbol) $ensureContractName(leaf.vt_symbol);
+  }
 }

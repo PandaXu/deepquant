@@ -5,10 +5,10 @@ from deepquant.trader.ui import QtWidgets, QtCore, QtGui
 from deepquant.trader.engine import MainEngine, EventEngine
 from deepquant.trader.constant import Interval, Exchange
 from deepquant.trader.object import BarData
-from deepquant.trader.database import DB_TZ
+from deepquant.trader.database import BarOverview, DB_TZ
 from deepquant.trader.utility import available_timezones
 
-from ..engine import APP_NAME, ManagerEngine, BarOverview
+from ..engine import APP_NAME, ManagerEngine
 
 
 INTERVAL_NAME_MAP = {
