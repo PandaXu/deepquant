@@ -109,16 +109,11 @@ async def _broadcast_worker():
     """Consume broadcast queue in the uvicorn event loop."""
     while True:
         payload, clients_snapshot = await _broadcast_queue.get()
-        msg_type = json.loads(payload).get('type', '?')
         dead = []
         for ws in list(clients_snapshot):
             try:
                 await ws.send_text(payload)
-                if msg_type == 'tick':
-                    print(f"[worker] sent tick to ws {id(ws)}", flush=True)
-            except Exception as e:
-                if msg_type == 'tick':
-                    print(f"[worker] tick send failed to {id(ws)}: {type(e).__name__}", flush=True)
+            except Exception:
                 if ws in ws_clients:
                     dead.append(ws)
         for ws in dead:
@@ -142,12 +137,8 @@ def bridge_event(event: Event) -> None:
     # Push to queue — worker runs in uvicorn event loop
     try:
         _broadcast_queue.put_nowait((payload, list(ws_clients)))
-    except Exception as e:
-        print(f"[bridge] queue put failed: {e}", flush=True)
-    else:
-        if event.type == 'tick':
-            ws_ids = [id(ws) for ws in ws_clients]
-            print(f"[bridge] queued tick, clients={len(ws_clients)} ids={ws_ids[:3]}", flush=True)
+    except Exception:
+        pass
 
 
 def _remove_client(ws: WebSocket) -> None:
@@ -759,12 +750,6 @@ async def api_subscribe(request: Request):
             await gateway_client.subscribe(symbol, exchange, gw_type)
         return {"subscribed": f"{symbol}.{exchange}"}
     result = await gateway_client.subscribe(symbol, exchange, gateway)
-    # TEST: send a tick directly to all WS clients to verify they receive it
-    import json as _json
-    test_tick = _json.dumps({"type":"tick","data":{"vt_symbol":"TEST.SHFE","symbol":"TEST","last_price":999.99,"volume":100,"exchange":"SHFE","open_price":900,"high_price":1000,"low_price":800}})
-    for ws in list(ws_clients):
-        try: await ws.send_text(test_tick)
-        except: pass
     return result
 
 
@@ -902,7 +887,7 @@ def start_engine() -> None:
 
 
 def _on_gateway_event(data: dict):
-    """Forward Gateway WS events to Server event engine."""
+    """Forward Gateway WS events directly to Web clients (bypass EventEngine)."""
     event_type = data.get("type", "")
     # Map Gateway event types to Web-compatible types (handle eTick.XXX variants)
     web_type = event_type
@@ -912,9 +897,13 @@ def _on_gateway_event(data: dict):
         if event_type.startswith(prefix):
             web_type = mapped
             break
-    if not main_engine or not event_engine: return
-    event = Event(type=web_type, data=data.get("data", {}))
-    event_engine.put(event)
+    # Push directly to WS broadcast queue — no EventEngine roundtrip
+    payload = json_dumps({"type": web_type, "data": data.get("data", {}), "time": datetime.now().isoformat()})
+    if ws_clients:
+        try:
+            _broadcast_queue.put_nowait((payload, list(ws_clients)))
+        except Exception:
+            pass
 
 
 @app.on_event("startup")
