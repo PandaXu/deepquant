@@ -109,11 +109,16 @@ async def _broadcast_worker():
     """Consume broadcast queue in the uvicorn event loop."""
     while True:
         payload, clients_snapshot = await _broadcast_queue.get()
+        msg_type = json.loads(payload).get('type', '?')
         dead = []
         for ws in list(clients_snapshot):
             try:
                 await ws.send_text(payload)
-            except Exception:
+                if msg_type == 'tick':
+                    print(f"[worker] sent tick to ws {id(ws)}", flush=True)
+            except Exception as e:
+                if msg_type == 'tick':
+                    print(f"[worker] tick send failed to {id(ws)}: {type(e).__name__}", flush=True)
                 if ws in ws_clients:
                     dead.append(ws)
         for ws in dead:
@@ -141,7 +146,8 @@ def bridge_event(event: Event) -> None:
         print(f"[bridge] queue put failed: {e}", flush=True)
     else:
         if event.type == 'tick':
-            print(f"[bridge] queued tick, qsize={_broadcast_queue.qsize()}", flush=True)
+            ws_ids = [id(ws) for ws in ws_clients]
+            print(f"[bridge] queued tick, clients={len(ws_clients)} ids={ws_ids[:3]}", flush=True)
 
 
 def _remove_client(ws: WebSocket) -> None:
