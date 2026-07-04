@@ -1,0 +1,190 @@
+---
+description: DeepQuant 项目架构、模块职责、数据流与关键设计原则（项目记忆）
+alwaysApply: true
+---
+
+# DeepQuant 项目记忆
+
+## 项目定位
+
+DeepQuant 是基于 VeighNa (vnpy) 架构演进的**微服务量化交易平台**，支持 CTP/TTS 多网关、实时行情、策略交易、数据录制。Python 后端 + Vue3 前端 SPA。
+
+## 整体架构
+
+```
+Web (:8080)  ──WS+REST──►  Server (:8888)  ──HTTP控制 / WS数据──►  Gateway (:8889+)
+                                                                    │
+                                                                    ▼
+                                                              deepquant_ctp (协议层 .so)
+DataRecorder (:8900) ◄──WS── Gateway
+```
+
+### 服务职责
+
+| 模块 | 端口 | 职责 |
+|------|------|------|
+| `deepquant_web` | 8080 | Vue3 + ECharts SPA，行情/交易/策略/数据/日志/设置 |
+| `deepquant_server` | 8888 | API 网关，GatewayClient 代理，账户/策略管理，WS fan-out |
+| `deepquant_gateway` | 8889/8890 | 独立 MainEngine + EventEngine，CTP/TTS 连接与事件推送 |
+| `deepquant_datarecorder` | 8900 | 监听 Gateway WS，tick 批量写入 SQLite |
+| `deepquant` | — | 核心库：EventEngine、MainEngine、数据对象、alpha/chart/rpc |
+| `deepquant_ctp` | — | 纯协议层：official/tts 两套 C++ 原生库绑定 |
+
+## 目录结构
+
+```
+deepquant/
+├── deepquant/                  # 核心库（被所有子项目依赖）
+│   └── deepquant/
+│       ├── event/              # EventEngine 事件驱动
+│       ├── trader/             # MainEngine、Tick/Order/Trade 对象、常量
+│       ├── alpha/              # 因子/模型/策略/回测
+│       ├── chart/              # K 线图表组件
+│       └── rpc/                # RPC 通信
+├── deepquant_server/           # FastAPI API 网关
+│   ├── server.py               # REST + WS，事件桥接
+│   ├── gateway_client.py       # 多实例 HTTP+WS 客户端
+│   ├── account_store.py        # 账户 SQLite 持久化
+│   └── strategy_service.py     # CTA 策略封装
+├── deepquant_gateway/          # 网关微服务
+│   ├── run.py                  # 多实例入口
+│   ├── server.py               # 独立 MainEngine
+│   ├── gateways.toml           # 多实例配置
+│   └── gateway/
+│       ├── ctp_gateway.py      # CTP (official 后端)
+│       └── tts_gateway.py      # TTS (tts 后端)
+├── deepquant_ctp/              # CTP 协议层
+│   └── api/backends/           # official/、tts/ 原生 .so
+├── deepquant_web/              # 前端 SPA
+│   └── static/js/              # store.js、tab-*.js、app.js
+├── deepquant_datarecorder/     # 行情录制
+└── start.sh                    # 一键启动全部服务
+```
+
+## 核心原理
+
+### 1. 事件驱动 (VeighNa 模式)
+
+- `EventEngine`：队列 + 独立线程，按事件类型分发 handler
+- 事件类型：`eTick`、`eOrder`、`eTrade`、`ePosition`、`eAccount`、`eLog`、`eContract` 等
+- Gateway 内：CTP 回调 → 构造 TickData/OrderData → `event_engine.put(Event)`
+- Server 内：Gateway WS 事件 → `_on_gateway_event` → 映射为 web 类型 → `bridge_event` → WS 广播
+
+### 2. 微服务拆分
+
+- **Server 不直接引用网关代码**：通过 `GatewayClient` (aiohttp) 与 Gateway 通信
+- **Gateway 拥有完整 MainEngine**：CTP 连接、订阅、下单在 Gateway 进程内完成
+- **Gateway 可独立重启**：Server 仅轮询 `/status`，WS 自动重连
+- **Server 仍保留 MainEngine**：用于 PaperAccount、CTA Strategy、DataManager 等 App 引擎
+
+### 3. 多后端 CTP 共存
+
+- `deepquant_ctp.api.load_backend("official"|"tts")` 按需加载不同 `.so`
+- 每个 Gateway 实例通过 `DEEPQUANT_CTP_BACKEND` 或 `--backend` 指定后端
+- Gateway server 在加载网关类前 swap `MdApi`/`TdApi` 并 reload gateway 模块
+- `gateways.toml` 定义实例：`id`、`port`、`backend`、`accounts`
+
+### 4. 账户-网关绑定
+
+- 账户存于 `~/.vntrader/gateway_accounts.db`（`account_store.py`）
+- 每个账户有 `gateway` 字段（如 CTP/TTS），决定路由到哪个 Gateway 实例
+- `GatewayClient.request()` 按 gateway_type 选择 URL（读 gateways.toml）
+- 切换账户 = 断开旧网关 + 连接新网关实例
+
+## 数据流
+
+### 实时行情/交易
+
+```
+CTP/TTS 柜台
+  → ctp_gateway (MdApi/TdApi 回调)
+  → EventEngine.put(eTick/eOrder/...)
+  → Gateway bridge_event → WS /ws
+  → Server GatewayClient._on_gateway_event
+  → EventEngine → bridge_event → WS /ws
+  → Web store.js → Vue reactive → UI
+```
+
+### 前端状态 (store.js)
+
+- `API_BASE` 默认 `http://{hostname}:8888`，可通过 `?api=` 覆盖
+- WS 连接 `/ws`，收到 `tick/order/trade/position/account/log` 更新 reactive store
+- 命令通过 WS `action` 字段发送（如 `connect_account`、`send_order`、`subscribe`）
+
+### 数据录制
+
+```
+Gateway WS (eTick.*)
+  → GatewayWSClient
+  → TickBuffer (interval=10s 或 max_size=200)
+  → DatabaseWriter → ~/.vntrader/database.db (dbtickdata 表)
+```
+
+DataRecorder **零依赖 MainEngine**，仅需 Gateway WS 地址。
+
+## 关键 API
+
+### Server (:8888)
+
+- REST: `/api/status`, `/api/gateway-accounts`, `/api/orders`, `/api/subscribe`, `/api/bars`
+- WS: `/ws` — 双向，前端命令 + 服务端事件推送
+
+### Gateway (:8889+)
+
+- REST: `/status`, `/connect`, `/disconnect`, `/subscribe`, `/send_order`, `/cancel_order`
+- WS: `/ws` — 单向推送（keep-alive 接收）
+
+## 启动方式
+
+```bash
+# 一键启动（venv + 双 Gateway + Server + Web）
+./start.sh
+
+# 或分别启动（需设置 PYTHONPATH）
+PYTHONPATH="deepquant:deepquant_gateway:deepquant_ctp" python deepquant_gateway/run.py --instance ctp-simnow
+PYTHONPATH="deepquant:deepquant_server:deepquant_ctp" python deepquant_server/run.py
+python deepquant_web/run.py
+```
+
+## 持久化路径
+
+| 路径 | 内容 |
+|------|------|
+| `~/.vntrader/gateway_accounts.db` | 网关账户、策略配置 |
+| `~/.vntrader/database.db` | tick/bar 历史数据 |
+| `~/.deepquant/logs/` | Server 日志 |
+
+## 可选扩展 App
+
+Server 启动时按需加载（ImportError 则跳过）：
+
+- `vnpy_paperaccount` — 模拟交易
+- `vnpy_ctastrategy` — CTA 策略（经 `StrategyService` 封装）
+- `vnpy_ctabacktester` — 回测
+- `vnpy_datamanager` — 数据管理
+
+## 前端 Tab 结构
+
+| Tab | 文件 | 功能 |
+|-----|------|------|
+| 行情交易 | tab-trading.js | K 线、盘口、Tick、下单、持仓 |
+| 数据管理 | — | 合约、历史数据 |
+| 策略 | — | CTA 管理、回测 |
+| 日志 | — | 实时日志 |
+| 设置 | tab-settings.js | 网关、账户、全局配置 |
+
+## 开发约定
+
+- 核心库包名 `deepquant`（由 vnpy fork/重命名），兼容 vnpy 生态 App
+- 网关实现放在 `deepquant_gateway/gateway/`，协议绑定在 `deepquant_ctp`
+- 新增 Gateway 实例：编辑 `gateways.toml` + Server `gateway_client.py` 自动读取
+- Java 代码规范（若涉及）：须含 `AI-GENERATED (Cursor)` 标识及中文 Javadoc
+- Python 服务间通信用 JSON，Enum/datetime 在 `json_dumps` 中序列化
+
+## 设计要点速查
+
+1. **控制面 vs 数据面**：Server→Gateway 用 HTTP；Gateway→Server 用 WS
+2. **Server 零网关代码引用**：Gateway 可独立部署/重启
+3. **多后端同进程共存**：`load_backend()` + 模块 reload
+4. **事件流单向可追踪**：Gateway → Server → Web
+5. **DataRecorder 旁路录制**：不经过 Server，直连 Gateway WS

@@ -137,8 +137,11 @@ def bridge_event(event: Event) -> None:
     # Push to queue — worker runs in uvicorn event loop
     try:
         _broadcast_queue.put_nowait((payload, list(ws_clients)))
-    except asyncio.QueueFull:
-        pass
+    except Exception as e:
+        print(f"[bridge] queue put failed: {e}", flush=True)
+    else:
+        if event.type == 'tick':
+            print(f"[bridge] queued tick, qsize={_broadcast_queue.qsize()}", flush=True)
 
 
 def _remove_client(ws: WebSocket) -> None:
