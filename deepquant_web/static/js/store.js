@@ -24,12 +24,39 @@ const store = reactive({
   gateways: [],
   gatewayAccounts: [],
   strategies: [],
+  ctaClasses: [],
   btClasses: [],
+  backtestResult: null,
+  backtestError: null,
   dataOverview: [],
   logPaused: false,
   connectedGateways: [],   // CTP connection status from server
   activeAccount: '',       // currently connected account alias
+  tickStream: {},          // vt_symbol → 最近逐笔 ring buffer（仅 UI）
+  banner: '',              // 顶栏 persistent 告警文案
+  tickLatencyMs: null,     // 最近 tick 延迟毫秒
+  backtestMarkers: [],     // 回测买卖点标注
 });
+
+function _ensureVtSymbol(data) {
+  if (!data) return data;
+  if (!data.vt_symbol && data.symbol && data.exchange) {
+    data.vt_symbol = `${data.symbol}.${data.exchange}`;
+  }
+  return data;
+}
+
+function $queryTradingSnapshot() {
+  const gws = store.connectedGateways || [];
+  gws.forEach(gw => {
+    $wsSend({ action: 'query_account', payload: { gateway: gw } });
+    $wsSend({ action: 'query_position', payload: { gateway: gw } });
+  });
+}
+
+function $invokeWatchlistSubscribe() {
+  if (typeof $autoSubscribeWatchlist === 'function') $autoSubscribeWatchlist();
+}
 
 // ---- WebSocket ----
 let _ws = null, _pending = [];
@@ -42,7 +69,8 @@ function $wsConnect() {
     store.wsStatus = true;
     _pending.forEach(m => { try { _ws.send(m); } catch(e) {} });
     _pending = [];
-    $wsSend({ action: 'subscribe_all' });
+    $hydrateTicks();
+    $invokeWatchlistSubscribe();
   };
   _ws.onclose = () => {
     store.wsStatus = false;
@@ -66,17 +94,27 @@ function _onWsMessage(e) {
     if (!type) return;
 
     if (type === 'tick' && data) {
-      store.tick[data.vt_symbol] = data;
+      const t = $storeTick(data);
+      if (!t) return;
+      if (typeof $recordTickLatency === 'function') $recordTickLatency(t);
+      if (typeof $appendTickStream === 'function') $appendTickStream(t);
     } else if (type === 'order' && data) {
-      store.order[data.orderid || data.vt_orderid] = data;
+      const o = _ensureVtSymbol(data);
+      store.order[o.orderid || o.vt_orderid] = o;
     } else if (type === 'trade' && data) {
-      store.trade[data.tradeid || data.vt_tradeid] = data;
+      const tr = _ensureVtSymbol(data);
+      store.trade[tr.tradeid || tr.vt_tradeid] = tr;
     } else if (type === 'position' && data) {
-      store.position[data.vt_positionid || data.symbol] = data;
+      const p = _ensureVtSymbol(data);
+      store.position[p.vt_positionid || p.vt_symbol || p.symbol] = p;
     } else if (type === 'account' && data) {
-      store.account[data.vt_accountid || data.accountid] = data;
+      store.account[data.vt_accountid || data.accountid || data.gateway_name] = data;
     } else if (type === 'contract' && data) {
-      store.contract[data.vt_symbol] = data;
+      const c = _ensureVtSymbol(data);
+      store.contract[c.vt_symbol] = c;
+      if (c.name && typeof $setContractNameIfBetter === 'function') {
+        $setContractNameIfBetter(c.vt_symbol, c.name);
+      }
     } else if (type === 'log') {
       const entry = typeof data === 'string' ? { msg: data, time: new Date().toLocaleTimeString() } : data;
       store.log.push(entry);
@@ -93,8 +131,14 @@ function _onWsMessage(e) {
       }
     } else if (type === 'cta_strategies' && Array.isArray(data)) {
       store.strategies = data;
+    } else if (type === 'cta_classes' && Array.isArray(data)) {
+      store.ctaClasses = data;
     } else if (type === 'bt_classes' && Array.isArray(data)) {
       store.btClasses = data;
+    } else if (type === 'backtestResult' && data) {
+      store.backtestResult = data;
+    } else if (type === 'backtestError') {
+      store.backtestError = typeof data === 'string' ? data : (data?.msg || JSON.stringify(data));
     } else if (type === 'data_overview' && Array.isArray(data)) {
       store.dataOverview = data;
     } else if (type === 'gateway_list' && Array.isArray(data)) {
@@ -126,6 +170,12 @@ async function $apiPost(path, body) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   });
+  if (!r.ok) throw new Error(`API ${path} returned ${r.status}`);
+  return r.json();
+}
+
+async function $apiDelete(path) {
+  const r = await fetch(API_BASE + path, { method: 'DELETE' });
   if (!r.ok) throw new Error(`API ${path} returned ${r.status}`);
   return r.json();
 }
@@ -169,6 +219,9 @@ async function $restConnectAccount(accountId) {
     const r = await $apiPost('/api/gateway-accounts/' + accountId + '/connect', {});
     if (r.error) { $toast(r.error, 'error'); return false; }
     $toast('连接成功', 'success');
+    await $pollStatus();
+    $queryTradingSnapshot();
+    $invokeWatchlistSubscribe();
     return true;
   } catch(e) { $toast('连接失败', 'error'); return false; }
 }
@@ -190,19 +243,41 @@ async function $restSendOrder(order) {
 
 async function $restCancelOrder(orderid, symbol, exchange, gateway) {
   try {
-    await $apiGet('/api/orders/' + orderid + '?symbol=' + encodeURIComponent(symbol) + '&exchange=' + exchange + '&gateway=' + (gateway || ''));
-  } catch(e) { /* silent */ }
+    const q = new URLSearchParams({
+      symbol: symbol || '',
+      exchange: exchange || '',
+      gateway: gateway || '',
+    });
+    await $apiDelete('/api/orders/' + encodeURIComponent(orderid) + '?' + q.toString());
+  } catch(e) { $toast('撤单失败', 'error'); }
 }
 
 async function $restSubscribe(symbol, exchange, gateway) {
   try {
-    await $apiPost('/api/subscribe', { symbol, exchange, gateway: gateway || '' });
-  } catch(e) { /* silent */ }
+    const r = await $apiPost('/api/subscribe', { symbol, exchange, gateway: gateway || '' });
+    if (r?.error) {
+      console.warn('subscribe failed:', symbol, exchange, r.error);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.warn('subscribe error:', symbol, exchange, e);
+    return false;
+  }
+}
+
+async function $hydrateTicks() {
+  try {
+    const data = await $apiGet('/api/ticks');
+    (data?.ticks || []).forEach(t => $storeTick(t));
+  } catch (e) { /* gateway offline */ }
 }
 
 // ---- Contract Expiry ----
 function isExpired(code) {
-  const m = code.match(/[A-Z]+(\d{2})(\d{2})$/);
+  const upper = (code || '').split('.')[0].toUpperCase();
+  let m = upper.match(/^[A-Z]+(\d{2})(\d{2})$/);
+  if (!m) m = upper.match(/^[A-Z]+(\d{2})(\d{2})-/);
   if (!m) return false;
   const yy = parseInt(m[1]), mm = parseInt(m[2]);
   const fullYy = yy < 50 ? 2000 + yy : 1900 + yy;
@@ -217,12 +292,12 @@ async function $loadGatewayAccounts() {
 }
 
 async function $saveGatewayAccount(alias, gateway, setting) {
-  await $apiPost('/api/gateway-accounts', { alias, gateway, setting_json: JSON.stringify(setting) });
+  await $apiPost('/api/gateway-accounts', { alias, gateway, setting });
   await $loadGatewayAccounts();
 }
 
 async function $deleteGatewayAccount(id) {
-  await $apiPost('/api/account/delete', { vt_accountid: id });
+  await $apiDelete('/api/gateway-accounts/' + encodeURIComponent(id));
   await $loadGatewayAccounts();
 }
 
@@ -244,11 +319,27 @@ setInterval(() => {
 }, 1000);
 
 // ---- Periodic server status poll (gateway connection state) ----
+let _lastGatewayKey = '';
+
 async function $pollStatus() {
   try {
     const data = await $apiGet('/api/status');
-    store.connectedGateways = data.gateways || [];
-    store.activeAccount = data.active_account || '';
+    const gws = data.gateways || [];
+    const key = gws.join(',');
+    if (key && key !== _lastGatewayKey) {
+      _lastGatewayKey = key;
+      store.connectedGateways = gws;
+      store.activeAccount = data.active_account || '';
+      $hydrateTicks();
+      $queryTradingSnapshot();
+      $invokeWatchlistSubscribe();
+    } else if (!key) {
+      _lastGatewayKey = '';
+      store.connectedGateways = [];
+    } else {
+      store.connectedGateways = gws;
+      store.activeAccount = data.active_account || '';
+    }
   } catch(e) {}
 }
 setInterval($pollStatus, 5000);  // Poll every 5 seconds

@@ -168,10 +168,18 @@ Server 启动时按需加载（ImportError 则跳过）：
 | Tab | 文件 | 功能 |
 |-----|------|------|
 | 行情交易 | tab-trading.js | K 线、盘口、Tick、下单、持仓 |
-| 数据管理 | — | 合约、历史数据 |
-| 策略 | — | CTA 管理、回测 |
-| 日志 | — | 实时日志 |
+| 数据管理 | tab-data.js | 合约、历史数据 |
+| 策略 | tab-strategy.js | CTA 管理、回测 |
+| 日志 | tab-log.js | 实时日志 |
 | 设置 | tab-settings.js | 网关、账户、全局配置 |
+
+### Web ↔ Server 契约要点
+
+- K 线：`GET /api/bars` 返回 `{ bars: [{ datetime, open, high, low, close, volume }] }`
+- 撤单：`DELETE /api/orders/{orderid}?symbol=&exchange=&gateway=`
+- 账户：`POST /api/gateway-accounts` body `{ alias, gateway, setting }`；删除 `DELETE /api/gateway-accounts/{id}`
+- 策略 WS：`add_cta_strategy` / `edit_cta_strategy` / `get_cta_classes` / `cta_strategy_*`
+- 回测 WS：`get_backtest_classes` / `start_backtesting` → 事件 `backtestResult` / `backtestError`
 
 ## 开发约定
 

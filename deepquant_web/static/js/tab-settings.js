@@ -26,7 +26,7 @@ const TabSettings = {
               <tbody>
                 <tr v-for="a in store.gatewayAccounts" :key="a.id || a.alias" :class="{ 'row-active': store.activeAccount === a.alias }">
                   <td><span class="ws-dot" :class="store.activeAccount === a.alias ? 'on' : 'off'" style="display:inline-block"></span></td>
-                  <td>{{ a.alias }}</td><td>{{ a.gateway }}</td><td>{{ a.username || '—' }}</td>
+                  <td>{{ a.alias }}</td><td>{{ a.gateway }}</td><td>{{ accountUsername(a) }}</td>
                   <td>
                     <button v-if="store.activeAccount === a.alias" class="btn btn-xs btn-warn" @click="disconnectAccount(a)">断开</button>
                     <button v-else class="btn btn-xs btn-primary" @click="connectAccount(a)">连接</button>
@@ -60,6 +60,19 @@ const TabSettings = {
         </div>
       </div>
 
+      <!-- Trading Preferences -->
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">📋 交易偏好</span></div>
+        <div class="panel-body form-grid" style="padding:8px">
+          <div class="form-row"><label>默认手数</label><input v-model.number="tradePrefs.defaultVolume" class="input" type="number" min="1" style="width:80px"></div>
+          <div class="form-row"><label>下单确认</label>
+            <label class="checkbox-label"><input type="checkbox" v-model="tradePrefs.orderConfirm" style="width:auto"> 提交前弹窗确认</label></div>
+          <div class="form-row"><label>价格闪动</label>
+            <label class="checkbox-label"><input type="checkbox" v-model="tradePrefs.priceFlash" style="width:auto"> 自选/行情涨跌闪动</label></div>
+          <button class="btn btn-sm btn-primary" @click="saveTradePrefs" style="margin-top:4px">保存交易偏好</button>
+        </div>
+      </div>
+
       <!-- Global Config -->
       <div class="panel">
         <div class="panel-header"><span class="panel-title">⚙️ 全局配置</span></div>
@@ -88,23 +101,38 @@ const TabSettings = {
       { value:'INE', name:'上海能源' }, { value:'GFEX', name:'广期所' },
     ];
     const accountList = computed(() => Object.values(store.account));
+    const tradePrefs = reactive({
+      defaultVolume: $loadTradingPrefs().defaultVolume,
+      orderConfirm: $loadTradingPrefs().orderConfirm,
+      priceFlash: $loadTradingPrefs().priceFlash,
+    });
+
+    function saveTradePrefs() {
+      $saveTradingPrefs({
+        defaultVolume: tradePrefs.defaultVolume || 1,
+        orderConfirm: tradePrefs.orderConfirm,
+        priceFlash: tradePrefs.priceFlash,
+      });
+      $toast('交易偏好已保存', 'success');
+    }
 
     // Load config from localStorage
     function loadConfig() {
       try {
-        const saved = JSON.parse(localStorage.getItem('deepquant_config') || '{}');
+        const saved = $loadJson(PERSIST_KEYS.config, {});
         if (saved.font) cfg.font = saved.font;
         if (saved.fontSize) cfg.fontSize = saved.fontSize;
         if (saved.theme) cfg.theme = saved.theme;
         if (saved.visibleExchanges) cfg.visibleExchanges = saved.visibleExchanges;
-      } catch(e){}
+      } catch (e) { /* ignore */ }
     }
     function saveConfig() {
-      localStorage.setItem('deepquant_config', JSON.stringify({ font:cfg.font, fontSize:cfg.fontSize, theme:cfg.theme, visibleExchanges:cfg.visibleExchanges }));
+      $saveJson(PERSIST_KEYS.config, {
+        font: cfg.font, fontSize: cfg.fontSize, theme: cfg.theme, visibleExchanges: cfg.visibleExchanges,
+      });
       $toast('配置已保存', 'success');
-      // Apply theme
-      if (cfg.theme === 'light') document.body.classList.add('theme-light');
-      else document.body.classList.remove('theme-light');
+      document.body.classList.toggle('theme-light', cfg.theme === 'light');
+      document.documentElement.style.fontSize = cfg.fontSize + 'px';
     }
 
     async function onGatewayChange() {
@@ -118,18 +146,23 @@ const TabSettings = {
     }
     const loadedAccountId = ref(null);
 
+    function accountUsername(a) {
+      const s = a.setting || {};
+      return s['用户名'] || s.username || s['UserID'] || '—';
+    }
+
     function connectGateway() {
       if (!gw.gateway) return;
       if (!loadedAccountId.value) {
-        if (!gw.settings || Object.keys(gw.settings).length === 0) { $toast('请先选择网关或加载账户', 'error'); return; }
+        $toast('请从已存账户列表连接，或先保存当前账户', 'error');
+        return;
       }
-      $toast(`正在连接...`, 'info');
       $restConnectAccount(loadedAccountId.value);
     }
     function connectAccount(a) {
       loadedAccountId.value = a.id;
       gw.gateway = a.gateway;
-      try { gw.settings = JSON.parse(a.setting_json || '{}'); } catch(e){ gw.settings = {}; }
+      gw.settings = a.setting || {};
       $restConnectAccount(a.id);
     }
     function disconnectAccount(a) {
@@ -149,7 +182,7 @@ const TabSettings = {
     function loadAccount(a) {
       loadedAccountId.value = a.id;
       gw.gateway = a.gateway;
-      try { gw.settings = JSON.parse(a.setting_json || '{}'); } catch(e){ gw.settings = {}; }
+      gw.settings = a.setting || {};
     }
     async function deleteAccount(a) {
       if (!confirm('确定删除账户 ' + a.alias + '?')) return;
@@ -172,7 +205,7 @@ const TabSettings = {
       try { const data = await $apiGet('/api/gateways'); if (Array.isArray(data)) { store.gateways = data.map(g => { window._gatewayObjects[g.name] = g; return g.name; }); } } catch(e) {}
     });
 
-    return { gw, cfg, exchanges, accountList, loadConfig, saveConfig, onGatewayChange,
+    return { gw, cfg, exchanges, accountList, tradePrefs, saveTradePrefs, accountUsername, loadConfig, saveConfig, onGatewayChange,
       connectGateway, connectAccount, disconnectAccount, disconnectGateway, loadAccount, deleteAccount, saveCurrentAccount, store, fmtPrice: $fmtPrice, fmtVol: $fmtVol };
   }
 };

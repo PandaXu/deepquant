@@ -13,7 +13,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
-from deepquant.event import EventEngine, Event
+from deepquant.event import EventEngine, Event, EVENT_TIMER
 from deepquant.trader.engine import MainEngine
 from deepquant.trader.event import (
     EVENT_TICK, EVENT_ORDER, EVENT_TRADE,
@@ -122,6 +122,9 @@ async def _broadcast_worker():
 
 def bridge_event(event: Event) -> None:
     """Forward VeighNa events to all connected WebSocket clients."""
+    # Skip timer noise — not useful for Web UI
+    if event.type == EVENT_TIMER:
+        return
     if not ws_clients:
         return
 
@@ -233,16 +236,14 @@ async def handle_ws_message(ws: WebSocket, msg: str) -> None:
             )
 
         elif action == "query_account":
-            gw_name = payload.get("gateway", "")
-            gw = main_engine.get_gateway(gw_name)
-            if gw:
-                gw.query_account()
+            gw_name = payload.get("gateway", "") or (_cached_gateways[0] if _cached_gateways else "CTP")
+            if gateway_client:
+                await gateway_client.query_account(gw_name)
 
         elif action == "query_position":
-            gw_name = payload.get("gateway", "")
-            gw = main_engine.get_gateway(gw_name)
-            if gw:
-                gw.query_position()
+            gw_name = payload.get("gateway", "") or (_cached_gateways[0] if _cached_gateways else "CTP")
+            if gateway_client:
+                await gateway_client.query_position(gw_name)
 
         elif action == "email_test":
             engine = main_engine.get_engine("email")
@@ -273,6 +274,8 @@ async def handle_ws_message(ws: WebSocket, msg: str) -> None:
                 await ws.send_text(json.dumps({"type": "error", "msg": result["error"]}))
                 return
             main_engine.write_log(f"账户已连接: {acct['alias']} ({gw_name})")
+            await gateway_client.query_account(gw_name)
+            await gateway_client.query_position(gw_name)
             await ws.send_text(json.dumps({"type": "log", "data": {"msg": f"账户已连接: {acct['alias']} ({gw_name})", "gateway_name": gw_name}}))
 
         elif action == "disconnect_account":
@@ -554,6 +557,26 @@ def api_about():
     }
 
 
+@app.get("/api/ticks")
+async def api_ticks():
+    """Get cached ticks from Gateway service(s)."""
+    if not gateway_client:
+        return {"ticks": []}
+    all_ticks = []
+    seen: set[str] = set()
+    for gw_key in _GW_INSTANCES:
+        try:
+            data = await gateway_client.request("GET", "/ticks", gateway_type=gw_key)
+            for t in data.get("ticks", []):
+                vt = t.get("vt_symbol") or f"{t.get('symbol', '')}.{t.get('exchange', '')}"
+                if vt and vt not in seen:
+                    seen.add(vt)
+                    all_ticks.append(t)
+        except Exception:
+            pass
+    return {"ticks": all_ticks}
+
+
 @app.get("/api/data")
 def api_data():
     """Get all cached data (tick/order/trade/position/account)."""
@@ -574,7 +597,7 @@ def api_data():
 # Gateway account management API
 # ---------------------------------------------------------------------------
 from .account_store import (
-    add_account, get_accounts, get_account, update_account, delete_account,
+    add_account, get_accounts, get_account, get_default_account, update_account, delete_account,
 )
 from .strategy_service import StrategyService
 
@@ -652,6 +675,8 @@ async def api_connect_gateway_account(account_id: int):
             return {"error": result["error"]}
         _active_account_name = acct["alias"]
         main_engine.write_log(f"账户已连接: {acct['alias']} ({gw_name})")
+        await gateway_client.query_account(gw_name)
+        await gateway_client.query_position(gw_name)
         return {"status": "connected", "gateway_name": gw_name}
     return {"error": "gateway client not available"}
 
@@ -680,6 +705,39 @@ async def api_disconnect_gateway_account(account_id: int):
 # ---------------------------------------------------------------------------
 # Historical bar data API (for K-line charts)
 # ---------------------------------------------------------------------------
+@app.get("/api/recorder/status")
+def api_recorder_status():
+    """DataRecorder 运行状态（检查数据库最近 tick/bar）。"""
+    from deepquant.trader.database import get_database
+    if not main_engine:
+        return {"running": False, "error": "engine not ready"}
+    db = get_database()
+    tick_overview = []
+    bar_overview = []
+    try:
+        tick_overview = db.get_tick_overview() or []
+    except Exception:
+        pass
+    try:
+        bar_overview = db.get_bar_overview() or []
+    except Exception:
+        pass
+    return {
+        "running": "unknown",
+        "hint": "由 start.sh 启动，连接 Gateway WS 写入 ~/.vntrader/database.db",
+        "tick_symbols": len(tick_overview),
+        "bar_symbols": len(bar_overview),
+        "recent_ticks": [
+            {"symbol": f"{o.symbol}.{o.exchange.value if o.exchange else ''}", "count": o.count, "end": o.end.isoformat() if o.end else None}
+            for o in tick_overview[:10]
+        ],
+        "recent_bars": [
+            {"symbol": f"{o.symbol}.{o.exchange.value if o.exchange else ''}", "interval": o.interval.value if o.interval else "", "count": o.count, "end": o.end.isoformat() if o.end else None}
+            for o in bar_overview[:10]
+        ],
+    }
+
+
 @app.get("/api/bars")
 def api_bars(symbol: str = "", exchange: str = "", interval: str = "1m", start: str = "", end: str = ""):
     """Load historical bar data for K-line charts."""
@@ -710,14 +768,14 @@ def api_bars(symbol: str = "", exchange: str = "", interval: str = "1m", start: 
     if not bars and itv == Interval.MINUTE:
         bars = db.load_bar_data(symbol, ex, Interval.DAILY, start_dt - timedelta(days=300), end_dt)
 
+    # 合并 DataRecorder 录制的 1m K 线 + tick 补全
+    if itv == Interval.MINUTE:
+        from .bar_merge import enrich_bars_with_recorded_data, bar_to_dict
+        bars = enrich_bars_with_recorded_data(db, symbol, ex, itv, bars or [], end_dt)
+
     result = []
     for b in (bars or []):
-        result.append({
-            "datetime": b.datetime.isoformat(),
-            "open": b.open_price, "high": b.high_price,
-            "low": b.low_price, "close": b.close_price,
-            "volume": b.volume, "open_interest": getattr(b, "open_interest", 0),
-        })
+        result.append(bar_to_dict(b) if hasattr(b, "open_price") else b)
     return {"bars": result, "count": len(result)}
 
 
@@ -745,7 +803,7 @@ async def api_subscribe(request: Request):
     gateway = body.get("gateway", "")
     # If no specific gateway, subscribe on all available gateways
     if not gateway:
-        targets = _cached_gateways if _cached_gateways else list(_GW_INSTANCES.keys())
+        targets = _cached_gateways if _cached_gateways else ["CTP"]
         for gw_type in targets:
             await gateway_client.subscribe(symbol, exchange, gw_type)
         return {"subscribed": f"{symbol}.{exchange}"}
@@ -759,8 +817,11 @@ async def api_subscribe(request: Request):
 @app.get("/api/contracts/public")
 async def api_public_contracts(exchange: str = "", product: str = ""):
     """Query contracts from public cache (akshare + generated options)."""
-    from deepquant.trader.contract_cache import get_cache, refresh_cache, get_cache_age, query_contracts
+    from deepquant.trader.contract_cache import (
+        get_cache, refresh_cache, get_cache_age, query_contracts, filter_by_products,
+    )
     from deepquant.trader.constant import Exchange
+    import re
 
     df = get_cache()
     age = get_cache_age()
@@ -777,13 +838,8 @@ async def api_public_contracts(exchange: str = "", product: str = ""):
             ex = Exchange(exchange)
             contracts = query_contracts(ex)
             if product:
-                # Include related products
-                from deepquant.trader.contract_cache import get_related_products
-                related = set(get_related_products(product))
-                contracts = [c for c in contracts if c['symbol'].upper()[:len(product)].upper() in related or c['symbol'].upper().startswith(product.upper())]
+                contracts = filter_by_products(contracts, product)
             for c in contracts:
-                # Add option type indicator
-                import re
                 opt = ""
                 m = re.match(r'^[A-Z]+[0-9]+-([CP])-', c['symbol'])
                 if m:
@@ -797,26 +853,22 @@ async def api_public_contracts(exchange: str = "", product: str = ""):
 @app.get("/api/contracts/products")
 async def api_contract_products(exchange: str = ""):
     """Get available product prefixes for an exchange."""
-    from deepquant.trader.contract_cache import get_cache, query_contracts
+    from deepquant.trader.contract_cache import get_cache, refresh_cache, get_cache_age, get_products
     from deepquant.trader.constant import Exchange
-    import re
 
     if not exchange:
         return {"products": []}
 
     try:
-        ex = Exchange(exchange)
-        contracts = query_contracts(ex)
-        products: dict[str, str] = {}
-        for c in contracts:
-            m = re.match(r'^([A-Za-z]+)', c['symbol'])
-            if m:
-                p = m.group(1).upper()
-                if p not in products:
-                    name = re.sub(r'\d+$', '', c['name']).strip()
-                    name = re.sub(r'(看涨|看跌)$', '', name).strip()
-                    products[p] = name
-        result = [{"prefix": k, "name": v} for k, v in sorted(products.items())]
+        Exchange(exchange)
+        df = get_cache()
+        age = get_cache_age()
+        if df is None or age is None or age.date() < datetime.now().date():
+            import threading
+            t = threading.Thread(target=refresh_cache, daemon=True)
+            t.start()
+        prod_map = get_products(exchange)
+        result = [{"prefix": k, "name": v} for k, v in sorted(prod_map.items())]
         return {"products": result}
     except Exception as e:
         logger.error(f"[/api/contracts/products] error: {type(e).__name__}: {e}")
@@ -889,6 +941,8 @@ def start_engine() -> None:
 def _on_gateway_event(data: dict):
     """Forward Gateway WS events directly to Web clients (bypass EventEngine)."""
     event_type = data.get("type", "")
+    if event_type == EVENT_TIMER:
+        return
     # Map Gateway event types to Web-compatible types (handle eTick.XXX variants)
     web_type = event_type
     for prefix, mapped in [("eTick.", "tick"), ("eOrder.", "order"), ("eTrade.", "trade"),
@@ -927,6 +981,8 @@ async def on_startup():
                 global _active_account_name
                 _active_account_name = default["alias"]
                 main_engine.write_log(f"Auto-connected: {default['alias']} ({gw_name})")
+                await gateway_client.query_account(gw_name)
+                await gateway_client.query_position(gw_name)
     asyncio.create_task(_auto_connect())
     # Background: poll Gateway status every 10s, never block
     async def _poll_gw_status():

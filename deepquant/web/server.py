@@ -528,8 +528,11 @@ def api_data():
 @app.get("/api/contracts/public")
 async def api_public_contracts(exchange: str = "", product: str = ""):
     """Query contracts from public cache (akshare + generated options)."""
-    from deepquant.trader.contract_cache import get_cache, refresh_cache, get_cache_age, query_contracts
+    from deepquant.trader.contract_cache import (
+        get_cache, refresh_cache, get_cache_age, query_contracts, filter_by_products,
+    )
     from deepquant.trader.constant import Exchange
+    import re
 
     df = get_cache()
     age = get_cache_age()
@@ -546,13 +549,8 @@ async def api_public_contracts(exchange: str = "", product: str = ""):
             ex = Exchange(exchange)
             contracts = query_contracts(ex)
             if product:
-                # Include related products
-                from deepquant.trader.contract_cache import get_related_products
-                related = set(get_related_products(product))
-                contracts = [c for c in contracts if c['symbol'].upper()[:len(product)].upper() in related or c['symbol'].upper().startswith(product.upper())]
+                contracts = filter_by_products(contracts, product)
             for c in contracts:
-                # Add option type indicator
-                import re
                 opt = ""
                 m = re.match(r'^[A-Z]+[0-9]+-([CP])-', c['symbol'])
                 if m:
@@ -566,27 +564,22 @@ async def api_public_contracts(exchange: str = "", product: str = ""):
 @app.get("/api/contracts/products")
 async def api_contract_products(exchange: str = ""):
     """Get available product prefixes for an exchange."""
-    from deepquant.trader.contract_cache import get_cache, query_contracts
+    from deepquant.trader.contract_cache import get_cache, refresh_cache, get_cache_age, get_products
     from deepquant.trader.constant import Exchange
-    import re
 
     if not exchange:
         return {"products": []}
 
     try:
-        ex = Exchange(exchange)
-        contracts = query_contracts(ex)
-        products: dict[str, str] = {}
-        for c in contracts:
-            m = re.match(r'^([A-Za-z]+)', c['symbol'])
-            if m:
-                p = m.group(1).upper()
-                if p not in products:
-                    # Extract Chinese name from contract name
-                    name = re.sub(r'\d+$', '', c['name']).strip()
-                    name = re.sub(r'(看涨|看跌)$', '', name).strip()
-                    products[p] = name
-        result = [{"prefix": k, "name": v} for k, v in sorted(products.items())]
+        Exchange(exchange)
+        df = get_cache()
+        age = get_cache_age()
+        if df is None or age is None or age.date() < datetime.now().date():
+            import threading
+            t = threading.Thread(target=refresh_cache, daemon=True)
+            t.start()
+        prod_map = get_products(exchange)
+        result = [{"prefix": k, "name": v} for k, v in sorted(prod_map.items())]
         return {"products": result}
     except ValueError:
         return {"products": []}

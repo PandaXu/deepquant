@@ -26,6 +26,18 @@ python deepquant_web/run.py
 Gateway WS → Server WS → Web WS → store.tick → Vue reactive → UI
 ```
 
+## API / WS 契约（与 deepquant_server 对齐）
+
+| 用途 | 方式 | 说明 |
+|------|------|------|
+| 实时事件 | WS `/ws` | tick/order/trade/position/account/log、backtestResult |
+| 下单/撤单/订阅 | REST | `POST /api/orders`、`DELETE /api/orders/{id}`、`POST /api/subscribe` |
+| 账户 CRUD | REST | `GET/POST /api/gateway-accounts`、`DELETE /api/gateway-accounts/{id}` |
+| K 线 | REST | `GET /api/bars` → `{ bars: [{ datetime, open, high, low, close, volume }] }` |
+| CTA 策略 | WS action | `get_cta_*`、`add_cta_strategy`、`edit_cta_strategy`、`cta_strategy_*` |
+| 回测 | WS action | `get_backtest_classes`、`start_backtesting` |
+| 子应用 | — | 已合并入主 Tab（策略/数据管理），不再单独 apps 页面 |
+
 - **Tick 表格**：始终可见，无数据时显示占位提示
 - **K 线图**：默认加载主力合约日线，选择合约后自动切换
 - **行情条**：水平滚动显示所有活跃 tick

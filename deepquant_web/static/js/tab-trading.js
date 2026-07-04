@@ -1,545 +1,545 @@
-// ===== Tab 1: 行情交易 =====
+// ===== Tab 1: 行情交易（P0–P2） =====
 
 const TabTrading = {
   template: `
     <div class="trading-layout">
-      <!-- Top: Chart + Trade Form -->
-      <div class="trading-top">
-        <!-- K-Line Chart + Depth -->
-        <div class="trading-chart panel">
-          <div class="panel-header">
-            <span class="panel-title">📈 K线图</span>
-            <span class="panel-badge">{{ chartSymbol || '—' }}</span>
-            <div style="margin-left:auto;display:flex;gap:4px">
-              <button class="btn btn-xs" v-for="iv in ['1m','5m','15m','1h','d']" :key="iv"
-                :class="{ 'btn-primary': chartInterval === iv }" @click="loadChart(chartSymbol, iv)">
-                {{ iv }}
-              </button>
+      <trading-onboarding v-if="showOnboarding" @connect="ui.showAccountDrawer = true"
+        @add-watchlist="addDefaultWatchlist" @select-symbol="focusWatchlist" />
+
+      <template v-else>
+        <div class="symbol-bar" v-if="chartSymbol">
+          <div class="sym-info">
+            <div class="contract-label-col" v-if="isIndexOption(chartSymbol)">
+              <span class="option-line">{{ contractLabel(chartSymbol) }}</span>
+              <span class="option-line">{{ contractSubLabel(chartSymbol) }}</span>
+              <span class="option-code">{{ contractCodeLine(chartSymbol) }}</span>
             </div>
+            <template v-else>
+              <span class="sym-name">{{ contractLabel(chartSymbol) }}</span>
+              <span class="sym-code">{{ chartSymbol }} · {{ chartModeLabel }}</span>
+            </template>
+            <span class="sym-code" v-if="isIndexOption(chartSymbol)">{{ chartModeLabel }}</span>
           </div>
-          <div class="kline-container" ref="klineEl"></div>
-          <div class="depth-inline" v-if="depthTick">
-            <div class="depth-asks">
-              <div v-for="i in 5" :key="'a'+i" class="depth-row"
-                @click="fillPrice(depthTick['ask_price_'+i])">
-                <span class="depth-price ask">{{ fmtPrice(depthTick['ask_price_'+i]) }}</span>
-                <span class="depth-vol">{{ fmtVol(depthTick['ask_volume_'+i]) }}</span>
-                <span class="depth-label">卖{{ i }}</span>
+          <span class="sym-price flash-target" :class="[chgCls(activeTick), priceFlashCls]">{{ fmtPrice(activeTick?.last_price) }}</span>
+          <span class="sym-chg" :class="chgCls(activeTick)">{{ chgAbs(activeTick) }} {{ chgText(activeTick) }}</span>
+          <div class="sym-intervals">
+            <button class="btn btn-xs" v-for="iv in intervals" :key="iv"
+              :class="{ 'btn-primary': chartInterval === iv }" @click="loadChart(chartSymbol, iv)">{{ iv === 'tick' ? '分时' : iv }}</button>
+          </div>
+          <button class="btn btn-xs" @click="ui.showTickStream = !ui.showTickStream">{{ ui.showTickStream ? '隐藏逐笔' : '逐笔' }}</button>
+        </div>
+
+        <div class="trading-main">
+          <div class="trading-center panel">
+            <div class="kline-wrap">
+              <div class="kline-container" ref="klineEl"></div>
+              <div v-if="chartEmpty" class="chart-empty-overlay"><div>{{ chartSymbol ? '暂无 ' + chartSymbol + ' 行情数据' : '在左侧自选点击合约' }}</div></div>
+            </div>
+            <tick-stream-drawer :open="ui.showTickStream" :symbol="chartSymbol" @close="ui.showTickStream = false" />
+          </div>
+
+          <div class="trading-right panel">
+            <div class="panel-header"><span class="panel-title">五档盘口</span></div>
+            <div class="depth-panel" v-if="symbolTick">
+              <div class="depth-asks">
+                <div v-for="i in 5" :key="'a'+i" class="depth-row" @click="setPrice('ask', i)">
+                  <span class="depth-label">卖{{ i }}</span>
+                  <span class="depth-price ask">{{ fmtPrice(symbolTick['ask_price_'+i]) }}</span>
+                  <span class="depth-vol">{{ fmtVol(symbolTick['ask_volume_'+i]) }}</span>
+                </div>
+              </div>
+              <div class="depth-mid">
+                <span class="depth-last" :class="chgCls(symbolTick)">{{ fmtPrice(symbolTick.last_price) }}</span>
+              </div>
+              <div class="depth-bids">
+                <div v-for="i in 5" :key="'b'+i" class="depth-row" @click="setPrice('bid', i)">
+                  <span class="depth-label">买{{ i }}</span>
+                  <span class="depth-price bid">{{ fmtPrice(symbolTick['bid_price_'+i]) }}</span>
+                  <span class="depth-vol">{{ fmtVol(symbolTick['bid_volume_'+i]) }}</span>
+                </div>
               </div>
             </div>
-            <div class="depth-mid">
-              <span class="depth-last" :class="chgCls(depthTick)">{{ fmtPrice(depthTick.last_price) }}</span>
-              <span class="depth-chg" :class="chgCls(depthTick)">{{ chgText(depthTick) }}</span>
-            </div>
-            <div class="depth-bids">
-              <div v-for="i in 5" :key="'b'+i" class="depth-row"
-                @click="fillPrice(depthTick['bid_price_'+i])">
-                <span class="depth-label">买{{ i }}</span>
-                <span class="depth-vol">{{ fmtVol(depthTick['bid_volume_'+i]) }}</span>
-                <span class="depth-price bid">{{ fmtPrice(depthTick['bid_price_'+i]) }}</span>
+            <div v-else class="depth-empty">{{ chartSymbol ? '等待 ' + chartSymbol + ' 行情…' : '选择合约后显示盘口' }}</div>
+
+            <div class="panel-header order-header"><span class="panel-title">三键下单</span></div>
+            <div class="panel-body ths-order-panel">
+              <div class="order-contract-card" v-if="form.symbol">
+                <div class="occ-body contract-label-col">
+                  <template v-if="isIndexOption(form.symbol)">
+                    <span class="option-line">{{ contractLabel(form.symbol) }}</span>
+                    <span class="option-line">{{ contractSubLabel(form.symbol) }}</span>
+                    <span class="option-code">{{ contractCodeLine(form.symbol) }}</span>
+                  </template>
+                  <template v-else>
+                    <div class="occ-name">{{ contractLabel(form.symbol) }}</div>
+                    <div class="occ-code">{{ form.symbol }}</div>
+                  </template>
+                </div>
               </div>
-            </div>
-          </div>
-        </div>
 
-        <!-- Trade Form -->
-        <div class="trading-form panel">
-          <div class="panel-header"><span class="panel-title">📝 下单</span></div>
-          <div class="panel-body form-grid">
-            <div class="form-row">
-              <label>交易所</label>
-              <select v-model="form.exchange" @change="onExchange" class="input">
-                <option value="">选择交易所</option>
-                <option v-for="ex in exchanges" :value="ex.value" :key="ex.value">{{ ex.name }}</option>
-              </select>
-            </div>
-            <div class="form-row">
-              <label>品种</label>
-              <select v-model="form.product" @change="onProduct" class="input" :disabled="!form.exchange">
-                <option value="">选择品种</option>
-                <option v-for="p in products" :value="p.prefix" :key="p.prefix">{{ p.prefix }} — {{ p.name }}</option>
-              </select>
-            </div>
-            <div class="form-row">
-              <label>合约</label>
-              <select v-model="form.symbol" @change="onSymbol" class="input" :disabled="!form.product">
-                <option value="">选择合约</option>
-                <option v-for="c in filteredContracts" :value="c.vt_symbol" :key="c.vt_symbol">
-                  {{ c.expired ? '⚠️ ' : '' }}{{ c.symbol }} — {{ c.name }}
-                </option>
-              </select>
-              <label class="checkbox-label" style="font-size:11px;margin-top:2px">
-                <input type="checkbox" v-model="showExpired" style="width:auto"> 显示到期合约
-              </label>
-            </div>
-            <div class="form-row">
-              <label>合约名称</label>
-              <div class="readonly-field">{{ contractName || '—' }}</div>
-            </div>
-            <div class="form-row">
-              <label>方向</label>
-              <select v-model="form.direction" class="input">
-                <option value="LONG">🟥 多头</option>
-                <option value="SHORT">🟩 空头</option>
-              </select>
-            </div>
-            <div class="form-row">
-              <label>开平</label>
-              <select v-model="form.offset" class="input">
-                <option value="OPEN">开仓</option>
-                <option value="CLOSE">平仓</option>
-                <option value="CLOSETODAY">平今</option>
-                <option value="CLOSEYESTERDAY">平昨</option>
-              </select>
-            </div>
-            <div class="form-row">
-              <label>类型</label>
-              <select v-model="form.orderType" class="input">
-                <option value="LIMIT">限价</option>
-                <option value="MARKET">市价</option>
-                <option value="STOP">止损</option>
-                <option value="FAK">FAK</option>
-                <option value="FOK">FOK</option>
-              </select>
-            </div>
-            <div class="form-row">
-              <label>价格</label>
-              <div style="display:flex;gap:4px">
-                <input v-model="form.price" class="input" placeholder="价格" style="flex:1">
-                <label class="checkbox-label" style="font-size:11px;white-space:nowrap">
-                  <input type="checkbox" v-model="autoPrice" style="width:auto"> 自动
-                </label>
+              <div v-else class="contract-picker-panel">
+                <p class="cp-panel-hint">请从左侧自选选择，或在此选择合约</p>
+                <contract-picker compact @pick="applySymbol" />
               </div>
-            </div>
-            <div class="form-row">
-              <label>数量</label>
-              <input v-model="form.volume" class="input" placeholder="数量" type="number" min="1">
-            </div>
-            <div class="form-row">
-              <label>网关</label>
-              <select v-model="form.gateway" class="input">
-                <option v-for="gw in store.gateways" :value="gw" :key="gw">{{ gw }}</option>
-                <option value="">自动</option>
-              </select>
-            </div>
-            <div class="form-actions">
-              <button class="btn btn-long" @click="placeOrder('LONG')"
-                :disabled="!canOrder">🟥 买入开多</button>
-              <button class="btn btn-short" @click="placeOrder('SHORT')"
-                :disabled="!canOrder">🟩 卖出开空</button>
-            </div>
-            <div class="form-actions" style="margin-top:4px">
-              <button class="btn btn-sm btn-danger" @click="cancelAll">✕ 全部撤单</button>
-              <button class="btn btn-sm btn-warn" @click="closeAll">⚡ 一键全平</button>
-            </div>
-          </div>
-        </div>
-      </div>
 
-      <!-- Ticker Strip -->
-      <div class="ticker-strip">
-        <div v-for="t in tickList" :key="t.vt_symbol" class="ticker-item" @click="onPickTick(t)">
-          <span class="sym">{{ t.vt_symbol.split('.')[0] }}</span>
-          <span class="price" :class="chgCls(t)">{{ fmtPrice(t.last_price) }}</span>
-          <span class="chg" :class="chgCls(t)">{{ chgText(t) }}</span>
-        </div>
-      </div>
+              <div class="ths-pos-bar" v-if="form.symbol">
+                <span>持多 <b class="up">{{ longPos?.volume || 0 }}</b></span>
+                <span>持空 <b class="down">{{ shortPos?.volume || 0 }}</b></span>
+              </div>
 
-      <!-- Tick Table -->
-      <div class="panel" style="flex:0 0 auto; max-height:200px; margin:0 6px">
-        <div class="panel-header">
-          <span class="panel-title">📈 行情 Tick</span>
-          <span class="panel-badge">{{ tickList.length }}</span>
-          <button class="btn btn-xs" @click="exportTicks" style="margin-left:auto">CSV</button>
-        </div>
-        <div class="panel-body" style="overflow:auto; max-height:160px">
-          <table class="data-table">
-            <thead><tr>
-              <th @click="sortTick('vt_symbol')">合约</th>
-              <th class="num" @click="sortTick('last_price')">最新价</th>
-              <th class="num" @click="sortTick('volume')">成交量</th>
-              <th class="num" @click="sortTick('open_price')">开盘</th>
-              <th class="num" @click="sortTick('high_price')">最高</th>
-              <th class="num" @click="sortTick('low_price')">最低</th>
-              <th class="num">买一价</th><th class="num">买一量</th>
-              <th class="num">卖一价</th><th class="num">卖一量</th>
-              <th class="num">时间</th>
-            </tr></thead>
-            <tbody>
-              <tr v-for="t in sortedTickList" :key="t.vt_symbol" @click="onPickTick(t)" style="cursor:pointer">
-                <td>{{ t.vt_symbol }}</td>
-                <td class="num" :class="chgCls(t)">{{ fmtPrice(t.last_price) }}</td>
-                <td class="num">{{ fmtVol(t.volume) }}</td>
-                <td class="num">{{ fmtPrice(t.open_price) }}</td>
-                <td class="num">{{ fmtPrice(t.high_price) }}</td>
-                <td class="num">{{ fmtPrice(t.low_price) }}</td>
-                <td class="num bid">{{ fmtPrice(t.bid_price_1) }}</td>
-                <td class="num">{{ t.bid_volume_1 }}</td>
-                <td class="num ask">{{ fmtPrice(t.ask_price_1) }}</td>
-                <td class="num">{{ t.ask_volume_1 }}</td>
-                <td class="num" style="font-size:10px">{{ timeStr(t.datetime || t.time) }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
+              <div class="ths-price-modes">
+                <button v-for="m in priceModes" :key="m.id" class="ths-mode-btn"
+                  :class="{ active: priceMode === m.id }" @click="setPriceMode(m.id)">{{ m.label }}</button>
+              </div>
 
-      <!-- Bottom Tables -->
-      <div class="trading-bottom">
-        <!-- Position Table -->
-        <div class="panel">
-          <div class="panel-header">
-            <span class="panel-title">💼 持仓</span>
-            <span class="panel-badge">{{ posList.length }}</span>
-          </div>
-          <div class="panel-body" style="overflow:auto">
-            <table class="data-table">
-              <thead><tr>
-                <th @click="sortPos('symbol')">合约 ↕</th>
-                <th class="num" @click="sortPos('direction')">方向</th>
-                <th class="num" @click="sortPos('volume')">数量</th>
-                <th class="num">昨仓</th>
-                <th class="num" @click="sortPos('price')">均价</th>
-                <th class="num" @click="sortPos('pnl')">盈亏</th>
-                <th class="num">操作</th>
-              </tr></thead>
-              <tbody>
-                <tr v-for="p in posList" :key="p.vt_positionid">
-                  <td>{{ p.vt_symbol }}</td>
-                  <td :class="p.direction === 'LONG' ? 'up' : 'down'">{{ p.direction === 'LONG' ? '多' : '空' }}</td>
-                  <td class="num">{{ p.volume }}</td>
-                  <td class="num">{{ p.yd_volume || 0 }}</td>
-                  <td class="num">{{ fmtPrice(p.price) }}</td>
-                  <td class="num" :class="pnlCls(p)">{{ fmtPrice(p.position_profit || p.pnl) }}</td>
-                  <td><button class="btn btn-xs btn-danger" @click="closePos(p)">平仓</button></td>
-                </tr>
-                <tr v-if="posList.length === 0"><td colspan="7" class="empty">暂无持仓</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-        <!-- Orders + Trades (tabbed) -->
-        <div class="panel">
-          <div class="panel-header">
-            <span class="panel-title">📋 订单</span>
-            <span class="panel-badge">{{ orderList.length }}</span>
-            <div style="margin-left:auto;display:flex;gap:4px">
-              <button class="btn btn-xs" :class="{ 'btn-primary': orderFilter === 'active' }"
-                @click="orderFilter = 'active'">活动</button>
-              <button class="btn btn-xs" :class="{ 'btn-primary': orderFilter === 'all' }"
-                @click="orderFilter = 'all'">全部</button>
+              <div class="ths-stepper">
+                <span class="ths-stepper-label">价格</span>
+                <button type="button" class="ths-step-btn" @click="stepPrice(-1)" :disabled="priceMode !== 'limit'">−</button>
+                <input v-model="form.price" class="ths-step-input" :readonly="priceMode !== 'limit'" placeholder="价格">
+                <button type="button" class="ths-step-btn" @click="stepPrice(1)" :disabled="priceMode !== 'limit'">+</button>
+              </div>
+              <div class="ths-stepper">
+                <span class="ths-stepper-label">数量</span>
+                <button type="button" class="ths-step-btn" @click="stepVolume(-1)">−</button>
+                <input v-model="form.volume" class="ths-step-input" type="number" min="1" @change="saveDefaultVolume">
+                <button type="button" class="ths-step-btn" @click="stepVolume(1)">+</button>
+              </div>
+
+              <div class="ths-three-keys">
+                <button type="button" class="ths-key ths-key-buy" @click="threeKeyOpen('LONG')" :disabled="!canOrder">
+                  <span class="ths-key-name">{{ keyLabels.buy }}</span>
+                  <span class="ths-key-price">{{ fmtPrice(keyPrice('LONG')) }}</span>
+                </button>
+                <button type="button" class="ths-key ths-key-sell" @click="threeKeyOpen('SHORT')" :disabled="!canOrder">
+                  <span class="ths-key-name">{{ keyLabels.sell }}</span>
+                  <span class="ths-key-price">{{ fmtPrice(keyPrice('SHORT')) }}</span>
+                </button>
+                <div class="ths-key-close-col">
+                  <button v-if="longPos" type="button" class="ths-key ths-key-close" @click="threeKeyClose('LONG')">
+                    <span class="ths-key-name">平多</span>
+                    <span class="ths-key-sub">{{ longPos.volume }}手</span>
+                  </button>
+                  <button v-if="shortPos" type="button" class="ths-key ths-key-close" @click="threeKeyClose('SHORT')">
+                    <span class="ths-key-name">平空</span>
+                    <span class="ths-key-sub">{{ shortPos.volume }}手</span>
+                  </button>
+                  <button v-if="!longPos && !shortPos" type="button" class="ths-key ths-key-close ths-key-disabled" disabled>
+                    <span class="ths-key-name">平仓</span>
+                    <span class="ths-key-sub">无持仓</span>
+                  </button>
+                </div>
+              </div>
+              <div class="ths-hint">F1 {{ keyLabels.buy }} · F2 {{ keyLabels.sell }} · F3 平仓</div>
             </div>
-            <button class="btn btn-xs" @click="exportOrders">CSV</button>
-          </div>
-          <div class="panel-body" style="overflow:auto;max-height:200px">
-            <table class="data-table">
-              <thead><tr>
-                <th>订单号</th><th>合约</th><th>方向</th><th>价格</th><th>数量</th><th>已成交</th><th>状态</th><th>时间</th><th>操作</th>
-              </tr></thead>
-              <tbody>
-                <tr v-for="o in filteredOrders" :key="o.orderid || o.vt_orderid">
-                  <td>{{ (o.orderid || '').toString().slice(-8) }}</td>
-                  <td>{{ o.vt_symbol }}</td>
-                  <td :class="o.direction === 'LONG' ? 'up' : 'down'">{{ o.direction === 'LONG' ? '多' : '空' }}/{{ o.offset }}</td>
-                  <td class="num">{{ fmtPrice(o.price) }}</td>
-                  <td class="num">{{ o.volume }}</td>
-                  <td class="num">{{ o.traded }}</td>
-                  <td>{{ statusText(o.status) }}</td>
-                  <td class="num">{{ timeStr(o.order_time || o.create_time) }}</td>
-                  <td><button v-if="isActiveOrder(o)" class="btn btn-xs btn-danger" @click="cancelOrder(o)">撤单</button></td>
-                </tr>
-                <tr v-if="filteredOrders.length === 0"><td colspan="9" class="empty">暂无订单</td></tr>
-              </tbody>
-            </table>
-            <div style="font-size:11px;color:var(--text-dim);padding:4px 12px;font-weight:600;margin-top:8px">成交记录</div>
-            <table class="data-table">
-              <thead><tr>
-                <th>成交号</th><th>合约</th><th>方向</th><th>价格</th><th>数量</th><th>时间</th>
-              </tr></thead>
-              <tbody>
-                <tr v-for="t in tradeList" :key="t.tradeid">
-                  <td>{{ (t.tradeid || '').toString().slice(-8) }}</td>
-                  <td>{{ t.vt_symbol }}</td>
-                  <td :class="t.direction === 'LONG' ? 'up' : 'down'">{{ t.direction === 'LONG' ? '多' : '空' }}</td>
-                  <td class="num">{{ fmtPrice(t.price) }}</td>
-                  <td class="num">{{ t.volume }}</td>
-                  <td class="num">{{ timeStr(t.trade_time || t.time) }}</td>
-                </tr>
-                <tr v-if="tradeList.length === 0"><td colspan="6" class="empty">暂无成交</td></tr>
-              </tbody>
-            </table>
           </div>
         </div>
-        <!-- Account Summary -->
-        <div class="panel">
-          <div class="panel-header"><span class="panel-title">💰 账户</span></div>
-          <div class="panel-body" style="overflow:auto">
-            <table class="data-table">
-              <thead><tr><th>账户ID</th><th class="num">余额</th><th class="num">冻结</th><th class="num">可用</th><th>网关</th></tr></thead>
-              <tbody>
-                <tr v-for="a in accountList" :key="a.vt_accountid">
-                  <td>{{ a.vt_accountid }}</td>
-                  <td class="num">{{ fmtPrice(a.balance) }}</td>
-                  <td class="num">{{ fmtPrice(a.frozen) }}</td>
-                  <td class="num">{{ fmtPrice(a.available) }}</td>
-                  <td>{{ a.gateway_name }}</td>
-                </tr>
-                <tr v-if="accountList.length === 0"><td colspan="5" class="empty">暂无账户</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
+
+        <bottom-dock :height="ui.bottomDockHeight" :active-symbol="chartSymbol"
+          @resize="h => { ui.bottomDockHeight = h; }"
+          @cancel-all="cancelAll" @close-all="closeAll"
+          @cancel-order="cancelOrder" @close-pos="closePos" @edit-order="editOrder"
+          @select-symbol="applySymbol" />
+      </template>
     </div>`,
   setup() {
     const klineEl = ref(null);
     let chartInstance = null;
+    let chartResizeObs = null;
+    let chartBars = [];
     const chartSymbol = ref('');
     const chartInterval = ref('1m');
-    const depthTick = ref(null);
-    const showExpired = ref(false);
-    const autoPrice = ref(false);
-    const orderFilter = ref('active');
-    const form = reactive({ exchange:'', product:'', symbol:'', direction:'LONG', offset:'OPEN', orderType:'LIMIT', price:'', volume:'1', gateway:'' });
-    const exchanges = [
-      { value:'CFFEX', name:'中金所' }, { value:'SHFE', name:'上期所' },
-      { value:'DCE', name:'大商所' }, { value:'CZCE', name:'郑商所' },
-      { value:'INE', name:'上海能源' }, { value:'GFEX', name:'广期所' },
+    const chartMode = ref('candle');
+    const chartEmpty = ref(true);
+    const priceMode = ref('opponent');
+    const priceFlashCls = ref('');
+    const priceModes = [
+      { id: 'opponent', label: '对手价' },
+      { id: 'queue', label: '排队价' },
+      { id: 'last', label: '最新价' },
+      { id: 'limit', label: '指定价' },
     ];
-    const products = ref([]);
-    const contracts = ref([]);
-    const posSortKey = ref('');
-    const posSortDir = ref(1);
+    const intervals = ['tick', '1m', '5m', '15m', '1h', 'd'];
+    const tradingPrefs = $loadTradingPrefs();
+    const form = reactive({
+      exchange: '', product: '', symbol: '', direction: 'LONG', offset: 'OPEN',
+      orderType: 'LIMIT', price: '', volume: String(tradingPrefs.defaultVolume || 1), gateway: '',
+    });
 
-    // ---- Computed ----
-    const tickList = computed(() => Object.values(store.tick));
-    const orderList = computed(() => Object.values(store.order).sort((a, b) =>
-      (b.order_time || b.create_time || 0) - (a.order_time || a.create_time || 0)));
-    const tradeList = computed(() => Object.values(store.trade).sort((a, b) =>
-      (b.trade_time || b.time || 0) - (a.trade_time || a.time || 0)));
-    const posList = computed(() => {
-      let arr = Object.values(store.position);
-      if (posSortKey.value) {
-        arr = [...arr].sort((a, b) => {
-          const va = a[posSortKey.value] || 0, vb = b[posSortKey.value] || 0;
-          return (va > vb ? 1 : -1) * posSortDir.value;
-        });
+    const showOnboarding = computed(() => $onboardingStep() > 0);
+    const symbolTick = computed(() => $lookupTick(chartSymbol.value));
+    const activeTick = symbolTick;
+    const chartModeLabel = computed(() => chartMode.value === 'timeshare' ? '分时' : 'K线');
+    const canOrder = computed(() => form.symbol && Number(form.volume) > 0);
+    const symbolPositions = computed(() =>
+      Object.values(store.position).filter(p => (p.vt_symbol || '') === form.symbol));
+    const longPos = computed(() => symbolPositions.value.find(p => p.direction === 'LONG'));
+    const shortPos = computed(() => symbolPositions.value.find(p => p.direction === 'SHORT'));
+    const keyLabels = computed(() => $threeKeyLabels(longPos.value?.volume || 0, shortPos.value?.volume || 0));
+
+    function contractLabel(vt) { return $contractLabel(vt); }
+    function contractSubLabel(vt) { return $contractSubLabel(vt); }
+    function contractCodeLine(vt) { return $contractCodeLine(vt); }
+    function isIndexOption(vt) { return $isIndexOption(vt); }
+
+    function syncFormPrice(dir) {
+      const t = $lookupTick(form.symbol);
+      if (!t || priceMode.value === 'limit') return;
+      const p = $resolveOrderPrice(t, dir || 'LONG', priceMode.value, form.price);
+      if (p) form.price = String(p);
+      form.orderType = priceMode.value === 'market' ? 'MARKET' : 'LIMIT';
+    }
+
+    function setPriceMode(mode) {
+      priceMode.value = mode;
+      syncFormPrice('LONG');
+    }
+
+    function keyPrice(dir) {
+      const t = $lookupTick(form.symbol);
+      if (!t) return 0;
+      if (priceMode.value === 'limit') return parseFloat(form.price) || 0;
+      return $resolveOrderPrice(t, dir, priceMode.value, form.price);
+    }
+
+    function stepPrice(delta) {
+      if (priceMode.value !== 'limit') return;
+      const step = $priceTickStep(form.symbol);
+      const cur = parseFloat(form.price) || keyPrice('LONG') || 0;
+      form.price = String(Math.max(0, +(cur + delta * step).toFixed(4)));
+    }
+
+    function stepVolume(delta) {
+      const cur = parseInt(form.volume, 10) || 1;
+      form.volume = String(Math.max(1, cur + delta));
+      saveDefaultVolume();
+    }
+
+    function ensureChart() {
+      if (!klineEl.value) return false;
+      if (chartInstance) {
+        try { chartInstance.resize(); } catch (e) {
+          chartInstance.dispose();
+          chartInstance = null;
+        }
+        if (chartInstance) return true;
       }
-      return arr;
-    });
-    const accountList = computed(() => Object.values(store.account));
-    const contractName = computed(() => {
-      const c = contracts.value.find(c => c.vt_symbol === form.symbol);
-      return c ? c.name : '';
-    });
-    const filteredContracts = computed(() => {
-      return contracts.value.filter(c => showExpired.value ? true : !c.expired);
-    });
-    const filteredOrders = computed(() => {
-      if (orderFilter.value === 'active') return orderList.value.filter(o => isActiveOrder(o));
-      return orderList.value;
-    });
-    const canOrder = computed(() => form.symbol && form.volume > 0);
-
-    // ---- Methods ----
-    function statusText(s) {
-      const map = { SUBMITTING:'提交中', NOTTRADED:'未成交', PARTTRADED:'部分成交', ALLTRADED:'全部成交', CANCELLED:'已撤销', REJECTED:'已拒绝' };
-      return map[s] || s;
-    }
-    function isActiveOrder(o) {
-      return ['SUBMITTING','NOTTRADED','PARTTRADED'].includes(o.status);
-    }
-    function chgCls(t) {
-      const prev = t.pre_close || t.open_price || t.last_price || 0;
-      return t.last_price > prev ? 'up' : (t.last_price < prev ? 'down' : '');
-    }
-    function chgText(t) {
-      const prev = t.pre_close || t.open_price || t.last_price || 0;
-      if (!prev) return '-';
-      return ((t.last_price - prev) / prev * 100).toFixed(2) + '%';
-    }
-    function pnlCls(p) {
-      const v = p.position_profit || p.pnl || 0;
-      return v > 0 ? 'up' : (v < 0 ? 'down' : '');
-    }
-    function sortPos(key) {
-      if (posSortKey.value === key) { posSortDir.value *= -1; }
-      else { posSortKey.value = key; posSortDir.value = 1; }
-    }
-
-    // ---- K-Line Chart ----
-    function initChart() {
-      if (!klineEl.value) return;
       chartInstance = echarts.init(klineEl.value, 'dark');
-      chartInstance.setOption({
-        backgroundColor: '#0f1117',
-        grid: [{ left:'8%', right:'8%', top:'8%', height:'55%' }, { left:'8%', right:'8%', top:'72%', height:'20%' }],
-        xAxis: [{ type:'category', gridIndex:0, axisLabel:{show:false} }, { type:'category', gridIndex:1 }],
-        yAxis: [{ type:'value', gridIndex:0, scale:true }, { type:'value', gridIndex:1, scale:true }],
-        series: [
-          { name:'K线', type:'candlestick', xAxisIndex:0, yAxisIndex:0,
-            itemStyle:{color:'#ef4444',color0:'#22c55e',borderColor:'#ef4444',borderColor0:'#22c55e'} },
-          { name:'成交量', type:'bar', xAxisIndex:1, yAxisIndex:1,
-            itemStyle:{color:params=>params.data[2]>0?'#22c55e':'#ef4444'} }
-        ],
-        tooltip: { trigger:'axis' },
-        dataZoom: [{ type:'inside', xAxisIndex:[0,1] }, { type:'slider', xAxisIndex:[0,1], bottom:'2%' }],
-      });
-      window.addEventListener('resize', () => chartInstance?.resize());
+      chartInstance.setOption($chartBaseOption('candle'), true);
+      if (typeof ResizeObserver !== 'undefined') {
+        chartResizeObs = new ResizeObserver(() => { try { chartInstance?.resize(); } catch (e) { /* ignore */ } });
+        chartResizeObs.observe(klineEl.value);
+      }
+      window.addEventListener('resize', () => { try { chartInstance?.resize(); } catch (e) { /* ignore */ } });
+      return true;
+    }
+
+    function refreshMarkLines() {
+      if (!chartInstance || !chartSymbol.value) return;
+      if (chartMode.value === 'timeshare') {
+        renderTimeshare();
+        return;
+      }
+      if (chartBars.length) {
+        $applyCandleChart(chartInstance, chartBars, chartSymbol.value);
+        return;
+      }
+      $updateChartMarkLines(chartInstance, chartSymbol.value);
+    }
+
+    function clearChartView() {
+      chartBars = [];
+      chartEmpty.value = true;
+      if (chartInstance) $clearChart(chartInstance);
+    }
+
+    function renderTimeshare() {
+      if (!ensureChart()) return;
+      const vt = chartSymbol.value;
+      const nvt = $normalizeVt(vt);
+      const stream = store.tickStream[nvt] || [];
+      const tick = $lookupTick(vt);
+      const ticks = stream.length ? stream : (tick ? [{ time: tick.datetime, last_price: tick.last_price, volume: tick.volume }] : []);
+      const td = $ticksToTimeshare(ticks, tick?.pre_close || tick?.open_price);
+      if (!td) {
+        clearChartView();
+        return;
+      }
+      chartMode.value = 'timeshare';
+      $applyTimeshareChart(chartInstance, td, vt);
+      chartEmpty.value = false;
+      nextTick(() => chartInstance?.resize());
+    }
+
+    function renderCandles(bars) {
+      if (!ensureChart() || !bars.length) return false;
+      chartBars = bars.slice();
+      chartMode.value = 'candle';
+      $applyCandleChart(chartInstance, chartBars, chartSymbol.value);
+      chartEmpty.value = false;
+      nextTick(() => chartInstance?.resize());
+      return true;
+    }
+
+    async function applySymbol(vt) {
+      if (!vt) return;
+      vt = $normalizeVt(vt);
+      chartSymbol.value = vt;
+      clearChartView();
+      $setActiveSymbol(vt);
+      form.exchange = vt.split('.')[1] || form.exchange;
+      form.product = $productFromVt(vt);
+      form.symbol = vt;
+      form.offset = 'OPEN';
+      setPriceMode(priceMode.value);
+      $fetchContractName(vt);
+      persistContract();
+      const { symbol, exchange } = $parseVtSymbol(vt);
+      if (store.connectedGateways.length) {
+        const subSym = $resolveSubscribeSymbol(vt);
+        store.connectedGateways.forEach(gw => $restSubscribe(subSym, exchange, gw));
+      }
+      await nextTick();
+      await loadChart(vt, chartInterval.value);
     }
 
     async function loadChart(vtSymbol, interval) {
       if (!vtSymbol) return;
+      vtSymbol = $normalizeVt(vtSymbol);
       chartSymbol.value = vtSymbol;
       chartInterval.value = interval || '1m';
-      try {
-        const parts = vtSymbol.split('.');
-        const exchange = parts.length > 1 ? parts[1] : 'CFFEX';
-        const data = await $apiGet(`/api/bars?symbol=${parts[0]}&exchange=${exchange}&interval=${chartInterval.value}&start=&end=`);
-        if (data && data.length && chartInstance) {
-          const ohlcv = data.map(d => [d.datetime, d.open_price, d.close_price, d.low_price, d.high_price, d.volume || 0]);
-          chartInstance.setOption({
-            xAxis: [{ data: ohlcv.map(d => d[0]) }, { data: ohlcv.map(d => d[0]) }],
-            series: [{ data: ohlcv }, { data: ohlcv.map(d => [d[0], d[5], d[1] > d[2] ? 1 : -1]) }]
-          });
-        }
-      } catch(e) { console.error('load chart:', e); }
-    }
 
-    function addTickToChart(tick) {
-      if (!chartInstance || !chartSymbol.value) return;
-      if (tick.vt_symbol !== chartSymbol.value) return;
-      // Real-time tick merge — ECharts appendData approach
-      const lastData = chartInstance.getOption().series[0].data;
-      if (!lastData || !lastData.length) return;
-      const last = lastData[lastData.length - 1];
-      if (!last) return;
-      const newHigh = Math.max(last[4], tick.last_price);
-      const newLow = Math.min(last[3], tick.last_price);
-      const newClose = tick.last_price;
-      chartInstance.setOption({
-        series: [
-          { data: [...lastData.slice(0, -1), [last[0], last[1], newClose, newLow, newHigh]] },
-          { data: [...chartInstance.getOption().series[1].data.slice(0, -1),
-            [last[0], (last[5]||0) + (tick.volume||0), tick.last_price <= last[1] ? 1 : -1]] }
-        ]
-      });
-    }
-
-    // ---- Trade Form ----
-    async function onExchange() {
-      form.product = ''; form.symbol = ''; products.value = [];
-      if (!form.exchange) return;
-      try {
-        const data = await $apiGet(`/api/contracts/products?exchange=${form.exchange}`) || {}; products.value = Array.isArray(data) ? data : (data.products || []);
-      } catch(e) { $toast('加载品种失败', 'error'); }
-    }
-    async function onProduct() {
-      form.symbol = '';
-      if (!form.product) return;
-      try {
-        const raw = await $apiGet(`/api/contracts/public?exchange=${form.exchange}&product=${form.product}`) || {}; const list = Array.isArray(raw) ? raw : (raw.contracts || []); contracts.value = list.map(c => ({...c, expired: isExpired(c.symbol || c.vt_symbol || '') }));
-      } catch(e) { $toast('加载合约失败', 'error'); }
-    }
-    function onSymbol() {
-      if (form.symbol) {
-        $restSubscribe(form.symbol, form.exchange, form.gateway);
-        nextTick(() => loadChart(form.symbol, '1m'));
+      if (interval === 'tick') {
+        renderTimeshare();
+        persistContract();
+        return;
       }
+
+      const { symbol, exchange } = $parseVtSymbol(vtSymbol);
+      const ex = exchange || form.exchange || 'CFFEX';
+      const apiInterval = CHART_INTERVAL_API[interval] || '1m';
+
+      try {
+        const resp = await $apiGet(`/api/bars?symbol=${encodeURIComponent(symbol)}&exchange=${encodeURIComponent(ex)}&interval=${encodeURIComponent(apiInterval)}&start=&end=`);
+        let bars = Array.isArray(resp) ? resp : (resp.bars || []);
+        const aggN = AGGREGATE_N[interval];
+        if (aggN && bars.length) bars = $aggregateBars(bars, aggN);
+        if (bars.length) {
+          renderCandles(bars);
+        } else {
+          const nvt = $normalizeVt(vtSymbol);
+          const stream = store.tickStream[nvt] || [];
+          if (stream.length >= 2) renderTimeshare();
+          else {
+            const tick = $lookupTick(vtSymbol);
+            const seed = tick ? $tickToSeedBar(tick) : null;
+            if (seed) renderCandles([seed]);
+            else clearChartView();
+          }
+        }
+      } catch (e) {
+        console.error('loadChart:', e);
+        clearChartView();
+      }
+      persistContract();
     }
-    function fillPrice(price) { if (price) form.price = String(price); }
-    function onPickTick(tick) {
-      form.exchange = tick.exchange || '';
-      form.symbol = tick.vt_symbol || '';
-      if (autoPrice.value) form.price = String(tick.last_price);
-      depthTick.value = tick;
-      loadChart(tick.vt_symbol, '1m');
+
+    function onTickUpdate(tick) {
+      if (!tick || !$tickMatchesVt(tick, chartSymbol.value)) return;
+      if (priceMode.value !== 'limit') syncFormPrice('LONG');
+      if (tradingPrefs.priceFlash) {
+        priceFlashCls.value = 'flash-up';
+        setTimeout(() => { priceFlashCls.value = ''; }, 350);
+      }
+      if (chartMode.value === 'timeshare' || chartInterval.value === 'tick') {
+        renderTimeshare();
+        return;
+      }
+      if (!chartInstance) return;
+      if (!chartBars.length) {
+        const seed = $tickToSeedBar(tick);
+        if (seed) renderCandles([seed]);
+        return;
+      }
+      const last = chartBars[chartBars.length - 1];
+      chartBars[chartBars.length - 1] = {
+        ...last,
+        datetime: last.datetime || tick.datetime || tick.time,
+        close: tick.last_price,
+        close_price: tick.last_price,
+        high: Math.max(last.high ?? last.high_price ?? tick.last_price, tick.last_price),
+        high_price: Math.max(last.high ?? last.high_price ?? tick.last_price, tick.last_price),
+        low: Math.min(last.low ?? last.low_price ?? tick.last_price, tick.last_price),
+        low_price: Math.min(last.low ?? last.low_price ?? tick.last_price, tick.last_price),
+        volume: (last.volume || 0) + (tick.last_volume || 0),
+      };
+      $applyCandleChart(chartInstance, chartBars, chartSymbol.value);
+      chartEmpty.value = false;
     }
-    async function placeOrder(dir) {
-      if (!canOrder.value) return;
-      const parts = (form.symbol || '').split('.');
-      await $restSendOrder({
-        symbol: parts[0], exchange: parts[1] || form.exchange,
-        direction: dir, offset: form.offset, price: form.orderType === 'MARKET' ? 0 : parseFloat(form.price) || 0,
-        volume: parseInt(form.volume) || 1, order_type: form.orderType,
-        reference: 'ManualTrading', gateway: form.gateway || ''
+
+    function persistContract() {
+      if (!form.symbol) return;
+      $saveTradingContract({
+        symbol: form.symbol,
+        exchange: form.exchange || form.symbol.split('.')[1] || '',
+        product: form.product || $productFromVt(form.symbol),
+        chartInterval: chartInterval.value,
       });
     }
-    function cancelOrder(order) {
-      $restCancelOrder(order.orderid || order.vt_orderid, order.symbol, order.exchange, order.gateway_name || '');
+
+    function saveDefaultVolume() {
+      $saveTradingPrefs({ defaultVolume: parseInt(form.volume, 10) || 1 });
     }
-    function cancelAll() {
-      Object.values(store.order).forEach(o => { if (isActiveOrder(o)) cancelOrder(o); });
+
+    async function sendOrder(dir, offset, label, volumeOverride) {
+      if (!form.symbol) return;
+      const vol = volumeOverride ?? (parseInt(form.volume, 10) || 1);
+      if (vol <= 0) return;
+      const { symbol, exchange } = $parseVtSymbol(form.symbol);
+      const t = $lookupTick(form.symbol);
+      const price = offset === 'OPEN'
+        ? $resolveOrderPrice(t, dir, priceMode.value, form.price)
+        : (priceMode.value === 'market' ? 0 : $resolveOrderPrice(t, dir === 'LONG' ? 'SHORT' : 'LONG', priceMode.value, form.price));
+      const orderType = (offset !== 'OPEN' && priceMode.value === 'market') || priceMode.value === 'market'
+        ? 'MARKET' : 'LIMIT';
+      if ($loadTradingPrefs().orderConfirm) {
+        const px = orderType === 'MARKET' ? '市价' : price;
+        const ok = confirm(`确认${label}\n${vol}手 @ ${px}`);
+        if (!ok) return;
+      }
+      saveDefaultVolume();
+      await $restSendOrder({
+        symbol, exchange: exchange || form.exchange, direction: dir, offset,
+        price: orderType === 'MARKET' ? 0 : price, volume: vol, order_type: orderType,
+        reference: 'ThreeKey', gateway: form.gateway || '',
+      });
     }
+
+    async function threeKeyOpen(dir) {
+      if (!canOrder.value) return;
+      await sendOrder(dir, 'OPEN', keyLabels.value[dir === 'LONG' ? 'buy' : 'sell']);
+    }
+
+    async function threeKeyClose(posDir) {
+      const pos = posDir === 'LONG' ? longPos.value : shortPos.value;
+      if (!pos) { $toast('当前方向无持仓', 'info'); return; }
+      const vol = Math.min(parseInt(form.volume, 10) || 1, pos.volume);
+      const closeDir = posDir === 'LONG' ? 'SHORT' : 'LONG';
+      const off = $defaultCloseOffset(form.exchange || pos.exchange);
+      await sendOrder(closeDir, off, posDir === 'LONG' ? '平多' : '平空', vol);
+    }
+
+    async function placeOrder(dir) { await threeKeyOpen(dir); }
+
+    function setPrice(side, i) {
+      const t = symbolTick.value;
+      if (!t) return;
+      priceMode.value = 'limit';
+      form.orderType = 'LIMIT';
+      form.price = String(t[side === 'ask' ? 'ask_price_' : 'bid_price_' + i] || '');
+    }
+
+    function editOrder(o) {
+      const np = prompt('新价格（留空取消）', String(o.price || ''));
+      if (np === null || np === '') return;
+      cancelOrder(o);
+      setTimeout(async () => {
+        const { symbol, exchange } = $parseVtSymbol(o.vt_symbol || form.symbol);
+        await $restSendOrder({
+          symbol, exchange: exchange || o.exchange,
+          direction: o.direction, offset: o.offset,
+          price: parseFloat(np) || 0, volume: (o.volume || 1) - (o.traded || 0),
+          order_type: 'LIMIT', reference: 'Amend', gateway: o.gateway_name || '',
+        });
+      }, 300);
+    }
+
+    function cancelOrder(o) { $restCancelOrder(o.orderid || o.vt_orderid, o.symbol, o.exchange, o.gateway_name || ''); }
+
+    async function restoreTradingContract() {
+      const vt = ui.activeSymbol || $loadTradingContract()?.symbol;
+      if (!vt) return;
+      const saved = $loadTradingContract();
+      if (saved?.chartInterval) chartInterval.value = saved.chartInterval;
+      await applySymbol(vt);
+    }
+    function cancelAll() { Object.values(store.order).forEach(o => { if ($isActiveOrder(o)) cancelOrder(o); }); }
     function closeAll() {
       Object.values(store.position).forEach(p => {
-        const parts = (p.vt_symbol || '').split('.');
-        const oppDir = p.direction === 'LONG' ? 'SHORT' : 'LONG';
-        $restSendOrder({ symbol: parts[0], exchange: parts[1] || p.exchange, direction: oppDir, offset: 'CLOSE',
-          price: 0, volume: p.volume, order_type: 'MARKET', reference: 'QuickClose', gateway: '' });
+        const { symbol, exchange } = $parseVtSymbol(p.vt_symbol);
+        $restSendOrder({ symbol, exchange: exchange || p.exchange, direction: p.direction === 'LONG' ? 'SHORT' : 'LONG',
+          offset: $defaultCloseOffset(p.exchange), price: 0, volume: p.volume, order_type: 'MARKET', reference: 'QuickClose', gateway: '' });
       });
-      $toast('已发送全平指令', 'info');
     }
     function closePos(pos) {
-      const parts = (pos.vt_symbol || '').split('.');
-      const oppDir = pos.direction === 'LONG' ? 'SHORT' : 'LONG';
-      $restSendOrder({ symbol: parts[0], exchange: parts[1] || pos.exchange, direction: oppDir, offset: 'CLOSE',
-        price: 0, volume: pos.volume, order_type: 'MARKET', reference: 'QuickClose', gateway: '' });
+      const { symbol, exchange } = $parseVtSymbol(pos.vt_symbol);
+      $restSendOrder({ symbol, exchange: exchange || pos.exchange, direction: pos.direction === 'LONG' ? 'SHORT' : 'LONG',
+        offset: $defaultCloseOffset(pos.exchange), price: 0, volume: pos.volume, order_type: 'MARKET', reference: 'QuickClose', gateway: '' });
     }
-    function exportOrders() {
-      const h = ['订单号','合约','方向/开平','价格','数量','已成交','状态','时间'];
-      const rows = orderList.value.map(o => [o.orderid, o.vt_symbol, o.direction+'/'+o.offset, o.price, o.volume, o.traded, statusText(o.status), o.order_time]);
-      $exportCSV(h, rows, `orders_${new Date().toISOString().slice(0,10)}.csv`);
+    function addDefaultWatchlist() {
+      $defaultWatchlistItems().forEach(i => $addToWatchlist(i.vt_symbol));
+      $invokeWatchlistSubscribe();
+      $preloadWatchlistNames();
     }
+    function focusWatchlist() { if (ui.watchlist.length) applySymbol(ui.watchlist[0].vt_symbol); }
 
-    // ---- Watch tick for chart/depth updates ----
-    watch(() => store.tick, () => {
-      const ticks = Object.values(store.tick);
-      if (ticks.length && chartSymbol.value) {
-        const t = ticks.find(t => t.vt_symbol === chartSymbol.value);
-        if (t) { depthTick.value = t; addTickToChart(t); }
+    watch(showOnboarding, v => { if (!v) nextTick(() => { ensureChart(); restoreTradingContract(); }); });
+    watch(() => ui.activeSymbol, vt => {
+      if (!vt) {
+        chartSymbol.value = '';
+        form.symbol = '';
+        clearChartView();
+        return;
       }
+      if (vt !== chartSymbol.value) applySymbol(vt);
+    });
+    watch(() => store.tick, () => {
+      const t = $lookupTick(chartSymbol.value);
+      if (t) onTickUpdate(t);
     }, { deep: true });
+    watch(() => [store.position, store.order, store.backtestMarkers], refreshMarkLines, { deep: true });
+    watch(() => store.connectedGateways.join(','), (key, prev) => {
+      if (!key || key === prev) return;
+      $invokeWatchlistSubscribe();
+      $queryTradingSnapshot();
+      if (form.symbol) {
+        const { symbol, exchange } = $parseVtSymbol(form.symbol);
+        $restSubscribe(symbol, exchange, form.gateway);
+      }
+    });
 
     onMounted(() => {
-      nextTick(() => { initChart(); });
+      window.__applyTradingSymbol = applySymbol;
+      window.__jumpToSymbol = vt => { applySymbol(vt); };
+      nextTick(async () => {
+        if (!showOnboarding.value) { ensureChart(); await restoreTradingContract(); }
+        $preloadWatchlistNames();
+      });
+      window.__tradingPlaceOrder = placeOrder;
+      window.__tradingCloseOrder = () => {
+        if (longPos.value) threeKeyClose('LONG');
+        else if (shortPos.value) threeKeyClose('SHORT');
+        else $toast('请先选择持仓', 'info');
+      };
     });
-    // ---- Tick sorting ----
-    const tickSortKey = ref('');
-    const tickSortDir = ref(1);
-    const sortedTickList = computed(() => {
-      let arr = Object.values(store.tick);
-      if (tickSortKey.value) {
-        arr = [...arr].sort((a, b) => {
-          const va = a[tickSortKey.value] || 0, vb = b[tickSortKey.value] || 0;
-          return (va > vb ? 1 : -1) * tickSortDir.value;
-        });
-      }
-      return arr;
-    });
-    function sortTick(key) {
-      if (tickSortKey.value === key) { tickSortDir.value *= -1; }
-      else { tickSortKey.value = key; tickSortDir.value = 1; }
-    }
-    function exportTicks() {
-      $exportCSV(['合约','最新价','成交量','开盘','最高','最低','买一价','买一量','卖一价','卖一量','时间'],
-        sortedTickList.value.map(t => [t.vt_symbol, t.last_price, t.volume, t.open_price, t.high_price, t.low_price, t.bid_price_1, t.bid_volume_1, t.ask_price_1, t.ask_volume_1, t.datetime || t.time]),
-        'ticks_' + new Date().toISOString().slice(0,10) + '.csv');
-    }
-
     onUnmounted(() => {
+      chartResizeObs?.disconnect();
       if (chartInstance) { chartInstance.dispose(); chartInstance = null; }
+      window.__tradingPlaceOrder = null;
+      window.__tradingCloseOrder = null;
+      window.__applyTradingSymbol = null;
+      window.__jumpToSymbol = null;
     });
 
     return {
-      klineEl, chartSymbol, chartInterval, depthTick, showExpired, autoPrice, orderFilter,
-      form, exchanges, products, posSortKey, posSortDir, tickSortKey, tickSortDir,
-      tickList, sortedTickList, orderList, tradeList, posList, accountList, contractName,
-      filteredContracts, filteredOrders, canOrder,
-      statusText, isActiveOrder, chgCls, chgText, pnlCls, sortPos, sortTick,
-      loadChart, fillPrice, onPickTick, onExchange, onProduct, onSymbol,
-      placeOrder, cancelOrder, cancelAll, closeAll, closePos, exportOrders, exportTicks,
-      store, fmtPrice: $fmtPrice, fmtVol: $fmtVol, timeStr: $timeStr,
+      ui, klineEl, chartSymbol, chartInterval, chartMode, chartModeLabel, chartEmpty, symbolTick, priceMode, priceModes,
+      form, intervals, priceFlashCls,
+      showOnboarding, activeTick, canOrder, longPos, shortPos, keyLabels,
+      contractLabel, contractSubLabel, contractCodeLine, isIndexOption,
+      loadChart, applySymbol,
+      threeKeyOpen, threeKeyClose, placeOrder, cancelOrder, cancelAll, closeAll, closePos, editOrder,
+      setPriceMode, stepPrice, stepVolume, keyPrice, setPrice, saveDefaultVolume,
+      addDefaultWatchlist, focusWatchlist,
+      store, fmtPrice: $fmtPrice, fmtVol: $fmtVol, chgCls: $chgCls, chgText: $chgText, chgAbs: $chgAbs,
     };
-  }
+  },
 };

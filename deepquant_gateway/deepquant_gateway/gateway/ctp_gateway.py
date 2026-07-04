@@ -358,10 +358,17 @@ class CtpMdApi(MdApi):
 
     def onRspSubMarketData(self, data: dict, error: dict, reqid: int, last: bool) -> None:
         """订阅行情回报"""
-        self.gateway.write_log(f"[MdApi] onRspSubMarketData reqid={reqid} data={data} error={error}")
-        if not error or not error["ErrorID"]:
-            self.gateway.write_log(f"[MdApi] ✅ 行情订阅成功: {data.get('InstrumentID','?')}")
+        instrument = data.get("InstrumentID", "?")
+        err_id = error.get("ErrorID", 0) if error else 0
+        err_msg = (error.get("ErrorMsg") or "") if error else ""
+        if not err_id:
+            self.gateway.write_log(f"[MdApi] ✅ 行情订阅成功: {instrument}")
             return
+        # TTS/OpenCTP：重复订阅表示已在订阅列表，不影响已有行情
+        if err_id == 1 and "重复订阅" in err_msg:
+            self.gateway.write_log(f"[MdApi] ℹ️ 行情已订阅(跳过重复): {instrument}")
+            return
+        self.gateway.write_log(f"[MdApi] onRspSubMarketData reqid={reqid} data={data} error={error}")
         self.gateway.write_error("行情订阅失败", error)
 
     def onRtnDepthMarketData(self, data: dict) -> None:
@@ -496,10 +503,16 @@ class CtpMdApi(MdApi):
 
     def subscribe(self, req: SubscribeRequest) -> None:
         """订阅行情"""
-        self.gateway.write_log(f"[MdApi] subscribe: symbol={req.symbol} exchange={req.exchange} login_status={self.login_status}")
+        symbol = req.symbol
+        self.gateway.write_log(
+            f"[MdApi] subscribe: symbol={symbol} exchange={req.exchange} login_status={self.login_status}"
+        )
+        if symbol in self.subscribed:
+            self.gateway.write_log(f"[MdApi] ℹ️ 已在订阅列表，跳过: {symbol}")
+            return
+        self.subscribed.add(symbol)
         if self.login_status:
-            self.subscribeMarketData(req.symbol)
-        self.subscribed.add(req.symbol)
+            self.subscribeMarketData(symbol)
 
     def close(self) -> None:
         """关闭连接"""
@@ -1122,7 +1135,8 @@ _EXCHANGE_PREFIX: dict[str, Exchange] = {
     "AP": Exchange.CZCE, "CJ": Exchange.CZCE, "CY": Exchange.CZCE,
     # Mid-financial
     "IF": Exchange.CFFEX, "IC": Exchange.CFFEX, "IH": Exchange.CFFEX,
-    "IM": Exchange.CFFEX, "T": Exchange.CFFEX, "TF": Exchange.CFFEX,
+    "IM": Exchange.CFFEX, "IO": Exchange.CFFEX, "HO": Exchange.CFFEX,
+    "MO": Exchange.CFFEX, "T": Exchange.CFFEX, "TF": Exchange.CFFEX,
     "TS": Exchange.CFFEX, "TL": Exchange.CFFEX,
     # Energy
     "sc": Exchange.INE, "lu": Exchange.INE, "nr": Exchange.INE,

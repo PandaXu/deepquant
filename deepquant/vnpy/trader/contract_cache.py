@@ -3,8 +3,9 @@ Public contract data cache — preloaded by backend timer task.
 Queries akshare for futures contract listings on startup and daily refresh.
 Data persisted to disk for instant startup on subsequent runs.
 """
+import re
 import threading
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 import pandas as pd
@@ -28,6 +29,22 @@ _AKSHARE_EXCHANGE_MAP: dict[str, Exchange] = {
     "北京证券交易所": Exchange.BSE,
 }
 
+# 品种前缀 → 中文名（避免从合约名反推错误）
+_PRODUCT_CN: dict[str, str] = {
+    "IF": "沪深300指数", "IH": "上证50指数", "IC": "中证500指数", "IM": "中证1000指数",
+    "IO": "沪深300股指期权", "HO": "上证50股指期权", "MO": "中证1000股指期权",
+    "T": "10年期国债", "TF": "5年期国债", "TS": "2年期国债", "TL": "30年期国债",
+}
+
+# CFFEX 股指期权 akshare 接口
+_CFFEX_OPTION_SPECS: list[tuple[str, str, str, str]] = [
+    ("IO", "沪深300", "option_cffex_hs300_list_sina", "option_cffex_hs300_spot_sina"),
+    ("HO", "上证50", "option_cffex_sz50_list_sina", "option_cffex_sz50_spot_sina"),
+    ("MO", "中证1000", "option_cffex_zz1000_list_sina", "option_cffex_zz1000_spot_sina"),
+]
+
+_SINA_OPTION_ID = re.compile(r"^([A-Za-z]+)(\d{4})([CP])(\d+)$", re.I)
+
 # Global cache
 _contract_cache: Optional[pd.DataFrame] = None
 _cache_ts: Optional[datetime] = None
@@ -43,6 +60,8 @@ def _load_from_disk() -> Optional[pd.DataFrame]:
         p = Path(_CACHE_FILE)
         if p.exists():
             df = pd.read_parquet(p)
+            if "数据来源" not in df.columns:
+                df["数据来源"] = "akshare"
             elapsed = (datetime.now() - t0).total_seconds()
             print(f"[ContractCache] ✅ 磁盘加载成功: {len(df)}条, 耗时{elapsed:.2f}s, 文件={_CACHE_FILE}")
             return df
@@ -77,13 +96,18 @@ def _do_load() -> Optional[pd.DataFrame]:
         df = ak.futures_comm_info()
         t1 = datetime.now()
         print(f"[ContractCache] ✅ akshare 返回 {len(df)} 条期货合约 (耗时{(t1-t0).total_seconds():.1f}s)")
+        if "数据来源" not in df.columns:
+            df["数据来源"] = "akshare"
 
-        # Generate CFFEX stock index options (not in akshare)
-        print(f"[ContractCache] 📐 生成股指期权合约...")
-        options_data = _generate_index_options("MO", "中证1000股指期权", 8600, 50, 30)
-        options_data += _generate_index_options("HO", "沪深300股指期权", 4870, 50, 30)
-        options_data += _generate_index_options("IO", "上证50股指期权", 2900, 30, 25)
-        print(f"[ContractCache] ✅ 生成 {len(options_data)} 条期权 (MO/HO/IO)")
+        # CFFEX 股指期权：优先 akshare 真实挂牌，失败时回退合成
+        print(f"[ContractCache] 📐 加载股指期权（akshare 真实挂牌）...")
+        options_data = _load_cffex_index_options_from_akshare()
+        if not options_data:
+            print(f"[ContractCache] ⚠️ akshare 期权为空，回退合成数据（仅供搜索，可能无法订阅）")
+            options_data = _generate_index_options("MO", "中证1000股指期权", 8600, 50, 30, synthetic=True)
+            options_data += _generate_index_options("IO", "沪深300股指期权", 4870, 50, 30, synthetic=True)
+            options_data += _generate_index_options("HO", "上证50股指期权", 2900, 50, 30, synthetic=True)
+        print(f"[ContractCache] ✅ 股指期权 {len(options_data)} 条")
 
         opt_df = pd.DataFrame(options_data)
         df = pd.concat([df, opt_df], ignore_index=True)
@@ -100,11 +124,67 @@ def _do_load() -> Optional[pd.DataFrame]:
         _loading = False
 
 
+def _sina_option_id_to_code(sid: str) -> str:
+    """Sina 标识 io2607C4200 → CTP 格式 IO2607-C-4200。"""
+    m = _SINA_OPTION_ID.match((sid or "").strip())
+    if not m:
+        return (sid or "").upper()
+    return f"{m.group(1).upper()}{m.group(2)}-{m.group(3).upper()}-{m.group(4)}"
+
+
+def _option_display_name(underlying_cn: str, cp_cn: str, yymm: str) -> str:
+    """生成期权展示名称。"""
+    return f"{underlying_cn}{cp_cn}期权{yymm}"
+
+
+def _load_cffex_index_options_from_akshare() -> list[dict]:
+    """从 akshare 拉取 CFFEX 股指期权真实挂牌（月份 + 行权价）。"""
+    import akshare as ak
+
+    results: list[dict] = []
+    for product, underlying_cn, list_fn, spot_fn in _CFFEX_OPTION_SPECS:
+        try:
+            raw = getattr(ak, list_fn)()
+            months: list[str] = []
+            if isinstance(raw, dict):
+                for v in raw.values():
+                    months.extend(v)
+            months = sorted({m.lower() for m in months if m})
+        except Exception as e:
+            print(f"[ContractCache] ⚠️ {product} 月份列表失败: {e}")
+            continue
+
+        for mon in months:
+            try:
+                spot_df = getattr(ak, spot_fn)(symbol=mon)
+            except Exception as e:
+                print(f"[ContractCache] ⚠️ {product} {mon} 行权价失败: {e}")
+                continue
+            if spot_df is None or spot_df.empty:
+                continue
+            yymm = mon[-4:].upper() if len(mon) >= 4 else mon.upper()
+            for _, row in spot_df.iterrows():
+                for col, cp_cn in [("看涨合约-标识", "看涨"), ("看跌合约-标识", "看跌")]:
+                    sid = str(row.get(col, "") or "").strip()
+                    if not sid or sid.lower() == "nan":
+                        continue
+                    code = _sina_option_id_to_code(sid)
+                    results.append({
+                        "交易所名称": "中国金融期货交易所",
+                        "合约名称": _option_display_name(underlying_cn, cp_cn, yymm),
+                        "合约代码": code,
+                        "数据来源": "akshare",
+                    })
+    return results
+
+
 def _generate_index_options(
     product: str, name: str, current_price: float,
     strike_step: int, strike_count: int,
+    synthetic: bool = False,
 ) -> list[dict]:
-    """Generate stock index option contracts with strike prices."""
+    """合成股指期权（仅 akshare 不可用时的回退）。"""
+    underlying = {"IO": "沪深300", "HO": "上证50", "MO": "中证1000"}.get(product, name.replace("股指期权", ""))
     now = datetime.now()
     year, month = now.year, now.month
     option_months = []
@@ -126,15 +206,38 @@ def _generate_index_options(
             for strike in strikes:
                 results.append({
                     "交易所名称": "中国金融期货交易所",
-                    "合约名称": f"{name}{cp[1]}{strike}",
+                    "合约名称": f"{underlying}{cp[1]}期权{mon}",
                     "合约代码": f"{product}{mon}-{cp[0]}-{strike}",
+                    "数据来源": "synthetic" if synthetic else "akshare",
                 })
     return results
 
 
+def symbol_product_prefix(symbol: str) -> str:
+    """提取合约品种前缀（字母部分）。"""
+    m = re.match(r"^([A-Za-z]+)", (symbol or "").upper())
+    return m.group(1) if m else ""
+
+
+def filter_by_products(contracts: list[dict], product: str) -> list[dict]:
+    """按品种前缀过滤，含期货↔期权关联品种。"""
+    related = {p.upper() for p in get_related_products(product)}
+    return [c for c in contracts if symbol_product_prefix(c.get("symbol", "")) in related]
+
+
+def _infer_product_name(code: str, raw_name: str) -> str:
+    """从合约名推断品种中文名（兜底）。"""
+    p = symbol_product_prefix(code)
+    if p in _PRODUCT_CN:
+        return _PRODUCT_CN[p]
+    cn = re.sub(r"\d+$", "", raw_name).strip()
+    cn = re.sub(r"(看涨|看跌)$", "", cn).strip()
+    cn = re.sub(r"期权\d+$", "期权", cn).strip()
+    return cn or p
+
+
 def _build_product_cache(df: pd.DataFrame) -> dict[str, dict[str, str]]:
-    """Precompute product info per exchange: {exchange_value: {prefix: chinese_name}}."""
-    import re
+    """Precompute product info per exchange: {exchange_value: {prefix → chinese_name}}."""
     products: dict[str, dict[str, str]] = {}
     for akshare_name, ex_enum in _AKSHARE_EXCHANGE_MAP.items():
         ex_df = df[df["交易所名称"] == akshare_name]
@@ -142,11 +245,11 @@ def _build_product_cache(df: pd.DataFrame) -> dict[str, dict[str, str]]:
         for _, row in ex_df.iterrows():
             code = str(row["合约代码"]).upper()
             name = str(row["合约名称"])
-            m = re.match(r'^([A-Za-z]+)', code)
-            if m and m.group(1) not in prods:
-                p = m.group(1).upper()
-                cn = re.sub(r'\d+$', '', name).strip()
-                cn = re.sub(r'(看涨|看跌)$', '', cn).strip()
+            p = symbol_product_prefix(code)
+            if p and p not in prods:
+                prods[p] = _infer_product_name(code, name)
+        for p, cn in _PRODUCT_CN.items():
+            if p in prods or any(symbol_product_prefix(str(r["合约代码"])) == p for _, r in ex_df.iterrows()):
                 prods[p] = cn
         if prods:
             products[ex_enum.value] = dict(sorted(prods.items()))
@@ -212,18 +315,24 @@ def get_cache_age() -> Optional[datetime]:
         return _cache_ts
 
 
-# Product family: selecting a futures product also shows its options
+# 期货 → 关联期权（单向：选 IF 时可看到 IO，选 IO 时不混入 IF）
 _PRODUCT_FAMILY: dict[str, list[str]] = {
-    "IF": ["IO"], "IO": ["IF"],
-    "IM": ["MO"], "MO": ["IM"],
-    "IH": ["HO"], "HO": ["IH"],
+    "IF": ["IO"],
+    "IM": ["MO"],
+    "IH": ["HO"],
 }
+
+# 股指期权品种前缀
+_INDEX_OPTION_PREFIXES = frozenset({"IO", "HO", "MO"})
 
 
 def get_related_products(product: str) -> list[str]:
-    """Get related product prefixes (e.g., futures ↔ options)."""
-    related = _PRODUCT_FAMILY.get(product.upper(), [])
-    return [product] + related
+    """Get related product prefixes (futures → options only)."""
+    p = product.upper()
+    if p in _INDEX_OPTION_PREFIXES:
+        return [p]
+    related = _PRODUCT_FAMILY.get(p, [])
+    return [p] + related
 
 
 def query_contracts(exchange: Exchange, keyword: str = "") -> list[dict]:
@@ -251,11 +360,14 @@ def query_contracts(exchange: Exchange, keyword: str = "") -> list[dict]:
     for _, row in filtered.iterrows():
         code = str(row["合约代码"]).upper()
         name = str(row["合约名称"])
+        source = str(row.get("数据来源", "akshare")).lower()
         results.append({
             "symbol": code,
             "name": name,
             "exchange_code": exchange.value,
             "vt_symbol": f"{code}.{exchange.value}",
+            "listed": source != "synthetic",
+            "source": source,
         })
     return results
 

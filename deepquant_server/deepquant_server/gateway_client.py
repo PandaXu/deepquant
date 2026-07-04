@@ -47,10 +47,19 @@ def _load_gateway_config() -> dict[str, dict]:
 
 _GW_INSTANCES = _load_gateway_config()
 
+# Gateway type aliases → gateways.toml backend keys
+_GW_ALIASES = {"ctp": "official", "tts": "tts"}
+
+
+def _resolve_gateway_key(gateway_type: str) -> str:
+    """Map account gateway name (CTP/TTS) to config instance key."""
+    key = (gateway_type or "official").lower()
+    return _GW_ALIASES.get(key, key)
+
 
 def _url_for(gateway_type: str, path: str = "") -> str:
     """Get the URL for a specific gateway type. Case-insensitive, falls back to official."""
-    key = gateway_type.lower() if gateway_type else "official"
+    key = _resolve_gateway_key(gateway_type)
     gw = _GW_INSTANCES.get(key) or _GW_INSTANCES.get("official") or next(iter(_GW_INSTANCES.values()))
     return f"{gw['url']}{path}"
 
@@ -142,6 +151,12 @@ class GatewayClient:
     async def subscribe(self, symbol: str, exchange: str, gateway: str = "CTP") -> dict:
         gw = gateway or "CTP"
         return await self.request("POST", "/subscribe", {"symbol": symbol, "exchange": exchange, "gateway": gw}, gw)
+
+    async def query_account(self, gateway_type: str = "CTP") -> dict:
+        return await self.request("POST", "/query_account", {"gateway_type": gateway_type}, gateway_type)
+
+    async def query_position(self, gateway_type: str = "CTP") -> dict:
+        return await self.request("POST", "/query_position", {"gateway_type": gateway_type}, gateway_type)
 
     async def get_status(self, gateway_type: str = "CTP") -> dict:
         return await self.request("GET", "/status", gateway_type=gateway_type)

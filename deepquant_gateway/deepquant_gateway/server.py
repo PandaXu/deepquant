@@ -7,7 +7,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
-from deepquant.event import EventEngine, Event
+from deepquant.event import EventEngine, Event, EVENT_TIMER
 from deepquant.trader.engine import MainEngine
 from deepquant.trader.event import (
     EVENT_TICK, EVENT_ORDER, EVENT_TRADE,
@@ -76,6 +76,8 @@ def json_dumps(obj):
     return json.dumps(obj, default=convert, ensure_ascii=False)
 
 def bridge_event(event: Event):
+    if event.type == EVENT_TIMER:
+        return
     if not ws_clients: return
     try:
         payload = json_dumps({"type": event.type, "data": event.data, "time": datetime.now().isoformat()})
@@ -144,6 +146,15 @@ async def disconnect_gateway(request: dict):
     main_engine.write_log(f"账户已断开 ({gateway_type})")
     return {"status": "disconnected", "gateway": gateway_type}
 
+@app.get("/ticks")
+def get_ticks():
+    """Return all cached tick snapshots from connected gateways."""
+    if not main_engine or not hasattr(main_engine, "get_all_ticks"):
+        return {"ticks": []}
+    ticks = main_engine.get_all_ticks()
+    return {"ticks": [json.loads(json_dumps(t)) for t in ticks]}
+
+
 @app.post("/subscribe")
 async def subscribe(request: Request):
     try:
@@ -203,6 +214,35 @@ async def cancel_order(request: dict):
     )
     main_engine.cancel_order(req, body.get("gateway", ""))
     return {"status": "cancelled"}
+
+
+@app.post("/query_account")
+async def query_account(request: dict):
+    """Query account balance from connected gateway."""
+    body = request
+    gateway_type = body.get("gateway_type", "CTP")
+    active = {k: v for k, v in main_engine.gateways.items() if k not in _disconnected}
+    if gateway_type not in active:
+        return {"error": f"gateway not connected: {gateway_type}"}
+    gw = main_engine.get_gateway(gateway_type)
+    if gw:
+        gw.query_account()
+    return {"status": "queried", "gateway": gateway_type}
+
+
+@app.post("/query_position")
+async def query_position(request: dict):
+    """Query positions from connected gateway."""
+    body = request
+    gateway_type = body.get("gateway_type", "CTP")
+    active = {k: v for k, v in main_engine.gateways.items() if k not in _disconnected}
+    if gateway_type not in active:
+        return {"error": f"gateway not connected: {gateway_type}"}
+    gw = main_engine.get_gateway(gateway_type)
+    if gw:
+        gw.query_position()
+    return {"status": "queried", "gateway": gateway_type}
+
 
 @app.on_event("startup")
 async def on_startup():
