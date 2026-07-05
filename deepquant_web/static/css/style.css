@@ -947,17 +947,17 @@ select { cursor: pointer; }
 
 /* Price flash (P1) */
 @keyframes priceFlashUp {
-  0% { background: rgba(34, 197, 94, 0.35); }
+  0% { background: rgba(239, 68, 68, 0.35); }
   100% { background: transparent; }
 }
 @keyframes priceFlashDown {
-  0% { background: rgba(239, 68, 68, 0.35); }
+  0% { background: rgba(34, 197, 94, 0.35); }
   100% { background: transparent; }
 }
 .flash-up .wl-price, .flash-up.sym-price, .sym-price.flash-up {
   animation: priceFlashUp 0.35s ease-out;
 }
-.flash-down .wl-price {
+.flash-down .wl-price, .flash-down.sym-price, .sym-price.flash-down {
   animation: priceFlashDown 0.35s ease-out;
 }
 
@@ -1231,6 +1231,7 @@ select { cursor: pointer; }
 .data-gap-body { flex: 1; min-height: 0; overflow: auto; padding: 4px 8px !important; }
 .data-local-hd { gap: 8px; flex-wrap: nowrap; }
 .data-local-search { flex: 1; min-width: 100px; max-width: 200px; margin-left: 8px; }
+.data-watchlist-filter { flex-shrink: 0; white-space: nowrap; }
 .data-gap-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .data-gap-panel tr.selected { background: rgba(59, 130, 246, 0.06); }
 .data-gap-row { cursor: pointer; }

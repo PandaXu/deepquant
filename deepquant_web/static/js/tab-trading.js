@@ -393,7 +393,8 @@ const TabTrading = {
       if (!tick || !$tickMatchesVt(tick, chartSymbol.value)) return;
       if (priceMode.value !== 'limit') syncFormPrice('LONG');
       if (tradingPrefs.priceFlash) {
-        priceFlashCls.value = 'flash-up';
+        const dir = store.tickPulse?.dir === 'down' ? 'flash-down' : 'flash-up';
+        priceFlashCls.value = dir;
         setTimeout(() => { priceFlashCls.value = ''; }, 350);
       }
       if (chartMode.value === 'timeshare' || chartInterval.value === 'tick') {
@@ -539,10 +540,12 @@ const TabTrading = {
       }
       if (vt !== chartSymbol.value) applySymbol(vt);
     });
-    watch(() => store.tick, () => {
+    watch(() => store.tickPulse?.n, () => {
+      const vt = store.tickPulse?.vt;
+      if (!vt || !$tickMatchesVt({ vt_symbol: vt }, chartSymbol.value)) return;
       const t = $lookupTick(chartSymbol.value);
       if (t) onTickUpdate(t);
-    }, { deep: true });
+    });
     watch(() => [store.position, store.order, store.backtestMarkers], refreshMarkLines, { deep: true });
     watch(() => store.connectedGateways.join(','), (key, prev) => {
       if (!key || key === prev) return;

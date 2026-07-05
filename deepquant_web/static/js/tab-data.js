@@ -27,6 +27,12 @@ const TabData = {
           <div class="panel-header data-local-hd">
             <span class="panel-title">本地数据</span>
             <input v-model="search" class="input input-sm data-local-search" placeholder="搜索合约…">
+            <button type="button" class="btn btn-xs data-watchlist-filter"
+              :class="{ 'btn-primary': watchlistOnly }"
+              title="仅显示自选合约"
+              @click="watchlistOnly = !watchlistOnly">
+              只看自选{{ watchlistCount ? ' (' + watchlistCount + ')' : '' }}
+            </button>
             <label class="data-opt-toggle"
               title="勾选后合并公共挂牌目录，在树中显示尚未下载的合约（灰色「未下载」）">
               <input type="checkbox" v-model="store.dataIncludeListedOptions" @change="onToggleListedOptions">
@@ -85,6 +91,7 @@ const TabData = {
     ];
     const subTab = ref(store.dataSubTab || 'local');
     const search = ref('');
+    const watchlistOnly = ref(false);
     const importOpen = ref(false);
     const importPreset = ref(null);
 
@@ -98,7 +105,13 @@ const TabData = {
     });
     const selectedKey = computed(() => store.dataSelectedKey || '');
 
-    const filteredTree = computed(() => $matchDataTreeSearch(store.dataTree, search.value));
+    const watchlistCount = computed(() => (ui.watchlist || []).length);
+
+    const filteredTree = computed(() => {
+      let tree = store.dataTree;
+      if (watchlistOnly.value) tree = $filterDataTreeWatchlist(tree);
+      return $matchDataTreeSearch(tree, search.value);
+    });
 
     const healthLine = computed(() => {
       const h = store.dataHealth;
@@ -232,7 +245,7 @@ const TabData = {
     });
 
     return {
-      store, subTabs, subTab, search, selection, selectedKey, filteredTree,
+      store, subTabs, subTab, search, watchlistOnly, watchlistCount, selection, selectedKey, filteredTree,
       importOpen, importPreset, healthLine, recorderView,
       onSelect, onUpdate, onDelete, openBacktest, openTrading, onMaterialize, onDownload,
       onToggleListedOptions, runGapScan, goLog, refreshAll,

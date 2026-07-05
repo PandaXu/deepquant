@@ -52,6 +52,7 @@ const store = reactive({
   connectedGateways: [],   // CTP connection status from server
   activeAccount: '',       // currently connected account alias
   tickStream: {},          // vt_symbol → 最近逐笔 ring buffer（仅 UI）
+  tickPulse: { vt: '', dir: 'up', n: 0 }, // 最近一次 tick 更新的合约（供闪烁/图表增量）
   banner: '',              // 顶栏 persistent 告警文案
   tickLatencyMs: null,     // 最近 tick 延迟毫秒
   backtestMarkers: [],     // 回测买卖点标注

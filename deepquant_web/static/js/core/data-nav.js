@@ -348,6 +348,39 @@ function $matchDataTreeSearch(tree, q) {
   return filterNodes(tree);
 }
 
+function $watchlistVtSet() {
+  const set = new Set();
+  for (const w of ui.watchlist || []) {
+    const vt = $normalizeVt(w.vt_symbol);
+    if (vt) set.add(vt);
+  }
+  return set;
+}
+
+function $filterDataTreeWatchlist(tree) {
+  const wl = $watchlistVtSet();
+  if (!wl.size) return [];
+
+  function filterNodes(nodes) {
+    const out = [];
+    for (const n of nodes || []) {
+      if (n.kind === 'bar' || n.kind === 'tick') {
+        if (wl.has($normalizeVt(n.vt_symbol))) out.push({ ...n });
+      } else if (n.groupType === 'contract') {
+        const vt = $normalizeVt(n.vt_symbol || `${n.symbol}.${n.exchange}`);
+        if (wl.has(vt)) {
+          out.push({ ...n, children: n.children || [], expanded: true });
+        }
+      } else {
+        const kids = filterNodes(n.children);
+        if (kids.length) out.push({ ...n, children: kids, expanded: true });
+      }
+    }
+    return out;
+  }
+  return filterNodes(tree);
+}
+
 function $parseDataDeepLink(raw) {
   if (!raw) return null;
   const p = typeof raw === 'string' ? Object.fromEntries(new URLSearchParams(raw)) : raw;

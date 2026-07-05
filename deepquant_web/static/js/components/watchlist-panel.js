@@ -98,18 +98,17 @@ const WatchlistPanel = {
       emit('select', next);
     }
     function flashClass(vt) {
-      return flashMap[vt] ? 'flash-up' : '';
+      return flashMap[vt] || '';
     }
 
-    watch(() => store.tick, (ticks) => {
+    watch(() => store.tickPulse?.n, () => {
       if (!$loadTradingPrefs().priceFlash) return;
-      Object.keys(ticks).forEach(vt => {
-        const nvt = $normalizeVt(vt);
-        if (!ui.watchlist.find(w => w.vt_symbol === nvt)) return;
-        flashMap[nvt] = true;
-        setTimeout(() => { flashMap[nvt] = false; }, 280);
-      });
-    }, { deep: true });
+      const { vt, dir } = store.tickPulse || {};
+      const nvt = $normalizeVt(vt);
+      if (!nvt || !ui.watchlist.find(w => w.vt_symbol === nvt)) return;
+      flashMap[nvt] = dir === 'down' ? 'flash-down' : 'flash-up';
+      setTimeout(() => { flashMap[nvt] = ''; }, 280);
+    });
 
     onMounted(() => { $preloadWatchlistNames(); });
 

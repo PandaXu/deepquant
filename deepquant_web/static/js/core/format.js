@@ -81,7 +81,13 @@ function $storeTick(data) {
     $setContractNameIfBetter(t.vt_symbol, t.name);
   }
   if (typeof $ensureContractName === 'function') $ensureContractName(t.vt_symbol);
+  const prev = store.tick[t.vt_symbol]?.last_price;
   store.tick[t.vt_symbol] = t;
+  if (t.last_price != null) {
+    const dir = prev != null && t.last_price < prev ? 'down' : 'up';
+    const p = store.tickPulse;
+    store.tickPulse = { vt: t.vt_symbol, dir, n: (p?.n || 0) + 1 };
+  }
   return t;
 }
 
