@@ -1,6 +1,8 @@
 // ===== 数据管理：树导航与工具（方案 C：交易所 → 品种 → 合约 → 周期） =====
 
 const DATA_INTERVAL_ORDER = ['1m', '1h', 'd', 'w', 'tick'];
+/** 树中未下载时仍展示的 K 线周期（便于选择下载） */
+const DATA_DOWNLOAD_PLACEHOLDER_INTERVALS = ['1m', 'd'];
 const DATA_INTERVAL_LABELS = {
   '1m': '分钟线',
   '1h': '小时线',
@@ -84,6 +86,31 @@ function $contractMapKey(symbol, exchange) {
   return `${symbol}\0${exchange}`;
 }
 
+function $catalogPlaceholderRow(symbol, exchange, interval, vt_symbol, listed) {
+  return {
+    symbol,
+    exchange,
+    interval,
+    vt_symbol: vt_symbol || `${symbol}.${exchange}`,
+    count: 0,
+    catalogOnly: true,
+    listed: listed !== false,
+  };
+}
+
+function $ensureDownloadPlaceholders(entry) {
+  const { symbol, exchange } = entry;
+  if (!symbol || !exchange) return;
+  let vt = `${symbol}.${exchange}`;
+  for (const row of entry.intervals.values()) {
+    if (row.vt_symbol) { vt = row.vt_symbol; break; }
+  }
+  for (const itv of DATA_DOWNLOAD_PLACEHOLDER_INTERVALS) {
+    if (entry.intervals.has(itv)) continue;
+    entry.intervals.set(itv, $catalogPlaceholderRow(symbol, exchange, itv, vt, true));
+  }
+}
+
 function $collectContractMap(barRows, tickRows, listedCatalog, includeListed) {
   const map = new Map();
 
@@ -110,18 +137,17 @@ function $collectContractMap(barRows, tickRows, listedCatalog, includeListed) {
       const key = $contractMapKey(sym, ex);
       if (!map.has(key)) map.set(key, { symbol: sym, exchange: ex, intervals: new Map() });
       const entry = map.get(key);
-      if (!entry.intervals.has('1m')) {
-        entry.intervals.set('1m', {
-          symbol: sym,
-          exchange: ex,
-          interval: '1m',
-          vt_symbol: cat.vt_symbol || `${sym}.${ex}`,
-          count: 0,
-          catalogOnly: true,
-          listed: cat.listed !== false,
-        });
+      const vt = cat.vt_symbol || `${sym}.${ex}`;
+      for (const itv of DATA_DOWNLOAD_PLACEHOLDER_INTERVALS) {
+        if (!entry.intervals.has(itv)) {
+          entry.intervals.set(itv, $catalogPlaceholderRow(sym, ex, itv, vt, cat.listed));
+        }
       }
     }
+  }
+
+  for (const entry of map.values()) {
+    $ensureDownloadPlaceholders(entry);
   }
 
   return map;
@@ -350,10 +376,11 @@ function $initDataTabFromUrl() {
   if (link) $openDataTab(link);
 }
 
-function $defaultDownloadDates() {
+function $defaultDownloadDates(interval) {
   const end = new Date();
   const start = new Date();
-  start.setDate(start.getDate() - 60);
+  const days = interval === 'd' || interval === 'w' ? 1095 : 60;
+  start.setDate(start.getDate() - days);
   const fmt = d => d.toISOString().slice(0, 10);
   return { start: fmt(start), end: fmt(end) };
 }

@@ -187,7 +187,7 @@ app.component('data-recorder-panel', DataRecorderPanel);
 app.component('data-contract-browser', DataContractBrowser);
 app.component('data-task-bar', DataTaskBar);
 app.component('data-import-modal', DataImportModal);
-app.component('data-watchlist-check', DataWatchlistCheck);
+app.component('data-gap-panel', DataGapPanel);
 app.component('tab-trading', TabTrading);
 app.component('tab-data', TabData);
 app.component('tab-strategy', TabStrategy);

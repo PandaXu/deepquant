@@ -20,7 +20,7 @@ const DataDetailPanel = {
             <strong>{{ contractLabel(selection.vt_symbol) }}</strong>
             <span class="mut">{{ selection.vt_symbol }}</span>
           </template>
-          <span class="mut">{{ intervalLabel(selection.interval) }}</span>
+          <span class="mut">{{ intervalLabel(viewTab === 'chart' ? previewInterval : selection.interval) }}</span>
           <span v-if="!selection.catalogOnly" class="num">{{ selection.count?.toLocaleString() }} 条</span>
           <span v-else class="data-source-badge">{{ selection.expired ? '已过期 · 未下载' : '挂牌 · 未下载' }}</span>
         </div>
@@ -42,6 +42,11 @@ const DataDetailPanel = {
         <div class="data-detail-tabs">
           <button class="btn btn-xs" :class="{ 'btn-primary': viewTab === 'chart' }" @click="setViewTab('chart')">K线</button>
           <button class="btn btn-xs" :class="{ 'btn-primary': viewTab === 'table' }" @click="setViewTab('table')">明细</button>
+          <div v-if="showIntervalBar" class="data-chart-intervals">
+            <button v-for="iv in previewIntervals" :key="iv" class="btn btn-xs"
+              :class="{ 'btn-primary': previewInterval === iv }"
+              @click="setPreviewInterval(iv)">{{ intervalLabel(iv) }}</button>
+          </div>
         </div>
         <div v-show="viewTab === 'chart'" class="data-preview-chart" ref="chartEl"></div>
         <div v-show="viewTab === 'table'" class="data-bar-table-wrap">
@@ -76,8 +81,37 @@ const DataDetailPanel = {
     const loading = ref(false);
     const page = ref(0);
     const viewTab = ref('chart');
+    const previewInterval = ref('1m');
+    const previewIntervals = ['1m', '5m', '15m', '1h', 'd'];
     const pageSize = 50;
     let chartInstance = null;
+    let selectionKey = '';
+
+    const showIntervalBar = computed(() =>
+      props.selection?.kind === 'bar' && !props.selection?.catalogOnly && viewTab.value === 'chart');
+
+    function normalizePreviewInterval(itv) {
+      if (!itv || itv === 'tick') return '1m';
+      if (itv === 'w') return 'd';
+      return previewIntervals.includes(itv) ? itv : '1m';
+    }
+
+    function previewDateRange(sel, interval) {
+      const end = (sel.effective_end || sel.end || '').slice(0, 10)
+        || new Date().toISOString().slice(0, 10);
+      let start = (sel.start || '').slice(0, 10);
+      const lookbackDays = { '1m': 60, '5m': 60, '15m': 90, '1h': 180 };
+      const days = lookbackDays[interval];
+      if (days != null) {
+        const endD = new Date(`${end}T12:00:00`);
+        const startD = new Date(endD);
+        startD.setDate(startD.getDate() - days);
+        const computed = startD.toISOString().slice(0, 10);
+        if (!start || start < computed) start = computed;
+      }
+      if (!start) start = $defaultDownloadDates(interval).start;
+      return { start, end };
+    }
 
     const pageBars = computed(() => {
       const rev = [...bars.value].reverse();
@@ -133,6 +167,12 @@ const DataDetailPanel = {
       }
     }
 
+    function setPreviewInterval(iv) {
+      if (previewInterval.value === iv) return;
+      previewInterval.value = iv;
+      loadPreview(props.selection);
+    }
+
     async function loadPreview(sel) {
       if (!sel) {
         bars.value = [];
@@ -153,17 +193,21 @@ const DataDetailPanel = {
       loading.value = true;
       page.value = 0;
       try {
-        const start = (sel.start || '').slice(0, 10);
-        const end = (sel.end || '').slice(0, 10) || new Date().toISOString().slice(0, 10);
+        const interval = previewInterval.value || '1m';
+        const apiInterval = CHART_INTERVAL_API[interval] || interval;
+        const { start, end } = previewDateRange(sel, interval);
         const q = new URLSearchParams({
           symbol: sel.symbol,
           exchange: sel.exchange,
-          interval: sel.interval === 'tick' ? '1m' : sel.interval,
-          start: start || $defaultDownloadDates().start,
+          interval: apiInterval,
+          start,
           end,
         });
         const data = await $apiGet(`/api/bars?${q}`);
-        bars.value = data.bars || [];
+        let loaded = data.bars || [];
+        const aggN = AGGREGATE_N[interval];
+        if (aggN && loaded.length) loaded = $aggregateBars(loaded, aggN);
+        bars.value = loaded;
         await nextTick();
         if (viewTab.value === 'chart') {
           const inst = ensureChart();
@@ -181,8 +225,18 @@ const DataDetailPanel = {
       }
     }
 
-    watch(() => props.selection, (sel) => loadPreview(sel), { immediate: true });
-    watch(() => [store.dataPreviewRevision, store.dataSelectedKey], () => {
+    watch(
+      () => (props.selection ? $dataNodeKey(props.selection) : ''),
+      (key) => {
+        if (key !== selectionKey) {
+          selectionKey = key;
+          previewInterval.value = normalizePreviewInterval(props.selection?.interval);
+        }
+        loadPreview(props.selection);
+      },
+      { immediate: true },
+    );
+    watch(() => store.dataPreviewRevision, () => {
       if (props.selection) loadPreview(props.selection);
     });
 
@@ -195,6 +249,7 @@ const DataDetailPanel = {
 
     return {
       chartEl, bars, loading, page, pageSize, pageBars, totalPages, emptyHint, viewTab,
+      previewInterval, previewIntervals, showIntervalBar, setPreviewInterval,
       intervalLabel, fmtRange, fmtDt, contractLabel: $contractLabel,
       contractSubLabel: $contractSubLabel, contractCodeLine: $contractCodeLine,
       isIndexOption: $isIndexOption, setViewTab,

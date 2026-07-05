@@ -278,7 +278,12 @@ async def _handle_data_manager_action(action: str, payload: dict, ws: WebSocket)
         return
 
     if action == "sync_minute_data":
-        queue.enqueue(action="sync_minute_data", task_id=task_id, label="同步分钟数据", priority="normal")
+        queue.enqueue(
+            action="sync_minute_data",
+            task_id=task_id,
+            label=payload.get("label", "补分钟线"),
+            priority="normal",
+        )
         return
 
     if action == "delete_bar_data":

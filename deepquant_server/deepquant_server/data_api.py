@@ -181,7 +181,9 @@ def run_download_bar(
         # Use PublicDatafeed when no paid datafeed plugin is configured
         df_name = SETTINGS.get("datafeed.name") or ""
         if df_name in ("", "public"):
-            from deepquant.trader.public_datafeed import PublicDatafeed
+            import importlib
+            from deepquant.trader import public_datafeed as pdf_mod
+            importlib.reload(pdf_mod)
             req = HistoryRequest(
                 symbol=symbol,
                 exchange=Exchange(exchange),
@@ -189,10 +191,12 @@ def run_download_bar(
                 start=start,
                 end=end_dt,
             )
-            data = PublicDatafeed().query_bar_history(req, output)
+            data = pdf_mod.PublicDatafeed().query_bar_history(req, output)
             if data:
                 engine.database.save_bar_data(data)
                 return "success", len(data)
+            if "-" in symbol and interval == "d":
+                output(f"[DataManager] 股指期权日线无数据: {symbol}（若刚升级代码请重启 Server）")
             return "success", 0
 
         kwargs: dict = {}

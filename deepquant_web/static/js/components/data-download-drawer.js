@@ -49,10 +49,11 @@ const DataDownloadDrawer = {
 
     function applyPreset(p) {
       if (!p) return;
-      const dates = $defaultDownloadDates();
+      const itv = p.interval || '1m';
+      const dates = $defaultDownloadDates(itv);
       start.value = p.start || dates.start;
       end.value = p.end || dates.end;
-      interval.value = p.interval || '1m';
+      interval.value = itv;
       if (p.vt_symbol) vtSymbol.value = $normalizeVt(p.vt_symbol);
       else if (p.symbol && p.exchange) vtSymbol.value = `${p.symbol}.${p.exchange}`;
     }
@@ -64,6 +65,10 @@ const DataDownloadDrawer = {
     function submit() {
       if (!vtSymbol.value) return $toast('请选择合约', 'error');
       const parsed = $parseVtSymbol(vtSymbol.value);
+      if (interval.value !== 'd' && typeof $isCffexIndexOptionSymbol === 'function'
+          && $isCffexIndexOptionSymbol(parsed.symbol)) {
+        return $toast('股指期权 IO/HO/MO 仅支持日线，请将周期改为「日线」', 'warn');
+      }
       busy.value = true;
       $startDataDownload({
         symbol: parsed.symbol,
@@ -79,10 +84,21 @@ const DataDownloadDrawer = {
 
     watch(() => props.open, (v) => {
       if (v) {
-        const dates = $defaultDownloadDates();
+        applyPreset(props.preset);
+        const dates = $defaultDownloadDates(interval.value);
         if (!start.value) start.value = dates.start;
         if (!end.value) end.value = dates.end;
-        applyPreset(props.preset);
+      }
+    });
+
+    watch(vtSymbol, (vt) => {
+      if (!vt) return;
+      const parsed = $parseVtSymbol(vt);
+      if (typeof $isCffexIndexOptionSymbol === 'function' && $isCffexIndexOptionSymbol(parsed.symbol)) {
+        interval.value = 'd';
+        const dates = $defaultDownloadDates('d');
+        start.value = dates.start;
+        end.value = dates.end;
       }
     });
 

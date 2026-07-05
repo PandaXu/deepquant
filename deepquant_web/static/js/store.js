@@ -44,6 +44,10 @@ const store = reactive({
   dataIncludeListedOptions: true,
   lastStrategyDataError: null,
   dataPreviewRevision: 0,
+  dataGapPanelVisible: false,
+  dataGapScanning: false,
+  dataGapRows: [],
+  dataTaskBarExpanded: true,
   logPaused: false,
   connectedGateways: [],   // CTP connection status from server
   activeAccount: '',       // currently connected account alias
@@ -380,7 +384,10 @@ function $applyDataTask(task) {
   const prev = idx >= 0 ? store.dataTasks[idx] : null;
   const row = { ...task };
   if (idx >= 0) store.dataTasks[idx] = { ...prev, ...row };
-  else store.dataTasks.unshift(row);
+  else {
+    store.dataTasks.unshift(row);
+    if (row.status === 'running') store.dataTaskBarExpanded = true;
+  }
   if (store.dataTasks.length > 30) store.dataTasks.length = 30;
 
   const isBatchProgress = task.status === 'running' && task.progress?.total > 0;
@@ -537,17 +544,23 @@ function $startDataDownload(payload) {
 
 function $startDataDownloadForSelection(selection) {
   if (!selection) return;
+  const interval = selection.interval || '1m';
+  if (interval !== 'd' && typeof $isCffexIndexOptionSymbol === 'function'
+      && $isCffexIndexOptionSymbol(selection.symbol)) {
+    $toast('股指期权 IO/HO/MO 仅支持日线，请在左侧选择「日线」再下载', 'warn');
+    return;
+  }
   const key = $dataNodeKey(selection);
   if (key) store.dataSelectedKey = key;
-  const dates = $defaultDownloadDates();
+  const dates = $defaultDownloadDates(interval);
   $startDataDownload({
     symbol: selection.symbol,
     exchange: selection.exchange,
-    interval: selection.interval || '1m',
+    interval,
     start: dates.start,
     end: dates.end,
   });
-  $toast(`已提交下载 ${selection.vt_symbol || selection.symbol}`, 'info');
+  $toast(`已提交下载 ${selection.vt_symbol || selection.symbol} ${DATA_INTERVAL_LABELS[interval] || interval}`, 'info');
 }
 
 function $startDataUpdate(selection, opts) {
@@ -637,7 +650,7 @@ function $startDataDelete(selection) {
   });
 }
 
-function $startBatchUpdate(items, priority, label) {
+function $startBatchUpdate(items, priority, label, taskId) {
   if (!items?.length) return;
   $wsSend({
     action: 'auto_update',
@@ -646,31 +659,189 @@ function $startBatchUpdate(items, priority, label) {
       materialize_first: true,
       priority: priority || 'normal',
       label: label || `批量更新 (${items.length} 项)`,
-      task_id: `batch-up-${Date.now().toString(36)}`,
+      task_id: taskId || `batch-up-${Date.now().toString(36)}`,
     },
   });
 }
 
-function $startUpdateAllBars() {
-  if (!store.dataManagerAvailable) {
-    $toast('DataManager 未加载', 'error');
-    return;
+function $startBatchDownload(items, priority, label, taskId) {
+  if (!items?.length) return;
+  const enriched = items.map(it => {
+    const interval = it.interval || 'd';
+    const dates = $defaultDownloadDates(interval);
+    return {
+      symbol: it.symbol,
+      exchange: it.exchange,
+      interval,
+      start: it.start || dates.start,
+      end: it.end || dates.end,
+    };
+  });
+  $wsSend({
+    action: 'batch_download_bar_data',
+    payload: {
+      items: enriched,
+      incremental: false,
+      priority: priority || 'normal',
+      label: label || `批量下载 (${enriched.length} 项)`,
+      task_id: taskId || `batch-dl-${Date.now().toString(36)}`,
+    },
+  });
+}
+
+function $gapRowKey(r) {
+  return `${r.vt_symbol}:${r.interval}`;
+}
+
+function $linkGapRowToLocalData(row) {
+  if (!row?.symbol || !row?.exchange) return null;
+  const interval = row.interval || '1m';
+  const vt = row.vt_symbol || `${row.symbol}.${row.exchange}`;
+  const key = `bar:${interval}:${row.exchange}:${row.symbol}`;
+
+  let node = $findDataNode(store.dataTree, key);
+  if (!node && interval !== '1m') {
+    node = $findDataNode(store.dataTree, `bar:1m:${row.exchange}:${row.symbol}`);
   }
+  if (!node) {
+    node = {
+      kind: 'bar',
+      symbol: row.symbol,
+      exchange: row.exchange,
+      interval,
+      vt_symbol: vt,
+      label: row.symbol,
+      count: row.count || 0,
+      start: row.start || '',
+      end: row.end || row.effective_end || '',
+      effective_end: row.effective_end || row.end || '',
+      stored_end: row.stored_end || row.end || '',
+      sources: row.sources || [],
+      catalogOnly: !(row.count > 0),
+      expired: typeof isExpired === 'function' ? isExpired(row.symbol) : false,
+      freshness: $computeDataFreshness(row.effective_end || row.end || ''),
+    };
+  }
+
+  if (store.dataTree?.length) $expandDataTreeToKey(store.dataTree, $dataNodeKey(node));
+  $selectDataNode(node);
+  $ensureContractName(vt);
+  store.dataPreviewRevision += 1;
+  return node;
+}
+
+function $buildGapScanItems() {
+  const items = [];
   const seen = new Set();
-  const items = (store.dataOverview || []).filter(r => {
-    if (!r.symbol || !r.exchange || !r.interval || r.interval === 'tick') return false;
-    const k = `${r.symbol}.${r.exchange}:${r.interval}`;
-    if (seen.has(k)) return false;
+  const add = (symbol, exchange, interval, vt_symbol) => {
+    if (!symbol || !exchange || !interval) return;
+    const k = `${symbol}.${exchange}:${interval}`;
+    if (seen.has(k)) return;
     seen.add(k);
-    return true;
-  }).map(r => ({ symbol: r.symbol, exchange: r.exchange, interval: r.interval }));
-  if (!items.length) {
-    $toast('本地暂无 K 线数据', 'info');
+    items.push({
+      symbol,
+      exchange,
+      interval,
+      vt_symbol: vt_symbol || `${symbol}.${exchange}`,
+      end: new Date().toISOString().slice(0, 10),
+    });
+  };
+
+  for (const r of store.dataOverview || []) {
+    if (!r.symbol || !r.exchange || r.interval === 'tick') continue;
+    add(r.symbol, r.exchange, r.interval, r.vt_symbol);
+  }
+
+  for (const w of ui.watchlist || []) {
+    const p = $parseVtSymbol(w.vt_symbol);
+    add(p.symbol, p.exchange, '1m', w.vt_symbol);
+    add(p.symbol, p.exchange, 'd', w.vt_symbol);
+  }
+
+  const has1m = new Set(
+    (store.dataOverview || []).filter(r => r.interval === '1m').map(r => `${r.symbol}.${r.exchange}`)
+  );
+  for (const r of store.dataOverview || []) {
+    if (r.interval === 'd' && r.symbol && !String(r.symbol).includes('-')) {
+      const ck = `${r.symbol}.${r.exchange}`;
+      if (!has1m.has(ck)) add(r.symbol, r.exchange, '1m', r.vt_symbol);
+    }
+  }
+  return items;
+}
+
+async function $scanDataGaps() {
+  if (!store.dataManagerAvailable) {
+    $toast('数据补全服务未就绪', 'error');
+    return [];
+  }
+  store.dataGapScanning = true;
+  try {
+    const items = $buildGapScanItems();
+    if (!items.length) {
+      store.dataGapRows = [];
+      $toast('暂无待检查的合约', 'info');
+      return [];
+    }
+    const data = await $checkDataCoverage(items);
+    const gaps = (data.results || []).filter(r =>
+      ['missing', 'partial', 'stale', 'tick_only'].includes(r.status)
+    );
+    store.dataGapRows = gaps;
+    store.dataGapPanelVisible = true;
+    if (!gaps.length) $toast('数据充足，未发现缺口', 'success');
+    else $toast(`发现 ${gaps.length} 项数据缺口`, 'info');
+    return gaps;
+  } catch (e) {
+    $toast('缺口检查失败', 'error');
+    return [];
+  } finally {
+    store.dataGapScanning = false;
+  }
+}
+
+function $startGapUpdates(rows) {
+  if (!rows?.length) {
+    $toast('请先选择要更新的项', 'info');
     return;
   }
-  if (!confirm(`确认增量更新全部 ${items.length} 组 K 线到今天？\n（已在队列中的任务会继续执行）`)) return;
-  $startBatchUpdate(items, 'normal', `全部更新 (${items.length} 项)`);
-  $toast(`已提交全部更新 ${items.length} 项`, 'info');
+  const downloadItems = [];
+  const updateItems = [];
+  const materializeItems = [];
+  const skippedOptions = [];
+  for (const r of rows) {
+    if (r.status === 'tick_only') {
+      materializeItems.push(r);
+      continue;
+    }
+    const isOption = typeof $isCffexIndexOptionSymbol === 'function' && $isCffexIndexOptionSymbol(r.symbol);
+    if (isOption && r.interval !== 'd') {
+      skippedOptions.push(r);
+      continue;
+    }
+    if (r.status === 'missing') {
+      downloadItems.push({ symbol: r.symbol, exchange: r.exchange, interval: r.interval });
+    } else {
+      updateItems.push({ symbol: r.symbol, exchange: r.exchange, interval: r.interval });
+    }
+  }
+  if (downloadItems.length) {
+    $startBatchDownload(downloadItems, 'normal', `全量下载 (${downloadItems.length} 项)`);
+  }
+  if (updateItems.length) {
+    $startBatchUpdate(updateItems, 'normal', `增量更新 (${updateItems.length} 项)`);
+  }
+  for (const r of materializeItems) {
+    $materializeBarData({ symbol: r.symbol, exchange: r.exchange, interval: '1m', kind: 'bar' });
+  }
+  const n = downloadItems.length + updateItems.length + materializeItems.length;
+  if (n) {
+    store.dataTaskBarExpanded = true;
+    $toast(`已提交 ${n} 项补数任务`, 'info');
+  }
+  if (skippedOptions.length) {
+    $toast(`已跳过 ${skippedOptions.length} 项股指期权分钟线（仅支持日线）`, 'warn');
+  }
 }
 
 async function $checkDataCoverage(items) {

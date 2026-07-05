@@ -579,14 +579,15 @@ class DataUpdateQueue:
         if job.action == "sync_minute_data":
             engine = main_engine.get_engine("DataManager")
             if not engine:
-                self._emit(job.task_id, job.action, "error", "同步分钟", "DataManager 未加载")
+                self._emit(job.task_id, job.action, "error", job.label, "DataManager 未加载")
                 return
+            self._emit(job.task_id, job.action, "running", job.label, "扫描有日线的合约…")
             try:
                 count = engine.sync_minute_data(self._on_log)
-                self._emit(job.task_id, job.action, "success", "同步分钟数据", f"同步 {count} 个合约")
+                self._emit(job.task_id, job.action, "success", job.label, f"完成，共 {count} 个合约写入 1m 数据")
                 self._push_overviews()
             except Exception as e:
-                self._emit(job.task_id, job.action, "error", "同步分钟数据", str(e))
+                self._emit(job.task_id, job.action, "error", job.label, str(e))
             return
 
         if job.action == "delete_bar_data":
@@ -617,6 +618,8 @@ class DataUpdateQueue:
             return
 
         incremental = job.action in ("update_bar_data", "scheduled_update", "auto_update")
+        if job.action in ("download_bar_data", "batch_download_bar_data"):
+            incremental = job.incremental
         if job.materialize_first and job.interval == "1m":
             materialize_ticks_to_bars(main_engine, job.symbol, job.exchange, "1m", self._on_log)
 

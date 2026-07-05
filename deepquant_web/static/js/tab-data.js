@@ -8,32 +8,29 @@ const TabData = {
           <button v-for="t in subTabs" :key="t.id" class="btn btn-xs"
             :class="{ 'btn-primary': subTab === t.id }" @click="subTab = t.id">{{ t.label }}</button>
         </div>
-        <input v-if="subTab === 'local'" v-model="search" class="input input-sm data-search" placeholder="搜索合约…">
         <div class="data-top-meta">
           <span v-if="healthLine" class="hint-sub data-health-line">{{ healthLine }}</span>
-          <span class="data-dm-badge" :class="store.dataManagerAvailable ? 'on' : 'off'">
-            DataManager {{ store.dataManagerAvailable ? '已加载' : '未加载' }}
-          </span>
-          <button v-if="store.dataManagerAvailable" class="btn btn-xs" @click="syncMinute">同步分钟</button>
-          <button v-if="store.dataManagerAvailable && subTab === 'local'" class="btn btn-xs btn-primary" @click="updateAll">全部更新</button>
+          <button v-if="subTab === 'local'" class="btn btn-xs btn-primary"
+            title="检查本地数据与自选合约缺口，勾选后批量补数"
+            :disabled="store.dataGapScanning" @click="runGapScan">
+            {{ store.dataGapScanning ? '检查中…' : '数据缺口' }}
+          </button>
           <button class="btn btn-xs" @click="importOpen = true">导入</button>
           <button class="btn btn-xs" @click="refreshAll">↻</button>
         </div>
       </div>
 
-      <data-watchlist-check
-        v-if="subTab === 'local'"
-        @update="onWatchlistUpdate"
-        @batch-update="onBatchUpdate"
-      />
+      <data-gap-panel v-if="subTab === 'local'" />
 
       <div v-show="subTab === 'local'" class="data-split">
         <div class="data-left panel">
-          <div class="panel-header">
+          <div class="panel-header data-local-hd">
             <span class="panel-title">本地数据</span>
-            <label v-if="subTab === 'local'" class="data-opt-toggle" style="margin-left:auto">
+            <input v-model="search" class="input input-sm data-local-search" placeholder="搜索合约…">
+            <label class="data-opt-toggle"
+              title="勾选后合并公共挂牌目录，在树中显示尚未下载的合约（灰色「未下载」）">
               <input type="checkbox" v-model="store.dataIncludeListedOptions" @change="onToggleListedOptions">
-              挂牌合约
+              显示未下载
             </label>
           </div>
           <div class="panel-body data-tree-wrap">
@@ -124,16 +121,6 @@ const TabData = {
       $selectDataNode(node);
     }
 
-    function onWatchlistUpdate(r) {
-      $startDataUpdate({ symbol: r.symbol, exchange: r.exchange, interval: r.interval, kind: 'bar', vt_symbol: r.vt_symbol });
-    }
-
-    function onBatchUpdate({ items }) {
-      if (!items?.length) return;
-      $startBatchUpdate(items);
-      $toast(`已提交批量更新 ${items.length} 个合约`, 'info');
-    }
-
     function onUpdate() {
       const sel = selection.value;
       if (sel?.kind === 'bar') $startDataUpdate(sel);
@@ -177,12 +164,8 @@ const TabData = {
       $rebuildDataTree();
     }
 
-    function syncMinute() {
-      $wsSend({ action: 'sync_minute_data', payload: { task_id: `sync-${Date.now().toString(36)}` } });
-    }
-
-    function updateAll() {
-      $startUpdateAllBars();
+    function runGapScan() {
+      $scanDataGaps();
     }
 
     function goLog() {
@@ -229,6 +212,7 @@ const TabData = {
         if (link.action === 'update' && link.symbol && link.exchange) {
           $startDataUpdate({ symbol: link.symbol, exchange: link.exchange, interval: link.interval || '1m', kind: 'bar', vt_symbol: link.vt_symbol });
         }
+        if (link.action === 'gaps') runGapScan();
       });
       store.dataDeepLink = null;
     }
@@ -250,9 +234,8 @@ const TabData = {
     return {
       store, subTabs, subTab, search, selection, selectedKey, filteredTree,
       importOpen, importPreset, healthLine, recorderView,
-      onSelect, onWatchlistUpdate, onBatchUpdate,
-      onUpdate, onDelete, openBacktest, openTrading, onMaterialize, onDownload, onToggleListedOptions,
-      syncMinute, updateAll, goLog, refreshAll,
+      onSelect, onUpdate, onDelete, openBacktest, openTrading, onMaterialize, onDownload,
+      onToggleListedOptions, runGapScan, goLog, refreshAll,
     };
   },
 };

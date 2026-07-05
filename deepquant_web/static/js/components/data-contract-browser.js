@@ -6,7 +6,7 @@ const DataContractBrowser = {
       <div class="data-source-tabs">
         <button class="btn btn-xs" :class="{ 'btn-primary': source === 'public' }" @click="switchSource('public')">公共目录 (akshare)</button>
         <button class="btn btn-xs" :class="{ 'btn-primary': source === 'gateway' }" @click="switchSource('gateway')">网关合约 (实时)</button>
-        <label class="data-opt-toggle"><input type="checkbox" v-model="showExtended"> 期权列</label>
+        <label class="data-opt-toggle" v-if="source === 'gateway'"><input type="checkbox" v-model="showGatewayCol"> 网关列</label>
       </div>
       <div class="data-contract-toolbar">
         <input v-model="filter" class="input input-sm" placeholder="筛选代码/名称/交易所" style="flex:1">
@@ -24,7 +24,7 @@ const DataContractBrowser = {
             <th class="sortable" @click="sortBy('exchange')">交易所 {{ sortMark('exchange') }}</th>
             <th class="sortable" @click="sortBy('name')">名称 {{ sortMark('name') }}</th>
             <th>品种</th><th class="num">乘数</th>
-            <th v-if="showExtended">网关</th>
+            <th v-if="showGatewayCol">网关</th>
             <th></th>
           </tr></thead>
           <tbody>
@@ -38,12 +38,12 @@ const DataContractBrowser = {
                 <template v-else>{{ c.name || contractLabel(c.vt_symbol) }}</template>
               </td>
               <td>{{ c.product }}</td><td class="num">{{ c.size }}</td>
-              <td v-if="showExtended">{{ c.gateway_name || '—' }}</td>
+              <td v-if="showGatewayCol">{{ c.gateway_name || '—' }}</td>
               <td class="data-row-actions">
                 <button class="btn btn-xs" @click="$emit('openTrading', c.vt_symbol)">行情</button>
               </td>
             </tr>
-            <tr v-if="!pageRows.length"><td :colspan="showExtended ? 7 : 6" class="empty">{{ emptyHint }}</td></tr>
+            <tr v-if="!pageRows.length"><td :colspan="showGatewayCol ? 7 : 6" class="empty">{{ emptyHint }}</td></tr>
           </tbody>
         </table>
       </div>
@@ -58,7 +58,7 @@ const DataContractBrowser = {
     const filter = ref('');
     const rows = ref([]);
     const loading = ref(false);
-    const showExtended = ref(false);
+    const showGatewayCol = ref(false);
     const sortCol = ref('vt_symbol');
     const sortDir = ref(1);
     const page = ref(0);
@@ -124,6 +124,7 @@ const DataContractBrowser = {
       source.value = s;
       rows.value = [];
       page.value = 0;
+      if (s !== 'gateway') showGatewayCol.value = false;
       load();
     }
 
@@ -176,7 +177,7 @@ const DataContractBrowser = {
     onMounted(() => { if (source.value === 'public') load(); });
 
     return {
-      source, filter, category, loading, showExtended, page, pageSize, pageRows, sortedRows, totalPages,
+      source, filter, category, loading, showGatewayCol, page, pageSize, pageRows, sortedRows, totalPages,
       emptyHint, sortBy, sortMark, switchSource, setCategory, load,
       contractLabel: $contractLabel, contractSubLabel: $contractSubLabel, isIndexOption: $isIndexOption,
     };

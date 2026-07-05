@@ -43,7 +43,7 @@ class ManagerWidget(QtWidgets.QWidget):
         download_button: QtWidgets.QPushButton = QtWidgets.QPushButton("下载数据")
         download_button.clicked.connect(self.download_data)
 
-        sync_button: QtWidgets.QPushButton = QtWidgets.QPushButton("同步分钟数据")
+        sync_button: QtWidgets.QPushButton = QtWidgets.QPushButton("补分钟线")
         sync_button.clicked.connect(self.sync_minute)
 
         hbox1: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
@@ -322,9 +322,9 @@ class ManagerWidget(QtWidgets.QWidget):
     def _on_sync_done(self, count: int, btn) -> None:
         if btn:
             btn.setEnabled(True)
-            btn.setText("同步分钟数据")
+            btn.setText("补分钟线")
         self.refresh_tree()
-        QtWidgets.QMessageBox.information(self, "同步完成", f"同步了 {count} 个合约的分钟数据")
+        QtWidgets.QMessageBox.information(self, "补分钟线完成", f"共 {count} 个有日线的合约写入了 1 分钟 K 线")
 
     def show(self) -> None:
         """"""
