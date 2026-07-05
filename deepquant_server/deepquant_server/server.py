@@ -688,6 +688,13 @@ async def handle_ws_message(ws: WebSocket, msg: str) -> None:
                             result["save_id"] = saved.get("id")
                             result["backtest_status"] = saved.get("status")
                             result["is_active_gate"] = saved.get("is_active", False)
+                            if saved.get("id"):
+                                saves = strategy_service.list_backtest_saves(link_name)
+                                _broadcast_json({
+                                    "type": "backtest_saves",
+                                    "data": saves,
+                                    "strategy_name": link_name,
+                                })
                         event_engine.put(Event("backtestResult", json_safe(result)))
                     except Exception as e:
                         event_engine.put(Event("backtestError", str(e)))
@@ -716,6 +723,13 @@ async def handle_ws_message(ws: WebSocket, msg: str) -> None:
                     "data": item,
                     "strategy_name": name,
                 }, ensure_ascii=False, default=str))
+                if name and item.get("id") and not item.get("error"):
+                    saves = strategy_service.list_backtest_saves(name)
+                    await ws.send_text(json.dumps({
+                        "type": "backtest_saves",
+                        "data": saves,
+                        "strategy_name": name,
+                    }, ensure_ascii=False, default=str))
                 if not item.get("error") and name:
                     pf = strategy_service.preflight(name, main_engine)
                     await ws.send_text(json.dumps({

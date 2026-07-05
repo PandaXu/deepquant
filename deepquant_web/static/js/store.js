@@ -193,13 +193,15 @@ function _onWsMessage(e) {
       if (name) store.backtestSaves[name] = Array.isArray(data) ? data : [];
     } else if (type === 'backtest_save_saved') {
       const name = msg.strategy_name || '';
-      if (name && data && !data.error) {
+      if (name && data?.error) {
+        $toast(data.error, 'error');
+      } else if (name && data?.skipped) {
+        $toast('亏损回测未存档（可在设置中开启「存档亏损记录」）', 'info');
+      } else if (name && data?.id) {
         const list = (store.backtestSaves[name] || []).filter(s => s.id !== data.id);
         store.backtestSaves[name] = [data, ...list];
         store.backtestLastSaved = { strategy_name: name, save_id: data.id };
-        $toast('回测结果已保存', 'success');
-      } else if (data?.error) {
-        $toast(data.error, 'error');
+        $toast(data.status === 'loss' ? '回测已保存（亏损，不能作为验证基准）' : '回测结果已保存', 'success');
       }
     } else if (type === 'backtest_save_loaded') {
       if (data?.error) {

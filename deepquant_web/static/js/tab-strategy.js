@@ -49,7 +49,7 @@ const TabStrategy = {
               <div class="st-subtitle">{{ strategyLabel(selected.class_name) }} · {{ selected.vt_symbol }}</div>
             </div>
             <div class="st-head-actions">
-              <button class="btn btn-sm" :class="primaryBtnClass" @click="executeNextAction" :disabled="actionBusy">
+              <button class="btn btn-sm" :class="primaryBtnClass" @click="executeNextAction" :disabled="actionBusy || !canExecuteNext">
                 {{ actionBusy ? '处理中…' : (preflight?.next_action?.label || '—') }}
               </button>
               <button v-if="normStatus(selected.status) === 'running'" class="btn btn-sm btn-warn" @click="doAction('stop')" :disabled="actionBusy">停止</button>
@@ -141,6 +141,31 @@ const TabStrategy = {
               <term-label term="bar_interval">周期</term-label> {{ selected.last_backtest.interval || '1m' }} ·
               {{ selected.last_backtest.run_at?.slice(0,10) || '' }}
             </div>
+            <div v-else-if="preflight?.latest_backtest" class="st-bt-snapshot st-bt-loss">
+              <term-label term="total_return">最近回测</term-label> {{ fmtPct(preflight.latest_backtest.total_return) }} ·
+              {{ preflight.latest_backtest.created_at?.slice(0,10) || '' }}
+              <span class="st-param-hint">（未设验证基准）</span>
+            </div>
+          </div>
+
+          <!-- 回测存档列表 -->
+          <div class="st-panel-block" v-if="selected && detailSavedList.length">
+            <div class="st-section-title">
+              回测存档
+              <button class="btn btn-xs" @click="openBacktestDrawer">管理</button>
+            </div>
+            <table class="data-table st-bt-saves-table">
+              <thead><tr><th>名称</th><th>状态</th><th>收益</th><th>时间</th><th></th></tr></thead>
+              <tbody>
+                <tr v-for="s in detailSavedList" :key="s.id" :class="{ 'row-active': s.is_active }">
+                  <td>{{ s.label }}</td>
+                  <td><span class="st-bt-save-tag" :class="'tag-' + s.status">{{ s.is_active ? '验证基准' : (s.status_label || s.status) }}</span></td>
+                  <td :class="(s.total_return || 0) >= 0 ? 'up' : 'down'">{{ fmtPct(s.total_return) }}</td>
+                  <td>{{ (s.created_at || '').slice(0, 16).replace('T', ' ') }}</td>
+                  <td><button class="btn btn-xs" @click="loadSaveFromDetail(s)">查看</button></td>
+                </tr>
+              </tbody>
+            </table>
           </div>
 
           <!-- 内嵌日志 -->
@@ -485,6 +510,19 @@ const TabStrategy = {
       return name ? (store.backtestSaves[name] || []) : [];
     });
 
+    const detailSavedList = computed(() => {
+      const name = selected.value?.strategy_name || '';
+      return name ? (store.backtestSaves[name] || []) : [];
+    });
+
+    const canExecuteNext = computed(() => {
+      const act = preflight.value?.next_action?.id;
+      if (!act || actionBusy.value) return false;
+      if (act === 'init') return !!preflight.value?.ready_to_init;
+      if (act === 'start') return !!preflight.value?.ready_to_start;
+      return true;
+    });
+
     const selectedSaveItem = computed(() => {
       if (!bt.selectedSaveId) return null;
       return btSavedList.value.find(s => String(s.id) === String(bt.selectedSaveId)) || null;
@@ -575,6 +613,16 @@ const TabStrategy = {
     function fetchBacktestSaves(name) {
       if (!name) return;
       $wsSend({ action: 'list_backtest_saves', payload: { strategy_name: name } });
+    }
+
+    function loadSaveFromDetail(s) {
+      if (!s?.id || !selected.value) return;
+      openBacktestDrawer();
+      bt.selectedSaveId = String(s.id);
+      $wsSend({
+        action: 'load_backtest_save',
+        payload: { strategy_name: selected.value.strategy_name, save_id: parseInt(s.id, 10) },
+      });
     }
 
     function onBtSaveSelect() {
@@ -677,6 +725,7 @@ const TabStrategy = {
       selected.value = s;
       $saveJson(PERSIST_KEYS.strategySelected, s.strategy_name);
       fetchPreflight(s.strategy_name);
+      fetchBacktestSaves(s.strategy_name);
       loadLogs();
       if (btOpen.value && selected.value) {
         $hydrateBacktestFromInstance(bt, selected.value);
@@ -798,9 +847,18 @@ const TabStrategy = {
         return;
       }
       if (act === 'backtest') { openBacktestDrawer(); return; }
-      if (act === 'init' && preflight.value?.backtest_unprofitable) {
-        $toast('回测亏损，请调整参数后重新回测', 'error');
-        openBacktestDrawer();
+      if (act === 'init') {
+        if (!preflight.value?.ready_to_init) {
+          const msg = preflight.value?.backtest_unprofitable
+            ? '回测亏损或无有效验证基准，请调整参数后重新回测'
+            : '尚未满足初始化条件，请完成回测验证';
+          $toast(msg, 'error');
+          openBacktestDrawer();
+          return;
+        }
+      }
+      if (act === 'start' && !preflight.value?.ready_to_start) {
+        $toast('请先完成初始化并连接交易网关', 'error');
         return;
       }
       if (act === 'stop') { doAction('stop'); return; }
@@ -961,24 +1019,36 @@ const TabStrategy = {
       nextTick(() => renderEquity(r));
       const linkedName = r.strategy_name || (bt.linkedInstance ? bt.strategyName : '');
       if (linkedName && selected.value?.strategy_name === linkedName) {
-        selected.value = {
-          ...selected.value,
-          last_backtest: {
-            total_return: r.total_return,
-            sharpe_ratio: r.sharpe_ratio,
-            max_drawdown: r.max_drawdown,
-            total_trades: r.total_trades ?? r.total_trade_count,
-            interval: bt.interval,
-            run_at: new Date().toISOString(),
-          },
-        };
+        if (r.is_active_gate || r.backtest_status === 'passed') {
+          selected.value = {
+            ...selected.value,
+            last_backtest: {
+              total_return: r.total_return,
+              sharpe_ratio: r.sharpe_ratio,
+              max_drawdown: r.max_drawdown,
+              total_trades: r.total_trades ?? r.total_trade_count,
+              interval: bt.interval,
+              run_at: new Date().toISOString(),
+            },
+          };
+        }
         fetchPreflight(linkedName);
         $wsSend({ action: 'get_cta_strategies' });
       }
       if (!bt._resultToastShown || bt._resultToastSession !== r.session_id) {
         bt._resultToastShown = true;
         bt._resultToastSession = r.session_id || '';
-        $toast(linkedName ? '回测完成，已关联实例' : '回测完成（未保存到实例）', 'success');
+        if (linkedName) {
+          if (r.backtest_status === 'loss') {
+            $toast('回测完成（亏损），无法设为验证基准', 'error');
+          } else if (r.is_active_gate) {
+            $toast('回测完成，已设为验证基准', 'success');
+          } else {
+            $toast('回测完成，已关联实例', 'success');
+          }
+        } else {
+          $toast('回测完成（未保存到实例）', 'success');
+        }
       }
       if (linkedName) {
         fetchBacktestSaves(linkedName);
@@ -1053,6 +1123,7 @@ const TabStrategy = {
         if (hit) {
           selected.value = hit;
           fetchPreflight(cur);
+          fetchBacktestSaves(cur);
           if (btDisplayResult.value) nextTick(() => renderEquity(btDisplayResult.value));
           return;
         }
@@ -1082,8 +1153,8 @@ const TabStrategy = {
       docParamRows, varRows, recentLogs, templates, docList,
       showForm, showTemplates, editing, saving, form, paramKeys,
       showEncyclopedia, expandedEncy,
-      btOpen, bt, equityEl, resultChartEl, btDisplayResult, btShowRunPanel, btShowSavesBar, btSavedList,
-      selectedSaveItem, canSetActiveSave, actionBusy, primaryBtnClass, btParamKeys,
+      btOpen, bt, equityEl, resultChartEl, btDisplayResult, btShowRunPanel, btShowSavesBar, btSavedList, detailSavedList,
+      selectedSaveItem, canSetActiveSave, canExecuteNext, actionBusy, primaryBtnClass, btParamKeys,
       btReturnText, btReturnCls, btDrawdownText,
       btRunSteps, btRunPhase, btRunStepIdx, btElapsed, btLiveLogs,
       btMetrics, btKpis, btTrades, btMetaRange,
@@ -1095,7 +1166,7 @@ const TabStrategy = {
       refreshAll, selectStrategy, openCreate, closeForm, deployTemplate, applyTemplate,
       loadClassParams, onFormPick, saveForm, editStrategy, removeStrategy,
       executeNextAction, doAction, openBacktestDrawer, runBacktest, onBtClassChange,
-      fetchBacktestSaves, onBtSaveSelect, saveCurrentBacktest, deleteSelectedSave,
+      fetchBacktestSaves, loadSaveFromDetail, onBtSaveSelect, saveCurrentBacktest, deleteSelectedSave,
       setActiveBacktest, exportSelectedSave,
       checkBtCoverage, covLabel, goDownloadBt, onBtPick, loadLogs, jumpToChart, store,
       btFmtMoney: $btFmtMoney,

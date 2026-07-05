@@ -1205,6 +1205,19 @@ select { cursor: pointer; }
   border: 1px solid rgba(34, 197, 94, 0.25);
   vertical-align: middle;
 }
+.st-bt-saves-table { font-size: 11px; }
+.st-bt-saves-table td, .st-bt-saves-table th { padding: 4px 6px; }
+.st-bt-save-tag {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+}
+.st-bt-save-tag.tag-passed { color: var(--green); background: rgba(34,197,94,.12); }
+.st-bt-save-tag.tag-loss { color: var(--red); background: rgba(239,68,68,.1); }
+.st-bt-save-tag.tag-stale { color: var(--text-dim); background: rgba(128,128,128,.12); }
+.st-bt-save-tag.tag-draft { color: var(--text-dim); background: rgba(128,128,128,.08); }
 .st-bt-standalone, .st-bt-linked {
   font-size: 12px; padding: 8px 10px; border-radius: 6px; margin-bottom: 10px;
 }

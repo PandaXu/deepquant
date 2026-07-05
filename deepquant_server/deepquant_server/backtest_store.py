@@ -299,26 +299,27 @@ def clear_active_gate(strategy_name: str) -> None:
 
 
 def load_active_snapshot(config: dict) -> dict | None:
+    """Active Gate only — must have active_backtest_id + passed save (no legacy JSON fallback)."""
     active_id = int(config.get("active_backtest_id") or 0)
-    if active_id:
-        row = _fetch_save_row(config.get("strategy_name", ""), active_id)
-        if row:
-            try:
-                meta = json.loads(row["meta_json"] or "{}")
-            except json.JSONDecodeError:
-                meta = {}
-            if meta:
-                meta = dict(meta)
-                meta["save_id"] = active_id
-                meta["run_at"] = meta.get("run_at") or row["created_at"]
-                return meta
-    raw = config.get("last_backtest_json") or ""
-    if raw:
-        try:
-            return json.loads(raw)
-        except json.JSONDecodeError:
-            pass
-    return None
+    if not active_id:
+        return None
+    strategy_name = config.get("strategy_name", "")
+    row = _fetch_save_row(strategy_name, active_id)
+    if not row:
+        return None
+    try:
+        meta = json.loads(row["meta_json"] or "{}")
+    except json.JSONDecodeError:
+        meta = {}
+    if not meta:
+        return None
+    status = compute_run_status(config, meta)
+    if status != "passed" or not backtest_is_profitable(meta):
+        return None
+    meta = dict(meta)
+    meta["save_id"] = active_id
+    meta["run_at"] = meta.get("run_at") or row["created_at"]
+    return meta
 
 
 def validate_backtest_snapshot(config: dict) -> tuple[bool, str]:
@@ -540,22 +541,51 @@ def save_backtest_save(
     )
     if set_active and not item.get("error") and item.get("status") == "passed":
         set_active_gate(strategy_name, item["id"], config)
+    save_id = item.get("id")
+    if save_id:
+        formatted = get_save_item_by_id(strategy_name, int(save_id), config)
+        if formatted:
+            return formatted
+    return item
+
+
+def format_save_item(row: sqlite3.Row, config: dict | None = None) -> dict:
+    cfg = config or {}
+    item = {
+        "id": row["id"],
+        "strategy_name": row["strategy_name"],
+        "label": row["label"],
+        "created_at": row["created_at"],
+        "is_active": bool(row["is_active"]),
+        "status": row["status"] or "draft",
+    }
+    try:
+        meta = json.loads(row["meta_json"] or "{}")
+        item.update(meta)
+    except json.JSONDecodeError:
+        meta = {}
+    if cfg:
+        item["status"] = compute_run_status(cfg, meta)
+    status_labels = {
+        "passed": "通过",
+        "loss": "亏损",
+        "stale": "已过期",
+        "draft": "草稿",
+    }
+    item["status_label"] = status_labels.get(item["status"], item["status"])
+    if item["is_active"]:
+        item["label_display"] = f"[验证基准] {item['label']}"
+    else:
+        item["label_display"] = f"[{item['status_label']}] {item['label']}"
     return item
 
 
 def list_backtest_saves(strategy_name: str, config: dict | None = None) -> list[dict]:
-    cfg = config or {}
-    active_id = int(cfg.get("active_backtest_id") or 0)
+    cfg = dict(config or {})
+    cfg.setdefault("strategy_name", strategy_name)
     with _lock:
         conn = _get_db()
         ensure_backtest_schema(conn)
-        if not active_id and cfg.get("strategy_name"):
-            row = conn.execute(
-                "SELECT active_backtest_id FROM strategy_configs WHERE strategy_name=?",
-                (strategy_name,),
-            ).fetchone()
-            if row:
-                active_id = int(row["active_backtest_id"] or 0)
         rows = conn.execute(
             """SELECT id, strategy_name, label, meta_json, created_at,
                       is_active, status, config_hash, instance_hash
@@ -565,37 +595,16 @@ def list_backtest_saves(strategy_name: str, config: dict | None = None) -> list[
             (strategy_name,),
         ).fetchall()
         conn.close()
+    return [format_save_item(row, cfg) for row in rows]
 
-    out: list[dict] = []
-    for row in rows:
-        item = {
-            "id": row["id"],
-            "strategy_name": row["strategy_name"],
-            "label": row["label"],
-            "created_at": row["created_at"],
-            "is_active": bool(row["is_active"]),
-            "status": row["status"] or "draft",
-        }
-        try:
-            meta = json.loads(row["meta_json"] or "{}")
-            item.update(meta)
-        except json.JSONDecodeError:
-            meta = {}
-        if cfg:
-            item["status"] = compute_run_status(cfg, meta)
-        status_labels = {
-            "passed": "通过",
-            "loss": "亏损",
-            "stale": "已过期",
-            "draft": "草稿",
-        }
-        item["status_label"] = status_labels.get(item["status"], item["status"])
-        if item["is_active"]:
-            item["label_display"] = f"[验证基准] {item['label']}"
-        else:
-            item["label_display"] = f"[{item['status_label']}] {item['label']}"
-        out.append(item)
-    return out
+
+def get_save_item_by_id(strategy_name: str, save_id: int, config: dict | None = None) -> dict | None:
+    row = _fetch_save_row(strategy_name, save_id)
+    if not row:
+        return None
+    cfg = dict(config or {})
+    cfg.setdefault("strategy_name", strategy_name)
+    return format_save_item(row, cfg)
 
 
 def get_backtest_save(

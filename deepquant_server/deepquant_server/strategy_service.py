@@ -832,7 +832,9 @@ class StrategyService:
             return {"id": "start", "label": "启动实盘", "kind": "primary"}
         if data_st == "fail":
             return {"id": "download_data", "label": "补全历史数据", "kind": "primary"}
-        if not bt_valid and data_st in ("ok", "warn"):
+        if not bt_valid:
+            if data_st in ("ok", "warn"):
+                return {"id": "backtest", "label": "运行回测", "kind": "primary"}
             return {"id": "backtest", "label": "运行回测", "kind": "primary"}
         return {"id": "init", "label": "初始化引擎", "kind": "primary"}
 
