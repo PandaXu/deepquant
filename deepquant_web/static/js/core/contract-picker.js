@@ -10,6 +10,34 @@ const CONTRACT_EXCHANGES = [
   { value: 'GFEX', name: '广期所' },
 ];
 
+const PUBLIC_CONTRACT_BATCH_SIZE = 100;
+
+/** 分页拉取公共合约目录，每批最多 100 条 */
+async function $fetchPublicContracts({ exchange = '', product = '', batchSize = PUBLIC_CONTRACT_BATCH_SIZE } = {}) {
+  const limit = Math.min(Math.max(1, batchSize), PUBLIC_CONTRACT_BATCH_SIZE);
+  const base = new URLSearchParams({ offset: '0', limit: String(limit) });
+  if (exchange) base.set('exchange', exchange);
+  if (product) base.set('product', product);
+
+  const first = await $apiGet(`/api/contracts/public?${base}`);
+  const all = [...(first.contracts || [])];
+  if (!first.has_more) return all;
+
+  const total = first.total || all.length;
+  const offsets = [];
+  for (let off = all.length; off < total; off += limit) offsets.push(off);
+  if (!offsets.length) return all;
+
+  const pages = await Promise.all(offsets.map(async (off) => {
+    const p = new URLSearchParams(base);
+    p.set('offset', String(off));
+    const d = await $apiGet(`/api/contracts/public?${p}`);
+    return d.contracts || [];
+  }));
+  for (const batch of pages) all.push(...batch);
+  return all;
+}
+
 /**
  * 创建合约选择器响应式状态（在组件 setup 内调用）
  * @returns {object} 选择器状态与方法
@@ -51,8 +79,10 @@ function $createContractPicker() {
     }
     loading.value = true;
     try {
-      const raw = await $apiGet(`/api/contracts/public?exchange=${exchange.value}&product=${product.value}`) || {};
-      const list = Array.isArray(raw) ? raw : (raw.contracts || []);
+      const list = await $fetchPublicContracts({
+        exchange: exchange.value,
+        product: product.value,
+      });
       contracts.value = list.map(c => {
         const sym = c.symbol || '';
         const vt = $normalizeVt(c.vt_symbol || `${sym}.${exchange.value}`);

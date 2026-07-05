@@ -60,6 +60,17 @@ const TabSettings = {
         </div>
       </div>
 
+      <!-- CTA Engine Status -->
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">🤖 CTA 策略引擎</span></div>
+        <div class="panel-body" style="padding:8px;font-size:12px">
+          <div class="sc-row"><span>引擎状态</span><span>{{ ctaAvailable ? '已加载' : '未安装 vnpy_ctastrategy' }}</span></div>
+          <div class="sc-row"><span>策略数量</span><span>{{ store.strategies.length }}</span></div>
+          <div class="sc-row"><span>运行中</span><span>{{ runningCount }}</span></div>
+          <button class="btn btn-sm" style="margin-top:6px" @click="refreshCta">刷新策略列表</button>
+        </div>
+      </div>
+
       <!-- Trading Preferences -->
       <div class="panel">
         <div class="panel-header"><span class="panel-title">📋 交易偏好</span></div>
@@ -70,6 +81,21 @@ const TabSettings = {
           <div class="form-row"><label>价格闪动</label>
             <label class="checkbox-label"><input type="checkbox" v-model="tradePrefs.priceFlash" style="width:auto"> 自选/行情涨跌闪动</label></div>
           <button class="btn btn-sm btn-primary" @click="saveTradePrefs" style="margin-top:4px">保存交易偏好</button>
+        </div>
+      </div>
+
+      <!-- Backtest Data Retention -->
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">📁 回测数据管理</span></div>
+        <div class="panel-body form-grid" style="padding:8px">
+          <div class="form-row"><label>每实例最多保留</label>
+            <input v-model.number="btSettings.max_saves_per_strategy" class="input" type="number" min="5" max="200" style="width:80px"> 条（非验证基准）</div>
+          <div class="form-row"><label>自动清理天数</label>
+            <input v-model.number="btSettings.retention_days" class="input" type="number" min="0" max="3650" style="width:80px">
+            <span class="st-param-hint" style="margin-left:6px">0 = 不按时间清理</span></div>
+          <div class="form-row"><label>存档亏损记录</label>
+            <label class="checkbox-label"><input type="checkbox" v-model="btSettings.auto_archive_loss" style="width:auto"> 自动保存亏损回测到历史</label></div>
+          <button class="btn btn-sm btn-primary" @click="saveBtSettings" style="margin-top:4px">保存回测策略</button>
         </div>
       </div>
 
@@ -106,6 +132,30 @@ const TabSettings = {
       orderConfirm: $loadTradingPrefs().orderConfirm,
       priceFlash: $loadTradingPrefs().priceFlash,
     });
+    const btSettings = reactive({
+      max_saves_per_strategy: 20,
+      retention_days: 0,
+      auto_archive_loss: true,
+    });
+
+    function applyBtSettings(data) {
+      if (!data) return;
+      if (data.max_saves_per_strategy != null) btSettings.max_saves_per_strategy = data.max_saves_per_strategy;
+      if (data.retention_days != null) btSettings.retention_days = data.retention_days;
+      if (data.auto_archive_loss != null) btSettings.auto_archive_loss = data.auto_archive_loss;
+    }
+
+    function saveBtSettings() {
+      store._btSettingsPendingSave = true;
+      $wsSend({
+        action: 'set_backtest_settings',
+        payload: {
+          max_saves_per_strategy: parseInt(btSettings.max_saves_per_strategy, 10) || 20,
+          retention_days: parseInt(btSettings.retention_days, 10) || 0,
+          auto_archive_loss: !!btSettings.auto_archive_loss,
+        },
+      });
+    }
 
     function saveTradePrefs() {
       $saveTradingPrefs({
@@ -131,7 +181,7 @@ const TabSettings = {
         font: cfg.font, fontSize: cfg.fontSize, theme: cfg.theme, visibleExchanges: cfg.visibleExchanges,
       });
       $toast('配置已保存', 'success');
-      document.body.classList.toggle('theme-light', cfg.theme === 'light');
+      $applyTheme(cfg.theme);
       document.documentElement.style.fontSize = cfg.fontSize + 'px';
     }
 
@@ -196,8 +246,20 @@ const TabSettings = {
       $toast('已保存', 'success');
     }
 
+    const ctaAvailable = computed(() => store.ctaClasses.length > 0 || store.strategies.length > 0);
+    const runningCount = computed(() =>
+      (store.strategies || []).filter(s => $normStrategyStatus(s.status) === 'running').length
+    );
+    function refreshCta() {
+      $wsSend({ action: 'get_cta_strategies' });
+      $wsSend({ action: 'get_cta_classes' });
+    }
+
+    watch(() => store.backtestSettings, applyBtSettings);
+
     onMounted(async () => {
       loadConfig();
+      $wsSend({ action: 'get_backtest_settings' });
       // Load accounts first (fast, local DB) — gateway list is slower (HTTP to Gateway service)
       await $loadGatewayAccounts();
       // Load gateways in background, may timeout if Gateway service is down
@@ -205,7 +267,8 @@ const TabSettings = {
       try { const data = await $apiGet('/api/gateways'); if (Array.isArray(data)) { store.gateways = data.map(g => { window._gatewayObjects[g.name] = g; return g.name; }); } } catch(e) {}
     });
 
-    return { gw, cfg, exchanges, accountList, tradePrefs, saveTradePrefs, accountUsername, loadConfig, saveConfig, onGatewayChange,
-      connectGateway, connectAccount, disconnectAccount, disconnectGateway, loadAccount, deleteAccount, saveCurrentAccount, store, fmtPrice: $fmtPrice, fmtVol: $fmtVol };
+    return { gw, cfg, exchanges, accountList, tradePrefs, btSettings, saveTradePrefs, saveBtSettings, accountUsername, loadConfig, saveConfig, onGatewayChange,
+      connectGateway, connectAccount, disconnectAccount, disconnectGateway, loadAccount, deleteAccount, saveCurrentAccount,
+      store, ctaAvailable, runningCount, refreshCta, fmtPrice: $fmtPrice, fmtVol: $fmtVol };
   }
 };

@@ -10,6 +10,8 @@ from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any
 
+from .json_util import json_dumps, json_safe
+
 from . import data_api
 from . import data_update_service
 
@@ -34,6 +36,12 @@ from deepquant.trader.setting import SETTINGS
 SETTINGS["font.family"] = "PingFang SC"
 
 from .gateway_client import GatewayClient, _GW_INSTANCES
+from .gateway_bridge import (
+    inject_gateway_event,
+    register_remote_gateways,
+    set_gateway_client,
+    set_main_loop,
+)
 
 gateway_client: GatewayClient = None
 
@@ -50,7 +58,7 @@ except ImportError:
     HAS_CTA = False
 
 try:
-    from vnpy_ctabacktester import CtaBacktesterApp
+    from deepquant_ctabacktester import CtaBacktesterApp
     HAS_BACKTESTER = True
 except ImportError:
     HAS_BACKTESTER = False
@@ -88,21 +96,6 @@ ws_clients: list[WebSocket] = []
 _active_account_name: str = ""  # currently connected CTP account alias
 _cached_gateways: list[str] = []  # polled from Gateway service in background
 _main_loop: asyncio.AbstractEventLoop | None = None
-
-
-def json_dumps(obj: Any) -> str:
-    """Custom JSON encoder for VeighNa objects."""
-    def convert(o: Any) -> Any:
-        if isinstance(o, datetime): return o.isoformat()
-        if isinstance(o, Enum): return o.value  # Enum — check BEFORE __dict__
-        if hasattr(o, "__dict__"):
-            result = {}
-            for k, v in o.__dict__.items():
-                if k.startswith("_"): continue
-                result[k] = convert(v)
-            return result
-        return o
-    return json.dumps(obj, default=convert, ensure_ascii=False)
 
 
 # ---------------------------------------------------------------------------
@@ -518,20 +511,33 @@ async def handle_ws_message(ws: WebSocket, msg: str) -> None:
         elif action == "edit_cta_strategy":
             if strategy_service:
                 result = strategy_service.edit(payload["strategy_name"], payload.get("setting", {}))
-                await ws.send_text(json.dumps({"type": "cta_strategies", "data": [result]}))
+                await _ws_send_strategy_action(ws, payload["strategy_name"], result, "edit")
 
         elif action == "add_cta_strategy":
             if strategy_service:
                 result = strategy_service.add(
                     payload["class_name"], payload["strategy_name"],
                     payload["vt_symbol"], payload.get("parameters", {}),
+                    int(payload.get("account_id", 0) or 0),
+                    payload.get("gateway", "CTP"),
                 )
-                await ws.send_text(json.dumps({"type": "cta_strategies", "data": [result]}))
+                await _ws_send_strategy_action(ws, payload["strategy_name"], result, "add")
 
         elif action == "get_cta_strategies":
             if strategy_service:
-                data = strategy_service.list_all()
-                await ws.send_text(json.dumps({"type": "cta_strategies", "data": data}))
+                await _ws_send_strategies(ws)
+                summary = strategy_service.summary()
+                await ws.send_text(json.dumps({"type": "strategy_summary", "data": summary}, ensure_ascii=False))
+
+        elif action == "get_strategy_summary":
+            if strategy_service:
+                await ws.send_text(json.dumps({"type": "strategy_summary", "data": strategy_service.summary()}, ensure_ascii=False))
+
+        elif action == "get_strategy_preflight":
+            if strategy_service:
+                name = payload.get("strategy_name", "")
+                result = strategy_service.preflight(name, main_engine)
+                await ws.send_text(json.dumps({"type": "strategy_preflight", "data": result, "strategy_name": name}, ensure_ascii=False))
 
         elif action.startswith("cta_strategy_"):
             if strategy_service:
@@ -539,19 +545,30 @@ async def handle_ws_message(ws: WebSocket, msg: str) -> None:
                 act = action.replace("cta_strategy_", "")
                 if act == "init":
                     result = strategy_service.init(name)
-                    await ws.send_text(json.dumps({"type": "cta_init_result", "data": {"strategy_name": name, **result}}))
-                elif act == "start": strategy_service.start(name)
-                elif act == "stop": strategy_service.stop(name)
-                elif act == "remove": strategy_service.remove(name)
-                data = strategy_service.list_all()
-                await ws.send_text(json.dumps({"type": "cta_strategies", "data": data}))
+                    await _ws_send_strategy_action(ws, name, result, "init")
+                elif act == "start":
+                    result = strategy_service.start(name)
+                    await _ws_send_strategy_action(ws, name, result, "start")
+                elif act == "stop":
+                    result = strategy_service.stop(name)
+                    await _ws_send_strategy_action(ws, name, result, "stop")
+                elif act == "remove":
+                    result = strategy_service.remove(name)
+                    await _ws_send_strategy_action(ws, name, result, "remove")
 
         elif action.startswith("cta_"):
             if strategy_service:
                 act = action.replace("cta_", "")
-                if act == "init_all": strategy_service.init_all()
-                elif act == "start_all": strategy_service.start_all()
-                elif act == "stop_all": strategy_service.stop_all()
+                if act == "init_all":
+                    result = strategy_service.init_all()
+                elif act == "start_all":
+                    result = strategy_service.start_all()
+                elif act == "stop_all":
+                    result = strategy_service.stop_all()
+                else:
+                    result = {"error": f"unknown action: {act}"}
+                await ws.send_text(json.dumps({"type": "cta_batch_result", "data": result}, ensure_ascii=False))
+                await _ws_send_strategies(ws)
 
         elif action == "get_strategy_logs":
             if strategy_service:
@@ -564,6 +581,7 @@ async def handle_ws_message(ws: WebSocket, msg: str) -> None:
         elif action == "get_backtest_classes":
             engine = main_engine.get_engine("CtaBacktester")
             if engine:
+                engine.init_engine()
                 names = engine.get_strategy_class_names()
                 names.sort()
                 await ws.send_text(json.dumps({"type": "bt_classes", "data": names}))
@@ -571,29 +589,214 @@ async def handle_ws_message(ws: WebSocket, msg: str) -> None:
         elif action == "start_backtesting":
             engine = main_engine.get_engine("CtaBacktester")
             if engine:
-                # This runs synchronously and may take a while
                 import threading
                 def run_bt():
                     try:
-                        engine.start_backtesting(
+                        engine.init_engine()
+                        link_name = payload.get("strategy_name", "")
+                        session_id = payload.get("session_id", "")
+                        _broadcast_json({"type": "backtestProgress", "data": {
+                            "status": "running", "phase": "prepare",
+                            "message": "准备回测参数…",
+                            "session_id": session_id, "strategy_name": link_name,
+                        }})
+                        setting = payload.get("parameters") or payload.get("setting") or {}
+                        if not setting and link_name and strategy_service:
+                            info = strategy_service.get_one(link_name)
+                            setting = info.get("parameters") or {}
+                        if not setting and strategy_service:
+                            setting = strategy_service.get_params(payload.get("class_name", ""))
+                            setting = {k: v for k, v in setting.items()
+                                       if k not in ("strategy_name", "vt_symbol")}
+
+                        start_dt = datetime.strptime(str(payload["start"])[:10], "%Y-%m-%d")
+                        end_dt = datetime.strptime(str(payload["end"])[:10], "%Y-%m-%d")
+                        rate = float(payload.get("rate", 0.0001))
+                        slippage = float(payload.get("slippage", 0.2))
+                        size = int(payload.get("size", 10))
+                        pricetick = float(payload.get("pricetick", 1))
+                        capital = float(payload.get("capital", 1000000))
+
+                        ok = engine.start_backtesting(
                             payload["class_name"],
                             payload["vt_symbol"],
                             payload["interval"],
-                            payload["start"],
-                            payload["end"],
-                            float(payload.get("capital", 1000000)),
-                            float(payload.get("rate", 0.0001)),
-                            float(payload.get("slippage", 0.2)),
-                            int(payload.get("size", 10)),
-                            float(payload.get("pricetick", 1)),
+                            start_dt,
+                            end_dt,
+                            rate,
+                            slippage,
+                            size,
+                            pricetick,
+                            capital,
+                            setting,
                         )
-                        result = engine.get_result_statistics()
-                        # Send result via event bridge
-                        event_engine.put(Event("backtestResult", result))
+                        if not ok:
+                            event_engine.put(Event(
+                                "backtestError",
+                                "回测启动失败：任务占用中或策略类不存在",
+                            ))
+                            return
+
+                        _broadcast_json({"type": "backtestProgress", "data": {
+                            "status": "running", "phase": "load",
+                            "message": "加载历史数据并执行回测…",
+                            "session_id": session_id, "strategy_name": link_name,
+                        }})
+
+                        if engine.thread:
+                            engine.thread.join()
+
+                        if not engine.get_result_statistics():
+                            event_engine.put(Event("backtestError", "回测无结果，请检查历史数据是否充足"))
+                            return
+
+                        result = _build_backtest_payload(engine)
+                        result["vt_symbol"] = payload.get("vt_symbol")
+                        result["session_id"] = session_id
+                        result["strategy_name"] = link_name
+                        result["class_name"] = payload.get("class_name")
+                        result["interval"] = payload.get("interval")
+                        result["start"] = payload.get("start")
+                        result["end"] = payload.get("end")
+                        result["parameters"] = setting
+                        result["rate"] = rate
+                        result["slippage"] = slippage
+                        result["size"] = size
+                        result["pricetick"] = pricetick
+                        result["capital"] = capital
+                        _broadcast_json({"type": "backtestProgress", "data": {
+                            "status": "done", "phase": "report",
+                            "message": "回测完成，正在展示结果…",
+                            "session_id": session_id, "strategy_name": link_name,
+                        }})
+
+                        if link_name and strategy_service:
+                            snap = {
+                                **result,
+                                "class_name": payload.get("class_name"),
+                                "interval": payload.get("interval"),
+                                "start": payload.get("start"),
+                                "end": payload.get("end"),
+                                "parameters": setting,
+                                "rate": rate,
+                                "slippage": slippage,
+                                "size": size,
+                                "pricetick": pricetick,
+                                "capital": capital,
+                            }
+                            saved = strategy_service.persist_backtest_run(link_name, snap)
+                            result["save_id"] = saved.get("id")
+                            result["backtest_status"] = saved.get("status")
+                            result["is_active_gate"] = saved.get("is_active", False)
+                        event_engine.put(Event("backtestResult", json_safe(result)))
                     except Exception as e:
                         event_engine.put(Event("backtestError", str(e)))
                 t = threading.Thread(target=run_bt, daemon=True)
                 t.start()
+
+        elif action == "list_backtest_saves":
+            if strategy_service:
+                name = payload.get("strategy_name", "")
+                saves = strategy_service.list_backtest_saves(name)
+                await ws.send_text(json.dumps({
+                    "type": "backtest_saves",
+                    "data": saves,
+                    "strategy_name": name,
+                }, ensure_ascii=False))
+
+        elif action == "save_backtest_save":
+            if strategy_service:
+                name = payload.get("strategy_name", "")
+                result = payload.get("result") or {}
+                label = payload.get("label", "")
+                set_active = bool(payload.get("set_active", False))
+                item = strategy_service.save_backtest_save(name, result, label, set_active)
+                await ws.send_text(json.dumps({
+                    "type": "backtest_save_saved",
+                    "data": item,
+                    "strategy_name": name,
+                }, ensure_ascii=False, default=str))
+                if not item.get("error") and name:
+                    pf = strategy_service.preflight(name, main_engine)
+                    await ws.send_text(json.dumps({
+                        "type": "strategy_preflight",
+                        "data": pf,
+                        "strategy_name": name,
+                    }, ensure_ascii=False))
+
+        elif action == "set_active_backtest":
+            if strategy_service:
+                name = payload.get("strategy_name", "")
+                save_id = int(payload.get("save_id") or 0)
+                item = strategy_service.set_active_backtest(name, save_id)
+                await ws.send_text(json.dumps({
+                    "type": "backtest_active_set",
+                    "data": item,
+                    "strategy_name": name,
+                }, ensure_ascii=False, default=str))
+                if not item.get("error") and name:
+                    pf = strategy_service.preflight(name, main_engine)
+                    await ws.send_text(json.dumps({
+                        "type": "strategy_preflight",
+                        "data": pf,
+                        "strategy_name": name,
+                    }, ensure_ascii=False))
+
+        elif action == "get_backtest_settings":
+            if strategy_service:
+                await ws.send_text(json.dumps({
+                    "type": "backtest_settings",
+                    "data": strategy_service.get_backtest_settings(),
+                }, ensure_ascii=False))
+
+        elif action == "set_backtest_settings":
+            if strategy_service:
+                item = strategy_service.save_backtest_settings(payload or {})
+                await ws.send_text(json.dumps({
+                    "type": "backtest_settings",
+                    "data": item,
+                }, ensure_ascii=False))
+
+        elif action == "export_backtest_save":
+            if strategy_service:
+                name = payload.get("strategy_name", "")
+                save_id = int(payload.get("save_id") or 0)
+                item = strategy_service.export_backtest(name, save_id)
+                await ws.send_text(json.dumps({
+                    "type": "backtest_export",
+                    "data": item or {"error": "记录不存在"},
+                    "strategy_name": name,
+                }, ensure_ascii=False, default=str))
+
+        elif action == "load_backtest_save":
+            if strategy_service:
+                name = payload.get("strategy_name", "")
+                save_id = int(payload.get("save_id") or 0)
+                include_detail = payload.get("include_detail", True) is not False
+                item = strategy_service.load_backtest_save(name, save_id, detail=include_detail)
+                await ws.send_text(json.dumps({
+                    "type": "backtest_save_loaded",
+                    "data": item,
+                    "strategy_name": name,
+                }, ensure_ascii=False, default=str))
+
+        elif action == "delete_backtest_save":
+            if strategy_service:
+                name = payload.get("strategy_name", "")
+                save_id = int(payload.get("save_id") or 0)
+                item = strategy_service.delete_backtest_save(name, save_id)
+                await ws.send_text(json.dumps({
+                    "type": "backtest_save_deleted",
+                    "data": item,
+                    "strategy_name": name,
+                }, ensure_ascii=False))
+                if not item.get("error") and name:
+                    pf = strategy_service.preflight(name, main_engine)
+                    await ws.send_text(json.dumps({
+                        "type": "strategy_preflight",
+                        "data": pf,
+                        "strategy_name": name,
+                    }, ensure_ascii=False))
 
         # ---- App: DataManager ----
         elif action in (
@@ -780,6 +983,97 @@ from .strategy_service import StrategyService
 
 # Strategy service — lazy loaded
 strategy_service: StrategyService | None = None
+
+
+def _gateway_is_connected(gateway_type: str) -> bool:
+    gw = (gateway_type or "CTP").upper()
+    return gw in _cached_gateways or gateway_type in _cached_gateways
+
+
+def _resolve_strategy_account(account_id: int) -> dict:
+    if not account_id:
+        return {}
+    acct = get_account(account_id)
+    return acct or {}
+
+
+def _build_backtest_payload(engine) -> dict:
+    """Collect statistics, trades, and dated balance series from backtester engine."""
+    result = engine.get_result_statistics()
+    payload: dict[str, Any] = json_safe(result) if result else {}
+    if hasattr(engine, "get_all_trades"):
+        trades = engine.get_all_trades()
+        payload["trades"] = json_safe(trades) if trades else []
+    if hasattr(engine, "get_result_df"):
+        try:
+            df = engine.get_result_df()
+            if df is not None and hasattr(df, "empty") and not df.empty:
+                payload["daily_dates"] = [str(i) for i in df.index.tolist()]
+                for col in ("balance", "net_pnl", "total_pnl"):
+                    if col in df.columns:
+                        payload["balance"] = json_safe(df[col].tolist())
+                        break
+        except Exception:
+            pass
+    if payload.get("total_trade_count") is not None and "total_trades" not in payload:
+        payload["total_trades"] = payload["total_trade_count"]
+    return payload
+
+
+async def _ws_send_strategies(ws: WebSocket) -> None:
+    if not strategy_service:
+        return
+    data = strategy_service.list_all()
+    await ws.send_text(json.dumps({"type": "cta_strategies", "data": data}, ensure_ascii=False))
+
+
+async def _ws_send_strategy_action(ws: WebSocket, name: str, result: dict, action: str = "") -> None:
+    payload = {"strategy_name": name, **result}
+    if action == "init":
+        await ws.send_text(json.dumps({"type": "cta_init_result", "data": payload}, ensure_ascii=False))
+    else:
+        await ws.send_text(json.dumps({"type": "cta_action_result", "data": payload}, ensure_ascii=False))
+    if result.get("error"):
+        return
+    await _ws_send_strategies(ws)
+
+
+@app.get("/api/strategies")
+async def api_list_strategies():
+    if not strategy_service:
+        return {"strategies": [], "available": False}
+    return {"strategies": strategy_service.list_all(), "available": True}
+
+
+@app.get("/api/strategies/summary")
+async def api_strategy_summary():
+    if not strategy_service:
+        return {"total": 0, "running": 0, "inited": 0, "stopped": 0}
+    return strategy_service.summary()
+
+
+@app.get("/api/strategies/{strategy_name}/preflight")
+async def api_strategy_preflight(strategy_name: str):
+    if not strategy_service:
+        return {"error": "CTA engine not available"}
+    return strategy_service.preflight(strategy_name, main_engine)
+
+
+@app.get("/api/strategies/{strategy_name}")
+async def api_get_strategy(strategy_name: str):
+    if not strategy_service:
+        return {"error": "CTA engine not available"}
+    info = strategy_service.get_one(strategy_name)
+    if not info:
+        return {"error": "strategy not found"}
+    return info
+
+
+@app.get("/api/strategies/{strategy_name}/logs")
+async def api_strategy_logs(strategy_name: str, limit: int = 100):
+    if not strategy_service:
+        return {"logs": []}
+    return {"logs": strategy_service.get_logs(strategy_name, limit)}
 
 
 @app.get("/api/gateway-accounts")
@@ -1085,39 +1379,37 @@ async def api_subscribe(request: Request):
 # Public contract data API (backed by contract_cache)
 # ---------------------------------------------------------------------------
 @app.get("/api/contracts/public")
-async def api_public_contracts(exchange: str = "", product: str = ""):
-    """Query contracts from public cache (akshare + generated options)."""
+async def api_public_contracts(
+    exchange: str = "",
+    product: str = "",
+    offset: int = 0,
+    limit: int = 100,
+):
+    """Query contracts from public cache in batches (max 100 per request)."""
     from deepquant.trader.contract_cache import (
-        get_cache, refresh_cache, get_cache_age, query_contracts, filter_by_products,
+        get_cache, refresh_cache, get_cache_age, query_public_contracts,
     )
-    from deepquant.trader.constant import Exchange
-    import re
 
     df = get_cache()
     age = get_cache_age()
-    # Trigger refresh if no data or stale
     if df is None or age is None or age.date() < datetime.now().date():
         import threading
         t = threading.Thread(target=refresh_cache, daemon=True)
         t.start()
         df = get_cache()
 
-    result = []
-    if exchange:
-        try:
-            ex = Exchange(exchange)
-            contracts = query_contracts(ex)
-            if product:
-                contracts = filter_by_products(contracts, product)
-            for c in contracts:
-                opt = ""
-                m = re.match(r'^[A-Z]+[0-9]+-([CP])-', c['symbol'])
-                if m:
-                    opt = "看涨" if m.group(1) == 'C' else "看跌"
-                result.append({**c, "option_type": opt})
-        except ValueError:
-            pass
-    return {"contracts": result, "cache_ts": age.isoformat() if age else None, "count": len(result)}
+    batch, total = query_public_contracts(exchange, product, offset, limit)
+    off = max(0, int(offset))
+    lim = max(1, min(int(limit), 100))
+    return {
+        "contracts": batch,
+        "total": total,
+        "offset": off,
+        "limit": lim,
+        "has_more": off + len(batch) < total,
+        "cache_ts": age.isoformat() if age else None,
+        "count": len(batch),
+    }
 
 
 @app.get("/api/contracts/products")
@@ -1166,6 +1458,8 @@ def start_engine() -> None:
     event_engine = EventEngine()
     main_engine = MainEngine(event_engine)
 
+    register_remote_gateways(main_engine)
+
     # Gateways are created on-demand when connecting accounts
     if HAS_PAPER:
         main_engine.add_app(PaperAccountApp)
@@ -1173,10 +1467,15 @@ def start_engine() -> None:
     if HAS_CTA:
         global strategy_service
         strategy_service = StrategyService(main_engine, event_engine)
+        strategy_service.set_connection_checker(_gateway_is_connected)
+        strategy_service.set_account_resolver(_resolve_strategy_account)
         strategy_service._ensure_engine()  # triggers restore of persisted strategies
         logger.info("  CTA Strategy loaded")
     if HAS_BACKTESTER:
         main_engine.add_app(CtaBacktesterApp)
+        bt_engine = main_engine.get_engine("CtaBacktester")
+        if bt_engine:
+            bt_engine.init_engine()
         logger.info("  CTA Backtester loaded")
     if HAS_DATAMANAGER:
         main_engine.add_app(DataManagerApp)
@@ -1195,7 +1494,7 @@ def start_engine() -> None:
             pass
     if HAS_BACKTESTER:
         try:
-            from vnpy_ctabacktester.engine import EVENT_BACKTESTER_LOG
+            from deepquant_ctabacktester.engine import EVENT_BACKTESTER_LOG
             event_engine.register(EVENT_BACKTESTER_LOG, bridge_event)
         except ImportError:
             pass
@@ -1210,10 +1509,11 @@ def start_engine() -> None:
 
 
 def _on_gateway_event(data: dict):
-    """Forward Gateway WS events directly to Web clients (bypass EventEngine)."""
+    """Forward Gateway WS events to Web clients and inject into EventEngine for CTA."""
     event_type = data.get("type", "")
     if event_type == EVENT_TIMER:
         return
+    inject_gateway_event(data, event_engine)
     # Map Gateway event types to Web-compatible types (handle eTick.XXX variants)
     web_type = event_type
     for prefix, mapped in [("eTick.", "tick"), ("eOrder.", "order"), ("eTrade.", "trade"),
@@ -1238,6 +1538,8 @@ async def on_startup():
     _main_loop = asyncio.get_running_loop()
     global gateway_client
     gateway_client = GatewayClient(on_event=_on_gateway_event)
+    set_gateway_client(gateway_client)
+    set_main_loop(_main_loop)
     await gateway_client.start()
     # Start broadcast worker in uvicorn event loop
     asyncio.create_task(_broadcast_worker())

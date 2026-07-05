@@ -97,8 +97,9 @@ const DataDetailPanel = {
     }
 
     function previewDateRange(sel, interval) {
-      const end = (sel.effective_end || sel.end || '').slice(0, 10)
-        || new Date().toISOString().slice(0, 10);
+      const today = new Date().toISOString().slice(0, 10);
+      let end = (sel.effective_end || sel.end || '').slice(0, 10) || today;
+      if (end < today) end = today;
       let start = (sel.start || '').slice(0, 10);
       const lookbackDays = { '1m': 60, '5m': 60, '15m': 90, '1h': 180 };
       const days = lookbackDays[interval];
@@ -148,7 +149,7 @@ const DataDetailPanel = {
     function ensureChart() {
       if (!chartEl.value) return null;
       if (!chartInstance) {
-        chartInstance = echarts.init(chartEl.value);
+        chartInstance = $echartsInit(chartEl.value);
         chartInstance.setOption($chartBaseOption('candle'));
       }
       return chartInstance;
@@ -226,10 +227,26 @@ const DataDetailPanel = {
     }
 
     watch(
-      () => (props.selection ? $dataNodeKey(props.selection) : ''),
+      () => {
+        const s = props.selection;
+        if (!s) return '';
+        return [
+          $dataNodeKey(s),
+          s.count,
+          s.end,
+          s.effective_end,
+          s.catalogOnly ? 1 : 0,
+        ].join('|');
+      },
       (key) => {
-        if (key !== selectionKey) {
-          selectionKey = key;
+        if (!key) {
+          selectionKey = '';
+          loadPreview(null);
+          return;
+        }
+        const nodeKey = $dataNodeKey(props.selection);
+        if (nodeKey !== selectionKey) {
+          selectionKey = nodeKey;
           previewInterval.value = normalizePreviewInterval(props.selection?.interval);
         }
         loadPreview(props.selection);
@@ -240,7 +257,23 @@ const DataDetailPanel = {
       if (props.selection) loadPreview(props.selection);
     });
 
+    function reloadChartForTheme() {
+      if (!chartInstance) return;
+      const saved = bars.value.slice();
+      const vt = props.selection?.vt_symbol;
+      chartInstance.dispose();
+      chartInstance = null;
+      if (viewTab.value !== 'chart' || !chartEl.value) return;
+      ensureChart();
+      if (saved.length && vt) $applyCandleChart(chartInstance, saved, vt);
+    }
+
+    onMounted(() => {
+      window.addEventListener('dq-theme-change', reloadChartForTheme);
+    });
+
     onUnmounted(() => {
+      window.removeEventListener('dq-theme-change', reloadChartForTheme);
       if (chartInstance) {
         chartInstance.dispose();
         chartInstance = null;

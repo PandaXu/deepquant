@@ -35,7 +35,7 @@ Gateway WS → Server WS → Web WS → store.tick → Vue reactive → UI
 | 账户 CRUD | REST | `GET/POST /api/gateway-accounts`、`DELETE /api/gateway-accounts/{id}` |
 | K 线 | REST | `GET /api/bars` → `{ bars: [{ datetime, open, high, low, close, volume }] }` |
 | CTA 策略 | WS action | `get_cta_*`、`add_cta_strategy`、`edit_cta_strategy`、`cta_strategy_*` |
-| 回测 | WS action | `get_backtest_classes`、`start_backtesting` |
+| 回测 | WS action | `get_backtest_classes`、`start_backtesting`（需 Server 加载 `deepquant_ctabacktester`） |
 | 子应用 | — | 已合并入主 Tab（策略/数据管理），不再单独 apps 页面 |
 
 - **Tick 表格**：始终可见，无数据时显示占位提示

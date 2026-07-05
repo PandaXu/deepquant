@@ -59,6 +59,7 @@ deepquant/
 │   └── static/js/              # store.js、tab-*.js、app.js
 ├── deepquant_datarecorder/     # 行情录制
 ├── deepquant_datamanager/      # 历史数据管理
+├── deepquant_ctabacktester/    # CTA 回测
 └── start.sh                    # 一键启动全部服务
 ```
 
@@ -141,9 +142,9 @@ DataRecorder **零依赖 MainEngine**，仅需 Gateway WS 地址。
 # 一键启动（venv + 双 Gateway + Server + Web）
 ./start.sh
 
-# 或分别启动（需设置 PYTHONPATH）
-PYTHONPATH="deepquant:deepquant_gateway:deepquant_ctp" python deepquant_gateway/run.py --instance ctp-simnow
-PYTHONPATH="deepquant:deepquant_server:deepquant_ctp" python deepquant_server/run.py
+# 或分别启动（需设置 PYTHONPATH，含 deepquant_ctabacktester 以启用回测）
+PYTHONPATH="deepquant:deepquant_gateway:deepquant_ctp:deepquant_server:deepquant_datarecorder:deepquant_datamanager:deepquant_ctabacktester" python deepquant_gateway/run.py --instance ctp-simnow
+PYTHONPATH="deepquant:deepquant_server:deepquant_ctp:deepquant_datamanager:deepquant_ctabacktester" python deepquant_server/run.py
 python deepquant_web/run.py
 ```
 
@@ -161,7 +162,7 @@ Server 启动时按需加载（ImportError 则跳过）：
 
 - `vnpy_paperaccount` — 模拟交易
 - `vnpy_ctastrategy` — CTA 策略（经 `StrategyService` 封装）
-- `vnpy_ctabacktester` — 回测
+- `deepquant_ctabacktester` — 回测
 - `deepquant_datamanager` — 数据管理
 
 ## 前端 Tab 结构

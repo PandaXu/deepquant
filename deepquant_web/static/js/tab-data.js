@@ -147,10 +147,9 @@ const TabData = {
       const sel = selection.value;
       if (!sel) return;
       store.dataDeepLink = null;
+      if (typeof window.__setActiveTab === 'function') window.__setActiveTab('strategy');
       if (typeof window.__openBacktestWithSymbol === 'function') {
         window.__openBacktestWithSymbol(sel.vt_symbol, sel.interval === 'tick' ? '1m' : sel.interval);
-      } else if (typeof window.__setActiveTab === 'function') {
-        window.__setActiveTab('strategy');
       }
     }
 

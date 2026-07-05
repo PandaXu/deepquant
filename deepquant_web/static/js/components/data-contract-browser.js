@@ -141,25 +141,17 @@ const DataContractBrowser = {
           const data = await $apiGet(`/api/contracts?filter=${encodeURIComponent(filter.value || '')}`);
           rows.value = data || [];
         } else {
-          const all = [];
-          for (const ex of CONTRACT_EXCHANGES) {
-            try {
-              const d = await $apiGet(`/api/contracts/public?exchange=${ex.value}`);
-              for (const c of (d.contracts || [])) {
-                all.push({
-                  vt_symbol: c.vt_symbol || `${c.symbol}.${ex.value}`,
-                  symbol: c.symbol,
-                  exchange: ex.value,
-                  name: c.name || '',
-                  product: c.product || '',
-                  size: c.size || '',
-                  gateway_name: '',
-                });
-              }
-            } catch (e) { /* skip */ }
-          }
-          rows.value = all;
-          all.forEach(c => {
+          const list = await $fetchPublicContracts();
+          rows.value = list.map(c => ({
+            vt_symbol: c.vt_symbol || `${c.symbol}.${c.exchange_code || ''}`,
+            symbol: c.symbol,
+            exchange: c.exchange_code || '',
+            name: c.name || '',
+            product: c.product || '',
+            size: c.size || '',
+            gateway_name: '',
+          }));
+          rows.value.forEach(c => {
             if (c.name) $setContractNameIfBetter(c.vt_symbol, c.name);
             else $ensureContractName(c.vt_symbol);
           });

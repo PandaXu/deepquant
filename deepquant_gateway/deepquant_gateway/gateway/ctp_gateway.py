@@ -504,15 +504,15 @@ class CtpMdApi(MdApi):
     def subscribe(self, req: SubscribeRequest) -> None:
         """订阅行情"""
         symbol = req.symbol
-        self.gateway.write_log(
-            f"[MdApi] subscribe: symbol={symbol} exchange={req.exchange} login_status={self.login_status}"
-        )
-        if symbol in self.subscribed:
-            self.gateway.write_log(f"[MdApi] ℹ️ 已在订阅列表，跳过: {symbol}")
-            return
+        is_new = symbol not in self.subscribed
         self.subscribed.add(symbol)
-        if self.login_status:
-            self.subscribeMarketData(symbol)
+        self.gateway.write_log(
+            f"[MdApi] subscribe: symbol={symbol} exchange={req.exchange} "
+            f"login_status={self.login_status} {'新订阅' if is_new else '重订阅'}"
+        )
+        if not self.login_status:
+            return
+        self.subscribeMarketData(symbol)
 
     def close(self) -> None:
         """关闭连接"""

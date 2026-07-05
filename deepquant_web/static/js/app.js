@@ -173,6 +173,7 @@ const App = {
 };
 
 const app = createApp(App);
+app.component('strategy-doc-panel', StrategyDocPanel);
 app.component('watchlist-panel', WatchlistPanel);
 app.component('contract-picker', ContractPicker);
 app.component('add-watchlist-modal', AddWatchlistModal);
@@ -188,6 +189,8 @@ app.component('data-contract-browser', DataContractBrowser);
 app.component('data-task-bar', DataTaskBar);
 app.component('data-import-modal', DataImportModal);
 app.component('data-gap-panel', DataGapPanel);
+app.component('term-help', TermHelp);
+app.component('term-label', TermLabel);
 app.component('tab-trading', TabTrading);
 app.component('tab-data', TabData);
 app.component('tab-strategy', TabStrategy);

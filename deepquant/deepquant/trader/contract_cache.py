@@ -335,6 +335,71 @@ def get_related_products(product: str) -> list[str]:
     return [p] + related
 
 
+_PUBLIC_BATCH_LIMIT = 100
+
+
+def query_public_contracts(
+    exchange: str = "",
+    product: str = "",
+    offset: int = 0,
+    limit: int = _PUBLIC_BATCH_LIMIT,
+) -> tuple[list[dict], int]:
+    """Query public contracts with optional filters and pagination."""
+    df = get_cache()
+    if df is None or df.empty:
+        return [], 0
+
+    limit = max(1, min(int(limit), _PUBLIC_BATCH_LIMIT))
+    offset = max(0, int(offset))
+
+    filtered = df
+    if exchange:
+        try:
+            ex = Exchange(exchange)
+            reverse_map = {v: k for k, v in _AKSHARE_EXCHANGE_MAP.items()}
+            exchange_name = reverse_map.get(ex, "")
+            if exchange_name:
+                filtered = filtered[filtered["交易所名称"] == exchange_name]
+            else:
+                return [], 0
+        except ValueError:
+            return [], 0
+
+    related: set[str] | None = None
+    if product:
+        related = {p.upper() for p in get_related_products(product)}
+
+    all_items: list[dict] = []
+    for _, row in filtered.iterrows():
+        code = str(row["合约代码"]).upper()
+        if related and symbol_product_prefix(code) not in related:
+            continue
+        name = str(row["合约名称"])
+        source = str(row.get("数据来源", "akshare")).lower()
+        ex_code = exchange
+        if not ex_code:
+            ak_name = str(row["交易所名称"])
+            ex_enum = _AKSHARE_EXCHANGE_MAP.get(ak_name)
+            ex_code = ex_enum.value if ex_enum else ""
+        opt = ""
+        m = re.match(r"^[A-Z]+[0-9]+-([CP])-", code)
+        if m:
+            opt = "看涨" if m.group(1) == "C" else "看跌"
+        all_items.append({
+            "symbol": code,
+            "name": name,
+            "exchange_code": ex_code,
+            "vt_symbol": f"{code}.{ex_code}" if ex_code else code,
+            "listed": source != "synthetic",
+            "source": source,
+            "product": symbol_product_prefix(code),
+            "option_type": opt,
+        })
+
+    total = len(all_items)
+    return all_items[offset: offset + limit], total
+
+
 def query_contracts(exchange: Exchange, keyword: str = "") -> list[dict]:
     """Query contracts for a specific exchange from cache."""
     df = get_cache()

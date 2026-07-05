@@ -1,5 +1,41 @@
 # Mac安装指南
 
+> **DeepQuant 用户**：本项目使用 fork 后的 `deepquant` 核心库与 `deepquant_ctabacktester` 回测模块（不再使用 PyPI 的 `vnpy_ctabacktester`）。推荐在仓库根目录用 editable 安装，见下文「DeepQuant 安装流程」。
+
+## DeepQuant 安装流程（推荐）
+
+在仓库根目录执行：
+
+```bash
+# 1. 创建并激活 venv（Python 3.10+）
+python3 -m venv deepquant/.venv
+source deepquant/.venv/bin/activate
+
+# 2. 安装核心与 DeepQuant 子包（editable）
+pip install -e deepquant
+pip install -e deepquant_ctabacktester
+pip install -e deepquant_datamanager
+
+# 3. 安装 CTA 策略模板与常用依赖（PyPI）
+pip install vnpy_ctastrategy vnpy_sqlite vnpy_rqdata \
+  --index=https://pypi.doubanio.com/simple
+
+# 4. 一键启动（已含 PYTHONPATH）
+./start.sh
+```
+
+`start.sh` 的 `PYTHONPATH` 已包含 `deepquant_ctabacktester`。Server 加载回测引擎示例：
+
+```python
+from deepquant_ctabacktester import CtaBacktesterApp
+
+main_engine.add_app(CtaBacktesterApp)
+```
+
+Web 端策略 Tab 通过 WS `start_backtesting` 调用同一引擎，无需 Desktop 回测 UI。
+
+---
+
 ## Mac系统的CTP接口支持
 
 得益于Python语言本身的跨平台优势（Windows、Linux、Mac三大系统），VeighNa量化交易平台的核心框架部分很早就可以在Mac系统上运行。
@@ -39,16 +75,19 @@ python3 -m pip install ta-lib --index=https://pypi.doubanio.com/simple
 python3 -m pip install rqdatac --index=https://pypi2.ricequant.com/simple
 ```
 
-5. 安装VeighNa核心框架，以及需要使用的功能插件模块：
+5. 安装 DeepQuant 核心与子包（在**仓库根目录**执行 editable 安装），以及 PyPI 插件：
 
 
 ```python3
-python3 -m pip install vnpy --index=https://pypi.doubanio.com/simple
-python3 -m pip install vnpy_ctastrategy vnpy_ctabacktester deepquant_datamanager vnpy_sqlite vnpy_rqdata --index=https://pypi.doubanio.com/simple
+pip install -e deepquant
+pip install -e deepquant_ctabacktester
+pip install -e deepquant_datamanager
+python3 -m pip install vnpy_ctastrategy vnpy_sqlite vnpy_rqdata --index=https://pypi.doubanio.com/simple
 ```
 这里的例子中包括（具体可以根据自己的需求调整）：
 
- - CTA策略实盘和回测模块：vnpy_ctastrategy、vnpy_ctabacktester
+ - CTA策略实盘模块：vnpy_ctastrategy
+ - CTA回测模块：**deepquant_ctabacktester**（DeepQuant fork，替代 vnpy_ctabacktester）
  - 历史数据管理模块：deepquant_datamanager
  - SQLite数据库驱动：vnpy_sqlite
  - RQData数据服务适配器：vnpy_rqdata
@@ -89,12 +128,12 @@ pip3 install -e .
 完成后即可使用run.py脚本启动VeighNa Trader，代码如下：
 
 ```python3
-from vnpy.event import EventEngine
-from vnpy.trader.engine import MainEngine
-from vnpy.trader.ui import MainWindow, create_qapp
-from vnpy_ctp import CtpGateway
+from deepquant.event import EventEngine
+from deepquant.trader.engine import MainEngine
+from deepquant.trader.ui import MainWindow, create_qapp
+from deepquant_ctp import CtpGateway
 from vnpy_ctastrategy import CtaStrategyApp
-from vnpy_ctabacktester import CtaBacktesterApp
+from deepquant_ctabacktester import CtaBacktesterApp
 from deepquant_datamanager import DataManagerApp
 
 def main():

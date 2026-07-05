@@ -116,8 +116,7 @@ async function $fetchContractName(vt) {
   if (!exchange || !product) return symbol;
 
   try {
-    const raw = await $apiGet(`/api/contracts/public?exchange=${exchange}&product=${product}`);
-    const list = raw.contracts || [];
+    const list = await $fetchPublicContracts({ exchange, product });
     const hit = list.find(x => $normalizeVt(x.vt_symbol || `${x.symbol}.${exchange}`) === key)
       || list.find(x => (x.symbol || '').toUpperCase() === symbol.toUpperCase());
     if (hit?.name && !$isSymbolLikeName(hit.name, vt)) {

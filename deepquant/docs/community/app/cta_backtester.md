@@ -1,5 +1,10 @@
 # CtaBacktester - CTA回测研究模块
 
+> **DeepQuant**：回测 App 包名为 **`deepquant_ctabacktester`**（自 `vnpy_ctabacktester` fork，依赖 `deepquant` 核心库）。  
+> - **Web 端**：策略中心 →「回测研究」抽屉，WS action `start_backtesting`  
+> - **Desktop 端**：仍使用 `CtaBacktesterApp`，导入改为 `from deepquant_ctabacktester import CtaBacktesterApp`  
+> - **安装**：`pip install -e deepquant_ctabacktester`（见 `deepquant/docs/community/install/mac_install.md`）
+
 ## 功能简介
 
 CtaBacktester是用于**CTA回测研究**的功能模块，用户可以通过其UI界面操作来便捷完成数据下载、历史回测、结果分析和参数优化等任务。
@@ -16,7 +21,7 @@ CtaBacktester是用于**CTA回测研究**的功能模块，用户可以通过其
 
 ```python3
 # 写在顶部
-from vnpy_ctabacktester import CtaBacktesterApp
+from deepquant_ctabacktester import CtaBacktesterApp
 
 # 写在创建main_engine对象后
 main_engine.add_app(CtaBacktesterApp)

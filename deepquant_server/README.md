@@ -7,9 +7,21 @@ API 网关，通过 GatewayClient (HTTP+WS) 连接 Gateway 微服务。提供 RE
 ## 启动
 
 ```bash
-PYTHONPATH="deepquant:deepquant_server:deepquant_ctp" \
+PYTHONPATH="deepquant:deepquant_server:deepquant_ctp:deepquant_datamanager:deepquant_ctabacktester" \
   python deepquant_server/run.py
 ```
+
+或使用 `./start.sh`（已配置完整 PYTHONPATH）。
+
+## 可选依赖
+
+```bash
+pip install -e deepquant_ctabacktester   # CTA 回测（Web 策略 Tab）
+pip install -e deepquant_datamanager     # 数据管理
+pip install vnpy_ctastrategy             # CTA 实盘
+```
+
+`pyproject.toml` 中 `backtester = ["deepquant_ctabacktester"]`。
 
 ## API
 

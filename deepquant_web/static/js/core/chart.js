@@ -3,6 +3,55 @@
 const CHART_INTERVAL_API = { tick: 'tick', '1m': '1m', '5m': '1m', '15m': '1m', '1h': '1h', d: 'd' };
 const AGGREGATE_N = { '5m': 5, '15m': 15 };
 
+function $isLightTheme() {
+  return document.body.classList.contains('theme-light');
+}
+
+function $echartsThemeName() {
+  return $isLightTheme() ? undefined : 'dark';
+}
+
+function $echartsInit(dom) {
+  return echarts.init(dom, $echartsThemeName());
+}
+
+function $chartColors() {
+  if ($isLightTheme()) {
+    return {
+      bg: '#ffffff',
+      grid: '#e4e4e7',
+      text: '#71717a',
+      markRef: '#a1a1aa',
+      line: '#2563eb',
+      area: 'rgba(37,99,235,0.10)',
+      avg: '#d97706',
+      volBar: '#3b82f6',
+      up: '#ef4444',
+      down: '#22c55e',
+      ma5: '#d97706',
+      ma10: '#7c3aed',
+      ma20: '#0284c7',
+      markLive: '#2563eb',
+    };
+  }
+  return {
+    bg: '#0f1117',
+    grid: '#2a2d38',
+    text: '#9ca3af',
+    markRef: '#6b7080',
+    line: '#60a5fa',
+    area: 'rgba(96,165,250,0.12)',
+    avg: '#f59e0b',
+    volBar: '#3b82f6',
+    up: '#ef4444',
+    down: '#22c55e',
+    ma5: '#fbbf24',
+    ma10: '#a78bfa',
+    ma20: '#38bdf8',
+    markLive: '#60a5fa',
+  };
+}
+
 /** 各交易所分时时段时间段 [startH, startM, endH, endM] */
 const TIMESHARE_SESSIONS = {
   CFFEX: [[9, 30, 11, 30], [13, 0, 15, 0]],
@@ -16,12 +65,14 @@ const TIMESHARE_SESSIONS = {
 
 function $chartBaseOption(mode) {
   const isLine = mode === 'timeshare';
+  const c = $chartColors();
+  const axisLabel = { fontSize: 10, color: c.text };
   return {
-    backgroundColor: '#0f1117',
+    backgroundColor: c.bg,
     animation: false,
     title: isLine ? {
       text: '', left: 8, top: 2,
-      textStyle: { fontSize: 11, color: '#9ca3af', fontWeight: 'normal' },
+      textStyle: { fontSize: 11, color: c.text, fontWeight: 'normal' },
     } : undefined,
     grid: [
       { left: '8%', right: isLine ? '10%' : '4%', top: isLine ? '14%' : '10%', height: isLine ? '58%' : '48%' },
@@ -30,57 +81,68 @@ function $chartBaseOption(mode) {
     xAxis: [
       {
         type: 'category', gridIndex: 0, boundaryGap: false,
-        axisLabel: { show: isLine, fontSize: 10, interval: isLine ? 'auto' : 'auto' },
+        axisLabel: { ...axisLabel, show: isLine, interval: isLine ? 'auto' : 'auto' },
+        axisLine: { lineStyle: { color: c.grid } },
         data: [],
       },
-      { type: 'category', gridIndex: 1, boundaryGap: true, axisLabel: { fontSize: 10 }, data: [] },
+      {
+        type: 'category', gridIndex: 1, boundaryGap: true,
+        axisLabel, axisLine: { lineStyle: { color: c.grid } }, data: [],
+      },
     ],
     yAxis: isLine ? [
       {
         type: 'value', gridIndex: 0, scale: true, splitNumber: 4,
-        splitLine: { lineStyle: { color: '#2a2d38' } },
-        axisLabel: { fontSize: 10 },
+        splitLine: { lineStyle: { color: c.grid } },
+        axisLabel,
       },
       {
         type: 'value', gridIndex: 0, scale: true, position: 'right', splitNumber: 4,
         splitLine: { show: false },
-        axisLabel: { fontSize: 10, color: '#9ca3af' },
+        axisLabel,
       },
       { type: 'value', gridIndex: 1, scale: true, splitLine: { show: false }, axisLabel: { show: false } },
     ] : [
-      { type: 'value', gridIndex: 0, scale: true, splitLine: { lineStyle: { color: '#2a2d38' } } },
-      { type: 'value', gridIndex: 1, scale: true, splitLine: { show: false } },
+      {
+        type: 'value', gridIndex: 0, scale: true,
+        splitLine: { lineStyle: { color: c.grid } },
+        axisLabel,
+      },
+      {
+        type: 'value', gridIndex: 1, scale: true, splitLine: { show: false },
+        axisLabel: { show: false },
+      },
     ],
     series: isLine ? [
       {
         name: '分时', type: 'line', xAxisIndex: 0, yAxisIndex: 0, showSymbol: false,
         connectNulls: false,
-        lineStyle: { width: 1.5, color: '#60a5fa' },
-        areaStyle: { color: 'rgba(96,165,250,0.12)' },
+        lineStyle: { width: 1.5, color: c.line },
+        areaStyle: { color: c.area },
         data: [],
       },
       {
         name: '均价', type: 'line', xAxisIndex: 0, yAxisIndex: 0, showSymbol: false,
         connectNulls: false,
-        lineStyle: { width: 1, color: '#f59e0b', type: 'dashed' },
+        lineStyle: { width: 1, color: c.avg, type: 'dashed' },
         data: [],
       },
       {
         name: '成交量', type: 'bar', xAxisIndex: 1, yAxisIndex: 2, data: [],
-        itemStyle: { color: '#3b82f6' },
+        itemStyle: { color: c.volBar },
       },
     ] : [
       { name: 'K线', type: 'candlestick', xAxisIndex: 0, yAxisIndex: 0, z: 2, data: [],
         markLine: { symbol: 'none', silent: true, data: [] },
-        itemStyle: { color: '#ef4444', color0: '#22c55e', borderColor: '#ef4444', borderColor0: '#22c55e' } },
+        itemStyle: { color: c.up, color0: c.down, borderColor: c.up, borderColor0: c.down } },
       { name: 'MA5', type: 'line', xAxisIndex: 0, yAxisIndex: 0, z: 10, showSymbol: false, symbol: 'none',
-        lineStyle: { width: 1.5, color: '#fbbf24' }, data: [] },
+        lineStyle: { width: 1.5, color: c.ma5 }, data: [] },
       { name: 'MA10', type: 'line', xAxisIndex: 0, yAxisIndex: 0, z: 11, showSymbol: false, symbol: 'none',
-        lineStyle: { width: 1.5, color: '#a78bfa' }, data: [] },
+        lineStyle: { width: 1.5, color: c.ma10 }, data: [] },
       { name: 'MA20', type: 'line', xAxisIndex: 0, yAxisIndex: 0, z: 12, showSymbol: false, symbol: 'none',
-        lineStyle: { width: 1.5, color: '#38bdf8' }, data: [] },
+        lineStyle: { width: 1.5, color: c.ma20 }, data: [] },
       { name: '成交量', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, z: 1, data: [],
-        itemStyle: { color: p => (p.data[2] > 0 ? '#22c55e' : '#ef4444') } },
+        itemStyle: { color: p => (p.data[2] > 0 ? c.down : c.up) } },
     ],
     tooltip: {
       trigger: 'axis', axisPointer: { type: 'cross' },
@@ -88,7 +150,7 @@ function $chartBaseOption(mode) {
     },
     legend: isLine ? undefined : {
       show: true, top: 4, right: 8, itemWidth: 14, itemHeight: 8,
-      textStyle: { fontSize: 10, color: '#9ca3af' },
+      textStyle: { fontSize: 10, color: c.text },
       data: ['MA5', 'MA10', 'MA20'],
     },
     dataZoom: isLine ? [] : [
@@ -417,19 +479,20 @@ function $timesharePctLabel(price, preClose) {
 }
 
 function $timeshareMarkLines(state, vtSymbol) {
+  const c = $chartColors();
   const lines = [];
   if (state.preClose) {
     lines.push({
       yAxis: state.preClose,
-      lineStyle: { color: '#6b7080', type: 'dashed' },
-      label: { formatter: `昨收 ${state.preClose}`, fontSize: 9 },
+      lineStyle: { color: c.markRef, type: 'dashed' },
+      label: { formatter: `昨收 ${state.preClose}`, fontSize: 9, color: c.text },
     });
   }
   if (state.lastPrice && state.lastPrice !== state.preClose) {
     lines.push({
       yAxis: state.lastPrice,
-      lineStyle: { color: '#60a5fa', type: 'dotted' },
-      label: { formatter: `现价 ${state.lastPrice}`, fontSize: 9 },
+      lineStyle: { color: c.markLive, type: 'dotted' },
+      label: { formatter: `现价 ${state.lastPrice}`, fontSize: 9, color: c.text },
     });
   }
   lines.push(...$buildMarkLines(vtSymbol));

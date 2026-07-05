@@ -48,7 +48,7 @@ except ImportError:
     HAS_CTA = False
 
 try:
-    from vnpy_ctabacktester import CtaBacktesterApp
+    from deepquant_ctabacktester import CtaBacktesterApp
     HAS_BACKTESTER = True
 except ImportError:
     HAS_BACKTESTER = False
@@ -526,39 +526,37 @@ def api_data():
 # Public contract data API (backed by contract_cache)
 # ---------------------------------------------------------------------------
 @app.get("/api/contracts/public")
-async def api_public_contracts(exchange: str = "", product: str = ""):
-    """Query contracts from public cache (akshare + generated options)."""
+async def api_public_contracts(
+    exchange: str = "",
+    product: str = "",
+    offset: int = 0,
+    limit: int = 100,
+):
+    """Query contracts from public cache in batches (max 100 per request)."""
     from deepquant.trader.contract_cache import (
-        get_cache, refresh_cache, get_cache_age, query_contracts, filter_by_products,
+        get_cache, refresh_cache, get_cache_age, query_public_contracts,
     )
-    from deepquant.trader.constant import Exchange
-    import re
 
     df = get_cache()
     age = get_cache_age()
-    # Trigger refresh if no data or stale
     if df is None or age is None or age.date() < datetime.now().date():
         import threading
         t = threading.Thread(target=refresh_cache, daemon=True)
         t.start()
         df = get_cache()
 
-    result = []
-    if exchange:
-        try:
-            ex = Exchange(exchange)
-            contracts = query_contracts(ex)
-            if product:
-                contracts = filter_by_products(contracts, product)
-            for c in contracts:
-                opt = ""
-                m = re.match(r'^[A-Z]+[0-9]+-([CP])-', c['symbol'])
-                if m:
-                    opt = "看涨" if m.group(1) == 'C' else "看跌"
-                result.append({**c, "option_type": opt})
-        except ValueError:
-            pass
-    return {"contracts": result, "cache_ts": age.isoformat() if age else None, "count": len(result)}
+    batch, total = query_public_contracts(exchange, product, offset, limit)
+    off = max(0, int(offset))
+    lim = max(1, min(int(limit), 100))
+    return {
+        "contracts": batch,
+        "total": total,
+        "offset": off,
+        "limit": lim,
+        "has_more": off + len(batch) < total,
+        "cache_ts": age.isoformat() if age else None,
+        "count": len(batch),
+    }
 
 
 @app.get("/api/contracts/products")
@@ -643,7 +641,7 @@ def start_engine() -> None:
             pass
     if HAS_BACKTESTER:
         try:
-            from vnpy_ctabacktester.engine import EVENT_BACKTESTER_LOG
+            from deepquant_ctabacktester.engine import EVENT_BACKTESTER_LOG
             event_engine.register(EVENT_BACKTESTER_LOG, bridge_event)
         except ImportError:
             pass

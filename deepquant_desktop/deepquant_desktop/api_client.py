@@ -219,11 +219,22 @@ class ApiClient(QWebSocket):
         return resp.get("products", []) if isinstance(resp, dict) else []
 
     def get_public_contracts(self, exchange: str, product: str = "") -> list:
-        params = f"?exchange={exchange}"
-        if product:
-            params += f"&product={product}"
-        resp = self._get(f"/api/contracts/public{params}")
-        return resp.get("contracts", []) if isinstance(resp, dict) else []
+        all_contracts: list = []
+        offset = 0
+        limit = 100
+        while True:
+            params = f"?offset={offset}&limit={limit}"
+            if exchange:
+                params += f"&exchange={exchange}"
+            if product:
+                params += f"&product={product}"
+            resp = self._get(f"/api/contracts/public{params}")
+            batch = resp.get("contracts", []) if isinstance(resp, dict) else []
+            all_contracts.extend(batch)
+            if not isinstance(resp, dict) or not resp.get("has_more") or not batch:
+                break
+            offset += len(batch)
+        return all_contracts
 
     # ------------------------------------------------------------------
     # Convenience
@@ -261,7 +272,7 @@ class ApiClient(QWebSocket):
             # Map known apps to their module/widget info
             info = {
                 "CtaStrategy": ("vnpy_ctastrategy", "CtaManager"),
-                "CtaBacktester": ("vnpy_ctabacktester", "BacktesterManager"),
+                "CtaBacktester": ("deepquant_ctabacktester", "BacktesterManager"),
                 "PaperAccount": ("vnpy_paperaccount", "PaperManager"),
             }.get(name, ("", ""))
             obj = type("App", (), {

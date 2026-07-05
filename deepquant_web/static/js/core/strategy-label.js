@@ -6,6 +6,7 @@ const STRATEGY_CN = {
   BollChannelStrategy: '布林通道策略',
   KingKeltnerStrategy: '肯特纳通道策略',
   MultiSignalStrategy: '多信号组合策略',
+  MultiTimeframeStrategy: '多周期策略',
   TurtleSignalStrategy: '海龟信号策略',
   DualThrustStrategy: 'Dual Thrust 策略',
   RbreakerStrategy: 'R-Breaker 策略',
@@ -26,8 +27,13 @@ function $strategyLabel(className) {
 
 function $strategyStatusCn(status) {
   const map = {
-    running: '运行中', inited: '已初始化', stopped: '已停止',
+    running: '运行中', trading: '运行中', inited: '已初始化', stopped: '已停止',
     starting: '启动中', stopping: '停止中',
   };
   return map[String(status || '').toLowerCase()] || status || '已停止';
+}
+
+function $normStrategyStatus(s) {
+  const st = String(s || 'stopped').toLowerCase();
+  return st === 'trading' ? 'running' : st;
 }

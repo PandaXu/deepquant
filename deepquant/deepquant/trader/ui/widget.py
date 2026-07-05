@@ -214,7 +214,7 @@ def create_msg_cell(content: Any, data: Any) -> QtWidgets.QTableWidgetItem:
 class BaseCell(QtWidgets.QTableWidgetItem):
     """Compatibility QTableWidgetItem subclass for external packages.
 
-    vnpy_ctabacktester subclasses this via ``class FloatCell(BaseCell)``.
+    deepquant_ctabacktester subclasses this via ``class FloatCell(BaseCell)``.
     Internal monitors use the ``create_…`` factory functions instead, which
     return standard C++ QTableWidgetItem objects and avoid GIL contention
     during paint events.
@@ -841,12 +841,19 @@ def _api_get_contracts(exchange: str, product: str = "") -> list[dict]:
     """Get contracts from REST API (cached, LRU-capped at 50)."""
     cache_key = f"{exchange}|{product}"
     if cache_key not in _contract_cache:
-        path = f"/api/contracts/public?exchange={exchange}"
-        if product:
-            path += f"&product={product}"
-        data = _api_get(path)
-        result = data.get("contracts", [])
-        # Prevent unbounded memory growth
+        result: list[dict] = []
+        offset = 0
+        limit = 100
+        while True:
+            path = f"/api/contracts/public?offset={offset}&limit={limit}&exchange={exchange}"
+            if product:
+                path += f"&product={product}"
+            data = _api_get(path)
+            batch = data.get("contracts", [])
+            result.extend(batch)
+            if not data.get("has_more") or not batch:
+                break
+            offset += len(batch)
         if len(_contract_cache) >= 50:
             _contract_cache.pop(next(iter(_contract_cache)))
         _contract_cache[cache_key] = result

@@ -222,7 +222,7 @@ def create_msg_cell(content: Any, data: Any) -> QtWidgets.QTableWidgetItem:
 class BaseCell(QtWidgets.QTableWidgetItem):
     """Compatibility QTableWidgetItem subclass for external packages.
 
-    vnpy_ctabacktester subclasses this via ``class FloatCell(BaseCell)``.
+    deepquant_ctabacktester subclasses this via ``class FloatCell(BaseCell)``.
     Internal monitors use the ``create_…`` factory functions instead, which
     return standard C++ QTableWidgetItem objects and avoid GIL contention
     during paint events.

@@ -18,6 +18,11 @@ const ui = uiReactive({
 
 const TICK_STREAM_MAX = 200;
 
+function $applyTheme(theme) {
+  document.body.classList.toggle('theme-light', theme === 'light');
+  window.dispatchEvent(new CustomEvent('dq-theme-change'));
+}
+
 function $initUi() {
   const prefs = $loadUiPrefs();
   ui.sidebarCollapsed = prefs.sidebarCollapsed;
@@ -106,12 +111,7 @@ function $autoSubscribeWatchlist() {
     if (!symbol || !exchange) return;
     gws.forEach(gw => {
       $restSubscribe(symbol, exchange, gw).then(ok => {
-        if (ok) {
-          $markSubscribed(key);
-          if (typeof $queueAutoDataUpdate === 'function') {
-            $queueAutoDataUpdate(key, ['1m', 'd'], 'low');
-          }
-        }
+        if (ok) $markSubscribed(key);
       });
     });
   };

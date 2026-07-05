@@ -1,0 +1,41 @@
+[project]
+name = "deepquant_ctabacktester"
+dynamic = ["version"]
+description = "CTA strategy backtesting application for DeepQuant."
+readme = "README.md"
+license = {text = "MIT"}
+authors = [{name = "DeepQuant", email = "dev@vnpy.com"}]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Office/Business :: Financial :: Investment",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Natural Language :: Chinese (Simplified)",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "deepquant>=4.0.0",
+    "vnpy_ctastrategy>=1.3.0",
+]
+keywords = ["quant", "quantitative", "investment", "trading", "backtest", "cta"]
+
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "deepquant_ctabacktester/__init__.py"
+pattern = "__version__ = ['\"](?P<version>[^'\"]+)['\"]"
+
+[tool.hatch.build.targets.wheel]
+packages = ["deepquant_ctabacktester"]
+include-package-data = true
+
+[tool.hatch.build.targets.sdist]
+include = ["deepquant_ctabacktester*"]

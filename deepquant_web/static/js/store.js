@@ -27,7 +27,21 @@ const store = reactive({
   ctaClasses: [],
   btClasses: [],
   backtestResult: null,
+  backtestPanelResult: null,  // 抽屉内持久展示，直到下次运行回测
   backtestError: null,
+  backtestSessionId: null,
+  backtestPendingSession: null,
+  backtestProgress: null,
+  backtestLogs: [],
+  backtestSaves: {},
+  backtestLastSaved: null,
+  backtestSettings: null,
+  _btSettingsPendingSave: false,
+  ctaParamSchemas: {},
+  strategyLogs: [],
+  lastCtaAction: null,
+  strategySummary: null,
+  strategyPreflight: {},
   dataOverview: [],
   dataOverviewTicks: [],
   dataSubTab: 'local',
@@ -152,22 +166,119 @@ function _onWsMessage(e) {
       }
     } else if (type === 'cta_strategies' && Array.isArray(data)) {
       store.strategies = data;
+    } else if (type === 'strategy_summary' && data) {
+      store.strategySummary = data;
+    } else if (type === 'strategy_preflight') {
+      const name = msg.strategy_name || data?.strategy_name || '';
+      if (name && data) store.strategyPreflight[name] = data;
     } else if (type === 'cta_classes' && Array.isArray(data)) {
       store.ctaClasses = data;
     } else if (type === 'bt_classes' && Array.isArray(data)) {
       store.btClasses = data;
     } else if (type === 'backtestResult' && data) {
       store.backtestResult = data;
+      store.backtestPanelResult = data;
+      store.backtestProgress = null;
+      store.backtestSessionId = data.session_id || store.backtestPendingSession;
+      store.backtestPendingSession = null;
+      $applyBacktestMarkers(data);
     } else if (type === 'backtestError') {
       store.backtestError = typeof data === 'string' ? data : (data?.msg || JSON.stringify(data));
+      store.backtestProgress = null;
+      store.backtestPendingSession = null;
+    } else if (type === 'backtestProgress' && data) {
+      store.backtestProgress = data;
+    } else if (type === 'backtest_saves') {
+      const name = msg.strategy_name || '';
+      if (name) store.backtestSaves[name] = Array.isArray(data) ? data : [];
+    } else if (type === 'backtest_save_saved') {
+      const name = msg.strategy_name || '';
+      if (name && data && !data.error) {
+        const list = (store.backtestSaves[name] || []).filter(s => s.id !== data.id);
+        store.backtestSaves[name] = [data, ...list];
+        store.backtestLastSaved = { strategy_name: name, save_id: data.id };
+        $toast('回测结果已保存', 'success');
+      } else if (data?.error) {
+        $toast(data.error, 'error');
+      }
+    } else if (type === 'backtest_save_loaded') {
+      if (data?.error) {
+        $toast(data.error, 'error');
+      } else if (data) {
+        store.backtestPanelResult = data;
+      }
+    } else if (type === 'backtest_save_deleted') {
+      const name = msg.strategy_name || '';
+      if (name && data?.deleted) {
+        store.backtestSaves[name] = (store.backtestSaves[name] || []).filter(s => s.id !== data.deleted);
+        if (data.error) $toast(data.error, 'error');
+        else $toast(data.promoted_active_id ? '已删除，已回退验证基准' : '回测记录已删除', 'success');
+      } else if (data?.error) {
+        $toast(data.error, 'error');
+      }
+    } else if (type === 'backtest_active_set') {
+      const name = msg.strategy_name || '';
+      if (data?.error) {
+        $toast(data.error, 'error');
+      } else if (name) {
+        $toast('已设为验证基准', 'success');
+        $wsSend({ action: 'get_cta_strategies' });
+        $wsSend({ action: 'get_strategy_preflight', payload: { strategy_name: name } });
+        $wsSend({ action: 'list_backtest_saves', payload: { strategy_name: name } });
+      }
+    } else if (type === 'backtest_settings' && data) {
+      store.backtestSettings = data;
+      if (store._btSettingsPendingSave) {
+        store._btSettingsPendingSave = false;
+        $toast('回测数据策略已保存', 'success');
+      }
+    } else if (type === 'backtest_export') {
+      if (data?.error) {
+        $toast(data.error, 'error');
+      } else if (data) {
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `backtest_${data.strategy_name || 'export'}_${data.save_id || ''}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        $toast('回测报告已导出', 'success');
+      }
+    } else if (type === 'eBacktesterLog') {
+      const msg = typeof data === 'string' ? data : (data?.msg || String(data || ''));
+      if (!msg.trim()) return;
+      store.backtestLogs.push({
+        time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+        msg,
+      });
+      if (store.backtestLogs.length > 300) store.backtestLogs.splice(0, store.backtestLogs.length - 300);
+      if (store.backtestProgress) {
+        const step = $btInferStepFromLog(msg);
+        if (step) store.backtestProgress.phase = step;
+        store.backtestProgress.lastLog = msg;
+      }
     } else if (type === 'data_overview' && Array.isArray(data)) {
       store.dataOverview = data;
       $rebuildDataTree();
+      $syncDataTreeSelection();
+      store.dataPreviewRevision += 1;
     } else if (type === 'tick_overview' && Array.isArray(data)) {
       store.dataOverviewTicks = data;
       $rebuildDataTree();
     } else if (type === 'data_task' && data) {
       $applyDataTask(data);
+    } else if (type === 'cta_action_result' && data) {
+      store.lastCtaAction = data;
+      if (data.error) $toast(data.error, 'error');
+      else if (data.message) $toast(data.message, 'success');
+    } else if (type === 'cta_batch_result' && data) {
+      const errs = (data.results || []).filter(r => r.error);
+      if (errs.length) $toast(`批量操作: ${errs.length} 项失败`, 'error');
+      else $toast('批量操作完成', 'success');
+    } else if (type === 'cta_params') {
+      const cn = msg.class_name;
+      if (cn && data) store.ctaParamSchemas[cn] = data;
     } else if (type === 'cta_init_result' && data) {
       if (data.error) {
         $toast(data.error, 'error');
@@ -186,10 +297,23 @@ function _onWsMessage(e) {
       store.gateways = data;
     } else if (type === 'gateway_accounts' && Array.isArray(data)) {
       store.gatewayAccounts = data;
-    } else if (type === 'strategy_logs' && data) {
-      const e = typeof data === 'string' ? { msg: data, time: new Date().toLocaleTimeString() } : data;
-      if (!store.logPaused) {
+    } else if (type === 'strategy_logs') {
+      store.strategyLogs = Array.isArray(data) ? data : [];
+      const e = typeof data === 'string' ? { msg: data, time: new Date().toLocaleTimeString() } : (Array.isArray(data) ? null : data);
+      if (e && !store.logPaused) {
         store.log.push({ time: e.time || new Date().toLocaleTimeString(), level: 'INFO', source: 'STRATEGY', msg: e.msg || JSON.stringify(e) });
+        if (store.log.length > store.maxLog) store.log.splice(0, store.log.length - store.maxLog);
+      } else if (Array.isArray(data)) {
+        data.slice(-5).forEach(row => {
+          if (!store.logPaused) {
+            store.log.push({
+              time: (row.created_at || '').slice(11, 19) || new Date().toLocaleTimeString(),
+              level: row.level || 'INFO',
+              source: 'STRATEGY',
+              msg: `[${row.strategy_name}] ${row.message}`,
+            });
+          }
+        });
         if (store.log.length > store.maxLog) store.log.splice(0, store.log.length - store.maxLog);
       }
     }
@@ -282,6 +406,8 @@ function $tickTimeStr(ts) {
 }
 
 // ---- Toast ----
+const _dataTaskNotified = new Set();
+
 function $toast(msg, type) {
   const el = document.createElement('div');
   el.className = `toast ${type || ''}`;
@@ -392,34 +518,33 @@ function $applyDataTask(task) {
   if (store.dataTasks.length > 30) store.dataTasks.length = 30;
 
   const isBatchProgress = task.status === 'running' && task.progress?.total > 0;
-  const isBatchDone = task.status === 'success' && (prev?.progress?.total || task.progress?.total);
+  const batchTotal = prev?.progress?.total || task.progress?.total;
+  const isBatchDone = task.status === 'success' && batchTotal > 0;
 
   if (task.status === 'success') {
-    if (!isBatchProgress) {
-      if (!isBatchDone || task.progress?.current === task.progress?.total) {
-        $toast(task.message || `${task.label} 完成`, 'success');
-      }
+    const shouldToast = !isBatchProgress
+      && (!isBatchDone || task.progress?.current === task.progress?.total);
+    const notifyKey = `${task.id}:success`;
+    if (shouldToast && !_dataTaskNotified.has(notifyKey)) {
+      _dataTaskNotified.add(notifyKey);
+      $toast(task.message || `${task.label} 完成`, 'success');
     }
-    $refreshDataOverview();
-    store.dataPreviewRevision += 1;
+    $loadDataOverviewRest().then(() => {
+      $syncDataTreeSelection();
+      store.dataPreviewRevision += 1;
+    });
   } else if (task.status === 'error' && !isBatchProgress) {
-    $toast(task.message || `${task.label} 失败`, 'error');
+    const notifyKey = `${task.id}:error`;
+    if (!_dataTaskNotified.has(notifyKey)) {
+      _dataTaskNotified.add(notifyKey);
+      $toast(task.message || `${task.label} 失败`, 'error');
+    }
   }
 }
 
 function $trackDataManagerLog(entry) {
-  const src = entry?.gateway_name || entry?.source || '';
-  const msg = entry?.msg || '';
-  if (src !== 'DataManager' && !msg.includes('[DataManager]')) return;
-  const running = store.dataTasks.find(t => t.status === 'running');
-  if (!running) return;
-  // 批量任务由 data_task 事件驱动，日志兜底会重复标记完成
-  if (running.progress?.total) return;
-  if (/下载完成|已删除|同步/.test(msg) && !/失败/.test(msg)) {
-    $applyDataTask({ ...running, status: 'success', message: msg.replace(/^\[DataManager\]\s*/, '') });
-  } else if (/失败/.test(msg)) {
-    $applyDataTask({ ...running, status: 'error', message: msg.replace(/^\[DataManager\]\s*/, '') });
-  }
+  // 任务完成/失败由 data_task 事件统一通知；日志不再重复触发 toast
+  void entry;
 }
 
 function $selectDataNode(node) {
@@ -460,21 +585,14 @@ function $rebuildDataTree() {
 
 async function $loadListedCatalog() {
   try {
-    const parts = await Promise.all((CONTRACT_EXCHANGES || []).map(async (ex) => {
-      try {
-        const d = await $apiGet(`/api/contracts/public?exchange=${ex.value}`);
-        return (d.contracts || []).map(c => ({
-          symbol: c.symbol,
-          exchange: c.exchange_code || ex.value,
-          vt_symbol: c.vt_symbol || `${c.symbol}.${ex.value}`,
-          name: c.name || '',
-          listed: c.listed !== false,
-        }));
-      } catch (e) {
-        return [];
-      }
+    const list = await $fetchPublicContracts();
+    store.dataListedCatalog = list.map(c => ({
+      symbol: c.symbol,
+      exchange: c.exchange_code || (c.vt_symbol || '').split('.').pop() || '',
+      vt_symbol: c.vt_symbol || `${c.symbol}.${c.exchange_code || ''}`,
+      name: c.name || '',
+      listed: c.listed !== false,
     }));
-    store.dataListedCatalog = parts.flat();
     store.dataOptionCatalog = store.dataListedCatalog.filter(c =>
       (typeof $isCffexIndexOptionSymbol === 'function'
         ? $isCffexIndexOptionSymbol(c.symbol)
@@ -561,7 +679,7 @@ function $startDataDownloadForSelection(selection) {
     start: dates.start,
     end: dates.end,
   });
-  $toast(`已提交下载 ${selection.vt_symbol || selection.symbol} ${DATA_INTERVAL_LABELS[interval] || interval}`, 'info');
+  store.dataTaskBarExpanded = true;
 }
 
 function $startDataUpdate(selection, opts) {
@@ -904,6 +1022,25 @@ function $openDataTabForStrategy(strategy) {
     interval: '1m',
     vt_symbol: vt,
     action: 'update',
+  });
+}
+
+/** 将回测成交转为 K 线买卖点标注 */
+function $applyBacktestMarkers(result) {
+  const trades = result?.trades;
+  if (!Array.isArray(trades) || !trades.length) {
+    store.backtestMarkers = [];
+    return;
+  }
+  const vt = result.vt_symbol || '';
+  store.backtestMarkers = trades.map(t => {
+    const dir = String(t.direction ?? t.offset ?? '').toUpperCase();
+    const isBuy = dir.includes('LONG') || dir.includes('多') || dir === 'BUY' || dir === '0';
+    return {
+      vt_symbol: t.vt_symbol || vt,
+      datetime: t.datetime,
+      side: isBuy ? 'BUY' : 'SELL',
+    };
   });
 }
 

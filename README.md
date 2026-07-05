@@ -63,6 +63,8 @@ deepquant/
     └── engine.py               #   tick/bar 持久化
 └── deepquant_datamanager/      # 历史数据管理 App (Server MainEngine)
     └── engine.py               #   下载/更新/导入导出
+└── deepquant_ctabacktester/    # CTA 回测 App (Server MainEngine)
+    └── engine.py               #   历史回测、参数优化
 ```
 
 ## 快速开始
@@ -70,17 +72,31 @@ deepquant/
 ### 启动全部服务
 
 ```bash
-# 1. Gateway (可启多个实例，不同端口+后端)
-PYTHONPATH="deepquant:deepquant_gateway:deepquant_ctp" \
-  python deepquant_gateway/run.py
+# 推荐：一键启动（venv + PYTHONPATH 含 deepquant_ctabacktester）
+./start.sh
 
-# 2. Server
-PYTHONPATH="deepquant:deepquant_server:deepquant_ctp" \
+# 或手动启动
+PYTHONPATH="deepquant:deepquant_gateway:deepquant_ctp:deepquant_server:deepquant_datarecorder:deepquant_datamanager:deepquant_ctabacktester" \
+  python deepquant_gateway/run.py --instance ctp-simnow
+
+PYTHONPATH="deepquant:deepquant_server:deepquant_ctp:deepquant_datamanager:deepquant_ctabacktester" \
   python deepquant_server/run.py
 
-# 3. Web
 python deepquant_web/run.py
 ```
+
+### 可选 App 依赖
+
+Server 按需加载 vnpy/DeepQuant App（ImportError 则跳过）：
+
+| 包名 | 用途 |
+|------|------|
+| `vnpy_ctastrategy` | CTA 实盘策略 |
+| `deepquant_ctabacktester` | CTA 回测（**替代 vnpy_ctabacktester**） |
+| `deepquant_datamanager` | 历史数据管理 |
+| `vnpy_paperaccount` | 模拟交易 |
+
+安装示例：`pip install -e deepquant_ctabacktester`
 
 | 服务 | 端口 | 说明 |
 |------|------|------|

@@ -236,7 +236,7 @@ const TabTrading = {
         }
         if (chartInstance) return true;
       }
-      chartInstance = echarts.init(klineEl.value, 'dark');
+      chartInstance = $echartsInit(klineEl.value);
       chartInstance.setOption($chartBaseOption('candle'), true);
       if (typeof ResizeObserver !== 'undefined') {
         chartResizeObs = new ResizeObserver(() => { try { chartInstance?.resize(); } catch (e) { /* ignore */ } });
@@ -557,6 +557,24 @@ const TabTrading = {
       }
     });
 
+    function reloadChartForTheme() {
+      if (!chartInstance) return;
+      const sym = chartSymbol.value;
+      const mode = chartMode.value;
+      const bars = chartBars.slice();
+      const ts = timeshareState;
+      chartInstance.dispose();
+      chartInstance = null;
+      if (!ensureChart()) return;
+      if (mode === 'timeshare' && ts) {
+        $applyTimeshareChart(chartInstance, ts, sym);
+      } else if (bars.length) {
+        $applyCandleChart(chartInstance, bars, sym);
+      } else {
+        chartInstance.setOption($chartBaseOption('candle'), true);
+      }
+    }
+
     onMounted(() => {
       window.__applyTradingSymbol = applySymbol;
       window.__jumpToSymbol = vt => { applySymbol(vt); };
@@ -570,6 +588,7 @@ const TabTrading = {
         else if (shortPos.value) threeKeyClose('SHORT');
         else $toast('请先选择持仓', 'info');
       };
+      window.addEventListener('dq-theme-change', reloadChartForTheme);
     });
     const chartEmptyActions = computed(() =>
       chartEmpty.value && !!chartSymbol.value && !!chartEmptySub.value
@@ -592,6 +611,7 @@ const TabTrading = {
     }
 
     onUnmounted(() => {
+      window.removeEventListener('dq-theme-change', reloadChartForTheme);
       chartResizeObs?.disconnect();
       if (chartInstance) { chartInstance.dispose(); chartInstance = null; }
       window.__tradingPlaceOrder = null;

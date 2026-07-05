@@ -10,6 +10,7 @@ const PERSIST_KEYS = {
   activeTab: 'deepquant_active_tab',
   bottomDockHeight: 'deepquant_ui_bottom_dock_height',
   config: 'deepquant_config',
+  strategySelected: 'deepquant_strategy_selected',
 };
 
 function $loadJson(key, fallback) {
@@ -98,3 +99,11 @@ function $saveUiPrefs(prefs) {
   if (prefs.activeTab != null) localStorage.setItem(PERSIST_KEYS.activeTab, prefs.activeTab);
   if (prefs.bottomDockHeight != null) $saveNumber(PERSIST_KEYS.bottomDockHeight, prefs.bottomDockHeight);
 }
+
+(function $bootstrapTheme() {
+  try {
+    const cfg = $loadJson(PERSIST_KEYS.config, {});
+    if (cfg.theme === 'light') document.body.classList.add('theme-light');
+    if (cfg.fontSize) document.documentElement.style.fontSize = cfg.fontSize + 'px';
+  } catch (e) { /* ignore */ }
+})();
