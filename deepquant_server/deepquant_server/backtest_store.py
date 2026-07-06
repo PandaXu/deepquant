@@ -449,7 +449,13 @@ def persist_backtest_run(
         ).fetchone()
         if dup and auto and not manual:
             save_id = dup["id"]
-            item = {"id": save_id, "deduped": True, "status": status, **meta}
+            item = {
+                "id": save_id,
+                "deduped": True,
+                "status": status,
+                "is_active": status == "passed" and set_active_on_pass,
+                **meta,
+            }
             if status == "passed" and set_active_on_pass:
                 conn.execute(
                     "UPDATE strategy_backtest_saves SET is_active=0 WHERE strategy_name=?",

@@ -688,6 +688,8 @@ async def handle_ws_message(ws: WebSocket, msg: str) -> None:
                             result["save_id"] = saved.get("id")
                             result["backtest_status"] = saved.get("status")
                             result["is_active_gate"] = saved.get("is_active", False)
+                            result["deduped"] = bool(saved.get("deduped"))
+                            result["skipped"] = bool(saved.get("skipped"))
                             if saved.get("id"):
                                 saves = strategy_service.list_backtest_saves(link_name)
                                 _broadcast_json({

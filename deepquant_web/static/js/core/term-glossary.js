@@ -215,6 +215,18 @@ const $termGlossary = {
     title: '权益曲线',
     text: '按日汇总的账户权益走势。上方曲线为净值，下方为相对峰值的回撤百分比。',
   },
+  bt_max_saves: {
+    title: '回测保留条数',
+    text: '每个策略实例在服务端最多保留的历史回测记录数（验证基准不计入此限）。超出后自动清理最旧记录。',
+  },
+  bt_retention_days: {
+    title: '回测清理天数',
+    text: '超过此天数的非验证基准回测记录将被自动删除。设为 0 表示不按时间清理。',
+  },
+  bt_auto_archive_loss: {
+    title: '亏损回测存档',
+    text: '开启后，亏损的回测结果也会写入历史记录（不可设为验证基准）；关闭则仅保存盈利回测。',
+  },
 };
 
 /** 上线检查项 id → 名词 key */
@@ -258,6 +270,9 @@ const $termHelpKeys = new Set([
   'trading_gateway',
   'history_data',
   'run_backtest',
+  'bt_max_saves',
+  'bt_retention_days',
+  'bt_auto_archive_loss',
 ]);
 
 function $termNeedsHelp(key) {

@@ -24,7 +24,7 @@ const App = {
               <span v-if="store.activeAccount === a.alias"> ✓</span>
             </button>
             <button @click="openAccountDrawer">连接账户…</button>
-            <button @click="goTab('settings')">管理账户</button>
+            <button @click="goTab('settings', 'accounts')">管理账户</button>
           </div>
         </div>
         <div class="fund-summary" v-if="primaryAccount">
@@ -69,7 +69,8 @@ const App = {
         <span v-for="(l, i) in miniLogs" :key="i" :class="'ml-' + (l.level || 'INFO')">{{ l.msg }}</span>
       </div>
 
-      <account-drawer :open="ui.showAccountDrawer" @close="ui.showAccountDrawer = false" @connected="onAccountConnected" />
+      <account-drawer :open="ui.showAccountDrawer" @close="ui.showAccountDrawer = false"
+        @connected="onAccountConnected" @manage="goTab('settings', 'accounts')" />
 
       <add-watchlist-modal :open="ui.showAddSymbol" @close="ui.showAddSymbol = false" @add="onAddWatchlist" />
     </div>`,
@@ -84,7 +85,7 @@ const App = {
     const prefs = $loadUiPrefs();
     const activeTab = ref(prefs.activeTab || 'trading');
 
-    window.__setActiveTab = (id) => setTab(id);
+    window.__setActiveTab = (id, section) => setTab(id, section);
 
     const posCount = computed(() => Object.keys(store.position).length);
     const activeOrderCount = computed(() => $activeOrderCount());
@@ -107,12 +108,23 @@ const App = {
       return store.log.filter(l => ['WARN', 'ERROR'].includes(l.level)).slice(-3);
     });
 
-    function setTab(id) {
+    function setTab(id, section) {
       activeTab.value = id;
       store.logPaused = id !== 'log';
       $saveUiPrefs({ activeTab: id });
+      if (id === 'settings' && section) {
+        nextTick(() => window.__setSettingsSection && window.__setSettingsSection(section));
+      }
+      if (id === 'settings') {
+        try {
+          const url = new URL(window.location.href);
+          url.searchParams.set('tab', 'settings');
+          if (section) url.searchParams.set('section', section);
+          window.history.replaceState({}, '', url);
+        } catch (e) { /* ignore */ }
+      }
     }
-    function goTab(id) { setTab(id); }
+    function goTab(id, section) { setTab(id, section); }
     function toggleSidebar() { $toggleSidebar(); nextTick(() => window.dispatchEvent(new Event('resize'))); }
     function onWatchlistSelect(vt) { if (activeTab.value !== 'trading') setTab('trading'); }
     function openAccountDrawer() { ui.showAccountDrawer = true; ui.accountMenuOpen = false; }
@@ -176,6 +188,12 @@ const app = createApp(App);
 app.component('strategy-doc-panel', StrategyDocPanel);
 app.component('watchlist-panel', WatchlistPanel);
 app.component('contract-picker', ContractPicker);
+app.component('confirm-modal', ConfirmModal);
+app.component('settings-status-bar', SettingsStatusBar);
+app.component('settings-accounts', SettingsAccounts);
+app.component('settings-trading-prefs', SettingsTradingPrefs);
+app.component('settings-appearance', SettingsAppearance);
+app.component('settings-backtest-data', SettingsBacktestData);
 app.component('add-watchlist-modal', AddWatchlistModal);
 app.component('account-drawer', AccountDrawer);
 app.component('bottom-dock', BottomDock);

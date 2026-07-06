@@ -177,7 +177,7 @@ function _onWsMessage(e) {
       store.btClasses = data;
     } else if (type === 'backtestResult' && data) {
       store.backtestResult = data;
-      store.backtestPanelResult = data;
+      store.backtestPanelResult = { ...data, _panelSource: 'run' };
       store.backtestProgress = null;
       store.backtestSessionId = data.session_id || store.backtestPendingSession;
       store.backtestPendingSession = null;
@@ -207,7 +207,7 @@ function _onWsMessage(e) {
       if (data?.error) {
         $toast(data.error, 'error');
       } else if (data) {
-        store.backtestPanelResult = data;
+        store.backtestPanelResult = { ...data, _panelSource: 'load' };
       }
     } else if (type === 'backtest_save_deleted') {
       const name = msg.strategy_name || '';
@@ -334,6 +334,16 @@ async function $apiGet(path) {
 async function $apiPost(path, body) {
   const r = await fetch(API_BASE + path, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  if (!r.ok) throw new Error(`API ${path} returned ${r.status}`);
+  return r.json();
+}
+
+async function $apiPut(path, body) {
+  const r = await fetch(API_BASE + path, {
+    method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   });
@@ -497,8 +507,20 @@ async function $loadGatewayAccounts() {
 }
 
 async function $saveGatewayAccount(alias, gateway, setting) {
-  await $apiPost('/api/gateway-accounts', { alias, gateway, setting });
+  const r = await $apiPost('/api/gateway-accounts', { alias, gateway, setting });
+  if (r?.error) { $toast(r.error, 'error'); return null; }
   await $loadGatewayAccounts();
+  return r;
+}
+
+async function $updateGatewayAccount(id, alias, setting) {
+  const body = {};
+  if (alias != null) body.alias = alias;
+  if (setting != null) body.setting = setting;
+  const r = await $apiPut('/api/gateway-accounts/' + encodeURIComponent(id), body);
+  if (r?.error) { $toast(r.error, 'error'); return null; }
+  await $loadGatewayAccounts();
+  return r;
 }
 
 async function $deleteGatewayAccount(id) {

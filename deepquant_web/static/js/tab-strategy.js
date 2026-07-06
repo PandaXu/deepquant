@@ -369,7 +369,8 @@ const TabStrategy = {
                 </div>
               </div>
               <div class="bt-chart-caption"><term-label term="equity_curve">权益 / 回撤曲线</term-label></div>
-              <div ref="resultChartEl" class="equity-chart bt-equity-chart"></div>
+              <div v-if="!btHasEquityData" class="empty" style="padding:24px 0">该记录未含权益曲线数据（请重新运行回测以生成完整报告）</div>
+              <div v-show="btHasEquityData" ref="resultChartEl" class="equity-chart bt-equity-chart"></div>
               <div class="bt-meta-row" v-if="btMetrics">
                 <span>{{ btMetaRange }}</span>
                 <span><term-label term="end_balance">期末</term-label> {{ btFmtMoney(btMetrics.endBalance) }}</span>
@@ -556,6 +557,7 @@ const TabStrategy = {
     });
 
     const btMetrics = computed(() => $btNormalizeResult(btDisplayResult.value));
+    const btHasEquityData = computed(() => !!(btMetrics.value?.balance?.length));
     const btKpis = computed(() => $btKpiCards(btMetrics.value, selected.value?.last_backtest));
     const btTrades = computed(() => (btMetrics.value?.trades || []).map($btFormatTradeRow).reverse());
     const btRunPhase = computed(() =>
@@ -731,7 +733,7 @@ const TabStrategy = {
         $hydrateBacktestFromInstance(bt, selected.value);
         fillContractMeta(bt.vtSymbol);
         checkBtCoverage();
-        if (btDisplayResult.value) nextTick(() => renderEquity(btDisplayResult.value));
+        if (btDisplayResult.value) scheduleRenderEquity(btDisplayResult.value);
         else if (equityChart) { equityChart.dispose(); equityChart = null; }
       }
     }
@@ -882,7 +884,7 @@ const TabStrategy = {
       }
       fillContractMeta(bt.vtSymbol);
       checkBtCoverage();
-      nextTick(() => { if (btDisplayResult.value) renderEquity(btDisplayResult.value); });
+      scheduleRenderEquity(btDisplayResult.value);
     }
 
     function loadBtClassParams() {
@@ -948,8 +950,6 @@ const TabStrategy = {
       bt.result = null;
       store.backtestPanelResult = null;
       bt.selectedSaveId = '';
-      bt._resultToastShown = false;
-      bt._resultToastSession = '';
       bt.running = true;
       bt.runPhase = 'prepare';
       bt.runStartedAt = Date.now();
@@ -984,6 +984,17 @@ const TabStrategy = {
       equityChart.setOption(opt, true);
     }
 
+    function scheduleRenderEquity(result, retries = 0) {
+      if (!result) return;
+      const m = $btNormalizeResult(result);
+      if (!m?.balance?.length) return;
+      if (!resultChartEl.value) {
+        if (retries < 10) nextTick(() => scheduleRenderEquity(result, retries + 1));
+        return;
+      }
+      nextTick(() => renderEquity(result));
+    }
+
     function jumpToChart(vt) {
       if (!vt) return;
       $setActiveSymbol(vt);
@@ -1016,9 +1027,10 @@ const TabStrategy = {
       bt.runPhase = 'report';
       btOpen.value = true;
       stopBtTimer();
-      nextTick(() => renderEquity(r));
+      scheduleRenderEquity(r);
+      const isRun = r._panelSource !== 'load';
       const linkedName = r.strategy_name || (bt.linkedInstance ? bt.strategyName : '');
-      if (linkedName && selected.value?.strategy_name === linkedName) {
+      if (isRun && linkedName && selected.value?.strategy_name === linkedName) {
         if (r.is_active_gate || r.backtest_status === 'passed') {
           selected.value = {
             ...selected.value,
@@ -1034,31 +1046,16 @@ const TabStrategy = {
         }
         fetchPreflight(linkedName);
         $wsSend({ action: 'get_cta_strategies' });
-      }
-      if (!bt._resultToastShown || bt._resultToastSession !== r.session_id) {
-        bt._resultToastShown = true;
-        bt._resultToastSession = r.session_id || '';
-        if (linkedName) {
-          if (r.backtest_status === 'loss') {
-            $toast('回测完成（亏损），无法设为验证基准', 'error');
-          } else if (r.is_active_gate) {
-            $toast('回测完成，已设为验证基准', 'success');
-          } else {
-            $toast('回测完成，已关联实例', 'success');
-          }
-        } else {
-          $toast('回测完成（未保存到实例）', 'success');
-        }
-      }
-      if (linkedName) {
         fetchBacktestSaves(linkedName);
         if (r.save_id) bt.selectedSaveId = String(r.save_id);
         if (r.is_active_gate) bt.selectedSaveId = String(r.save_id || bt.selectedSaveId);
+      } else if (r.save_id) {
+        bt.selectedSaveId = String(r.save_id);
       }
     });
 
     watch(btDisplayResult, (r) => {
-      if (r && !bt.running) nextTick(() => renderEquity(r));
+      if (r && !bt.running && btOpen.value) scheduleRenderEquity(r);
     });
 
     watch(() => store.backtestError, (err) => {
@@ -1124,7 +1121,7 @@ const TabStrategy = {
           selected.value = hit;
           fetchPreflight(cur);
           fetchBacktestSaves(cur);
-          if (btDisplayResult.value) nextTick(() => renderEquity(btDisplayResult.value));
+          if (btDisplayResult.value) scheduleRenderEquity(btDisplayResult.value);
           return;
         }
       }
@@ -1157,7 +1154,7 @@ const TabStrategy = {
       selectedSaveItem, canSetActiveSave, canExecuteNext, actionBusy, primaryBtnClass, btParamKeys,
       btReturnText, btReturnCls, btDrawdownText,
       btRunSteps, btRunPhase, btRunStepIdx, btElapsed, btLiveLogs,
-      btMetrics, btKpis, btTrades, btMetaRange,
+      btMetrics, btHasEquityData, btKpis, btTrades, btMetaRange,
       normStatus, canEdit, fmtPct, isBacktestLoss, docSummary, paramLabel, paramHint, preflightTerm, toggleEncy,
       strategyLabel: $strategyLabel, strategyStatus: $strategyStatusCn,
       contractLabel: $contractLabel,
